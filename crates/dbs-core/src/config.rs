@@ -1,0 +1,327 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::{DbError, DbResult};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Engine {
+    Postgres,
+    MySql,
+    MariaDb,
+    Sqlite,
+    SqlServer,
+    Oracle,
+    CockroachDb,
+    Redshift,
+    SingleStore,
+    Greenplum,
+    Vertica,
+    DuckDb,
+    LibSql,
+    Turso,
+    YugabyteDb,
+    Percona,
+    MongoDb,
+    Redis,
+    Cassandra,
+    DynamoDb,
+    Elasticsearch,
+    ClickHouse,
+    BigQuery,
+    Snowflake,
+    CloudflareD1,
+}
+
+impl Engine {
+    pub const ALL: [Engine; 25] = [
+        Engine::Postgres, Engine::MySql, Engine::MariaDb, Engine::Sqlite, Engine::SqlServer,
+        Engine::Oracle, Engine::CockroachDb, Engine::Redshift, Engine::SingleStore,
+        Engine::Greenplum, Engine::Vertica, Engine::DuckDb, Engine::LibSql, Engine::Turso,
+        Engine::YugabyteDb, Engine::Percona, Engine::MongoDb, Engine::Redis, Engine::Cassandra,
+        Engine::DynamoDb, Engine::Elasticsearch, Engine::ClickHouse, Engine::BigQuery,
+        Engine::Snowflake, Engine::CloudflareD1,
+    ];
+
+    pub fn default_port(self) -> Option<u16> {
+        Some(match self {
+            Engine::Postgres | Engine::Greenplum => 5432,
+            Engine::CockroachDb | Engine::YugabyteDb => 26257,
+            Engine::Redshift => 5439,
+            Engine::MySql | Engine::MariaDb | Engine::Percona | Engine::SingleStore => 3306,
+            Engine::SqlServer => 1433,
+            Engine::Oracle => 1521,
+            Engine::Vertica => 5433,
+            Engine::MongoDb => 27017,
+            Engine::Redis => 6379,
+            Engine::Cassandra => 9042,
+            Engine::Elasticsearch => 9200,
+            Engine::ClickHouse => 8123,
+            _ => return None,
+        })
+    }
+
+    /// Engines that speak a protocol we already implement.
+    pub fn wire_family(self) -> Option<Engine> {
+        match self {
+            Engine::Postgres | Engine::CockroachDb | Engine::YugabyteDb | Engine::Redshift
+            | Engine::Greenplum => Some(Engine::Postgres),
+            Engine::MySql | Engine::MariaDb | Engine::Percona | Engine::SingleStore => {
+                Some(Engine::MySql)
+            }
+            Engine::Sqlite => Some(Engine::Sqlite),
+            Engine::Redis => Some(Engine::Redis),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvironmentKind {
+    #[default]
+    Local,
+    Development,
+    Testing,
+    Staging,
+    Production,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TlsMode {
+    /// No TLS. Only allowed for loopback/socket hosts unless the user explicitly opts in.
+    Disable,
+    /// TLS required, certificate + hostname verified (default).
+    #[default]
+    VerifyFull,
+    /// TLS required, CA verified, hostname not verified. Must be chosen explicitly.
+    VerifyCa,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TlsConfig {
+    pub mode: TlsMode,
+    pub ca_cert_path: Option<String>,
+    pub client_cert_path: Option<String>,
+    /// Client key is a secret: stored in the OS keychain under `SecretKind::TlsClientKey`
+    /// when it is pasted, or referenced by path when it lives on disk.
+    pub client_key_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SshAuth {
+    Password,
+    PrivateKey,
+    Agent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SshConfig {
+    pub host: String,
+    pub port: u16,
+    pub user: String,
+    pub auth: SshAuth,
+    pub private_key_path: Option<String>,
+    /// Ordered jump hosts (`user@host:port`), applied before `host`.
+    #[serde(default)]
+    pub jump_hosts: Vec<String>,
+    #[serde(default = "default_keepalive")]
+    pub keepalive_secs: u32,
+}
+
+fn default_keepalive() -> u32 {
+    30
+}
+
+/// Saved connection definition. Contains NO secrets: passwords, key passphrases
+/// and tokens live in the OS credential store, keyed by `id`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ConnectionConfig {
+    pub id: Uuid,
+    pub name: String,
+    pub engine: Engine,
+    #[serde(default)]
+    pub host: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// For SQLite/DuckDB: file path. For others: default database.
+    #[serde(default)]
+    pub database: Option<String>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub socket_path: Option<String>,
+    #[serde(default)]
+    pub tls: TlsConfig,
+    #[serde(default)]
+    pub ssh: Option<SshConfig>,
+    #[serde(default)]
+    pub environment: EnvironmentKind,
+    #[serde(default)]
+    pub read_only: bool,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub favorite: bool,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout_secs: u32,
+    #[serde(default)]
+    pub query_timeout_secs: Option<u32>,
+    /// Statements run once after connect. Subject to the same safety policy as user SQL.
+    #[serde(default)]
+    pub init_sql: Option<String>,
+}
+
+fn default_connect_timeout() -> u32 {
+    10
+}
+
+impl ConnectionConfig {
+    pub fn validate(&self) -> DbResult<()> {
+        if self.name.trim().is_empty() || self.name.len() > 200 {
+            return Err(DbError::invalid("connection name must be 1-200 characters"));
+        }
+        if self.connect_timeout_secs == 0 || self.connect_timeout_secs > 600 {
+            return Err(DbError::invalid("connect timeout must be 1-600 seconds"));
+        }
+        match self.engine {
+            Engine::Sqlite | Engine::DuckDb => {
+                if self.database.as_deref().map_or(true, |d| d.trim().is_empty()) {
+                    return Err(DbError::invalid("a database file path is required"));
+                }
+            }
+            _ => {
+                if self.socket_path.is_none()
+                    && self.host.as_deref().map_or(true, |h| h.trim().is_empty())
+                {
+                    return Err(DbError::invalid("host is required"));
+                }
+            }
+        }
+        if let Some(h) = &self.host {
+            if h.chars().any(|c| c.is_whitespace() || c.is_control() || c == '/' || c == '@') {
+                return Err(DbError::invalid("host contains invalid characters"));
+            }
+        }
+        if self.tls.mode == TlsMode::Disable && self.ssh.is_none() {
+            if let Some(h) = &self.host {
+                if !is_loopback(h) && self.environment == EnvironmentKind::Production {
+                    return Err(DbError::invalid(
+                        "TLS cannot be disabled for a non-local production connection without an SSH tunnel",
+                    ));
+                }
+            }
+        }
+        if let Some(c) = &self.color {
+            let ok = c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit());
+            if !ok {
+                return Err(DbError::invalid("color must be #RRGGBB"));
+            }
+        }
+        Ok(())
+    }
+
+    pub fn effective_port(&self) -> Option<u16> {
+        self.port.or_else(|| self.engine.default_port())
+    }
+
+    pub fn is_production(&self) -> bool {
+        self.environment == EnvironmentKind::Production
+    }
+
+    /// Connection URL with secrets omitted, for "Copy URL".
+    pub fn redacted_url(&self) -> String {
+        let scheme = match self.engine.wire_family() {
+            Some(Engine::Postgres) => "postgresql",
+            Some(Engine::MySql) => "mysql",
+            Some(Engine::Sqlite) => return format!("sqlite://{}", self.database.clone().unwrap_or_default()),
+            Some(Engine::Redis) => "redis",
+            _ => "db",
+        };
+        let user = self.username.clone().map(|u| format!("{u}@")).unwrap_or_default();
+        let host = self.host.clone().unwrap_or_default();
+        let port = self.effective_port().map(|p| format!(":{p}")).unwrap_or_default();
+        let db = self.database.clone().map(|d| format!("/{d}")).unwrap_or_default();
+        format!("{scheme}://{user}{host}{port}{db}")
+    }
+}
+
+pub fn is_loopback(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pg() -> ConnectionConfig {
+        ConnectionConfig {
+            id: Uuid::new_v4(),
+            name: "x".into(),
+            engine: Engine::Postgres,
+            host: Some("db.example.com".into()),
+            port: None,
+            database: Some("app".into()),
+            username: Some("bob".into()),
+            socket_path: None,
+            tls: TlsConfig::default(),
+            ssh: None,
+            environment: EnvironmentKind::Production,
+            read_only: false,
+            color: None,
+            group: None,
+            tags: vec![],
+            notes: None,
+            favorite: false,
+            connect_timeout_secs: 10,
+            query_timeout_secs: None,
+            init_sql: None,
+        }
+    }
+
+    #[test]
+    fn tls_on_by_default() {
+        assert_eq!(pg().tls.mode, TlsMode::VerifyFull);
+    }
+
+    #[test]
+    fn rejects_plaintext_remote_production() {
+        let mut c = pg();
+        c.tls.mode = TlsMode::Disable;
+        assert!(c.validate().is_err());
+        c.host = Some("localhost".into());
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_bad_host() {
+        let mut c = pg();
+        c.host = Some("evil host".into());
+        assert!(c.validate().is_err());
+        c.host = Some("user@host".into());
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn redacted_url_has_no_password_slot() {
+        let u = pg().redacted_url();
+        assert_eq!(u, "postgresql://bob@db.example.com:5432/app");
+    }
+
+    #[test]
+    fn sqlite_requires_path() {
+        let mut c = pg();
+        c.engine = Engine::Sqlite;
+        c.database = None;
+        assert!(c.validate().is_err());
+    }
+}

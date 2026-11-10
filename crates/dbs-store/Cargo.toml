@@ -1,0 +1,13 @@
+[package]
+name = "dbs-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbs-core.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true

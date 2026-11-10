@@ -1,0 +1,28 @@
+[package]
+name = "dbs-drivers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbs-core.workspace = true
+dbs-safety.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+futures-util.workspace = true
+rusqlite.workspace = true
+tracing.workspace = true
+bytes = "1"
+tokio-postgres = "0.7"
+postgres-native-tls = "0.5"
+native-tls = "0.2"
+mysql_async = { version = "0.37", default-features = false, features = ["minimal", "native-tls-tls"] }
+redis = { version = "0.32", default-features = false, features = ["tokio-comp", "tokio-native-tls-comp", "aio"] }
+
+[dev-dependencies]
+tempfile = "3"

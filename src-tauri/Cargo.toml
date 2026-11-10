@@ -1,0 +1,4 @@
+[package]
+name = "dbstudio"
+version.workspace = true
+edition.workspace = true

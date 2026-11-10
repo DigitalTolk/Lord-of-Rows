@@ -1,0 +1,4 @@
+[package]
+name = "dbs-io"
+version.workspace = true
+edition.workspace = true
