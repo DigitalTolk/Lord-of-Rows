@@ -1,0 +1,7 @@
+{
+  "name": "dbstudio-e2e",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test --test-concurrency=1 --test-reporter=spec" },
+  "dependencies": { "webdriverio": "^10.2.0" }
+}

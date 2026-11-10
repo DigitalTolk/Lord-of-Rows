@@ -1,6 +1,11 @@
 // Surfaces fatal startup errors on screen (no console in release webviews).
 window.addEventListener('error', (e) => show(`${e.message} @ ${e.filename}:${e.lineno}`));
-window.addEventListener('unhandledrejection', (e) => show(`Unhandled: ${String((e as PromiseRejectionEvent).reason?.stack ?? (e as PromiseRejectionEvent).reason)}`));
+window.addEventListener('unhandledrejection', (e) => {
+  const r = (e as PromiseRejectionEvent).reason;
+  // Monaco cancels internal promises (e.g. hiding suggestions); these are not errors.
+  if (r && (r.name === 'Canceled' || r.message === 'Canceled')) return;
+  show(`Unhandled: ${String((e as PromiseRejectionEvent).reason?.stack ?? (e as PromiseRejectionEvent).reason)}`);
+});
 function show(msg: string) {
   const el = document.createElement('pre');
   el.setAttribute('role', 'alert');

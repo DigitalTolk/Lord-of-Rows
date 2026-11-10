@@ -46,9 +46,11 @@ export function TableView({ tab }: { tab: Tab }) {
     setLoading(true);
     setError(null);
     try {
-      const [d, r, c] = await Promise.all([
-        desc ? Promise.resolve(desc) : api.describeTable(s.session_id, target),
-        api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: sort, filters: applied }),
+      const d = desc ?? (await api.describeTable(s.session_id, target).catch(() => null));
+      // Without an explicit sort, order by primary key so paging is stable.
+      const order: [string, SortDir][] = sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
+      const [r, c] = await Promise.all([
+        api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order, filters: applied }),
         api.countRows(s.session_id, target, applied).catch(() => null),
       ]);
       setDesc(d);

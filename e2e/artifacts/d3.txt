@@ -1,0 +1,21 @@
+Unhandled: ex@tauri://localhost/assets/index-EhD3puzt.js:106:709
+cancel@tauri://localhost/assets/index-EhD3puzt.js:108:15702
+e@tauri://localhost/assets/index-EhD3puzt.js:646:27650
+click@[native code]
+@
+@
+@
+@
+Promise@[native code]
+_execute@
+evaluateJavaScriptFunction@Unhandled: ex@tauri://localhost/assets/index-EhD3puzt.js:106:709
+cancel@tauri://localhost/assets/index-EhD3puzt.js:108:15702
+e@tauri://localhost/assets/index-EhD3puzt.js:646:27650
+click@[native code]
+@
+@
+@
+@
+Promise@[native code]
+_execute@
+evaluateJavaScriptFunction@TypeError: n is not a function. (In 'n()', 'n' is 0) @ tauri://localhost/assets/index-EhD3puzt.js:7

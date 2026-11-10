@@ -96,7 +96,9 @@ export function DataGrid(p: GridProps) {
     const b = Math.max(sel.r0, sel.r1);
     return Array.from({ length: b - a + 1 }, (_, i) => a + i);
   }, [sel]);
-  useEffect(() => p.onSelectRows?.(selectedRows), [selectedRows]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    p.onSelectRows?.(selectedRows);
+  }, [selectedRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedCols = () => {
     if (!sel) return [];

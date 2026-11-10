@@ -1,0 +1,35 @@
+✔ app launches and shows the connection launcher (877.1905ms)
+▶ connections
+  ✔ create a PostgreSQL connection with Test, then Save (2059.545292ms)
+  ✔ wrong password shows an authentication error and never echoes the password (32251.671847ms)
+  ✔ connect by double-clicking; opens on the schema that has tables (329.45825ms)
+✔ connections (35350.412432ms)
+▶ browsing and querying
+  ✔ open a table: grid, row count, paging (297.239666ms)
+  ✔ Structure view shows columns, indexes and DDL (794.463125ms)
+  ✔ SQL tab: unqualified names resolve to the selected schema (1164.798626ms)
+  ✔ switching schema in the sidebar changes name resolution (2386.673376ms)
+  ✔ multiple statements, multiple result sets, affected-row messages (972.124126ms)
+  ✔ syntax errors are reported with SQLSTATE (352.1875ms)
+  ✔ types: bigint, numeric, json, null vs empty string (459.302959ms)
+  ✔ cancel a long-running query (1466.812709ms)
+  ✔ EXPLAIN shows a plan (554.739501ms)
+✔ browsing and querying (8451.605962ms)
+▶ editing data
+  ✔ edit a cell, review generated SQL, commit (1241.491543ms)
+  ✔ the edit is really in the database (814.839334ms)
+  ✔ stale edits are detected as conflicts and nothing is overwritten (3559.654418ms)
+✔ editing data (5618.401878ms)
+▶ production safety
+  ✖ production connection shows a banner and requires typed confirmation for destructive SQL (33874.006141ms)
+  ✖ cancelling the confirmation runs nothing (22792.236552ms)
+  ✖ read-only connection blocks writes (20114.525135ms)
+✖ production safety (76805.163701ms)
+▶ multiple databases
+  ✖ MySQL via URL (20054.452634ms)
+  ✖ SQLite via URL (20044.946675ms)
+  ✖ Redis via URL (20849.484635ms)
+  ✖ connection rail lists every open database and keeps tabs per database (1100.724167ms)
+✖ multiple databases (62051.00782ms)
+▶ tools
+  ✖ command palette opens a table (20553.635177ms)

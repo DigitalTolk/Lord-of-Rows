@@ -6,6 +6,7 @@ import { ConnectionDialog } from './components/ConnectionDialog';
 import { SafetyDialog } from './components/SafetyDialog';
 import { CommandPalette, StatusBar, TabBar, TopBar } from './components/Shell';
 import { Welcome } from './components/Welcome';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
 import { Sidebar } from './components/Sidebar';
@@ -143,7 +144,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [st, t]);
 
-  const active = st.tabs.find((x) => x.id === st.activeTab && (!x.sessionId || x.sessionId === st.activeSession));
+  const active = st.tabs.find((x) => x.id === st.activeTab && (!x.sessionId || x.sessionId === st.activeSession)) ?? st.tabs.find((x) => !x.sessionId || x.sessionId === st.activeSession);
   const activeSession = active?.sessionId ? st.sessions[active.sessionId] : st.activeSession ? st.sessions[st.activeSession] : undefined;
   const focus = !!st.settings['workspace.focus'];
 
@@ -157,7 +158,7 @@ export default function App() {
   };
 
   const hasSessions = Object.keys(st.sessions).length > 0;
-  const showLauncher = st.launcher || (!hasSessions && !active);
+  const showLauncher = st.launcher || !hasSessions;
   const sidebarSession = st.activeSession && st.sessions[st.activeSession] ? st.activeSession : undefined;
 
   return (
@@ -190,7 +191,9 @@ export default function App() {
                 {/* Keep views mounted so editor state survives tab switches. */}
                 {st.tabs.map((tab) => (
                   <div key={tab.id} role="tabpanel" hidden={tab.id !== active?.id} className="h-full">
-                    <View tab={tab} />
+                    <ErrorBoundary label={tab.title}>
+                      <View tab={tab} />
+                    </ErrorBoundary>
                   </div>
                 ))}
                 {!active && (

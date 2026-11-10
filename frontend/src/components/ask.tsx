@@ -50,6 +50,7 @@ export function AskHost() {
           type={req.input}
           value={val}
           data-autofocus
+          aria-label={req.title}
           autoComplete={req.input === 'password' ? 'current-password' : 'off'}
           onChange={(e) => setVal(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}

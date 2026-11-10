@@ -110,7 +110,9 @@ export function QueryView({ tab }: { tab: Tab }) {
     [s, isRedis],
   );
 
-  const cancel = () => running && api.cancelQuery(running);
+  const cancel = () => {
+    if (running) api.cancelQuery(running).catch(() => undefined);
+  };
   const fmt = () => {
     const ed = editorRef.current;
     if (!ed || !s) return;
@@ -202,6 +204,19 @@ export function QueryView({ tab }: { tab: Tab }) {
         <button className="btn btn-ghost ml-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
         {s ? <span className="text-[0.82rem] text-muted">{s.config.name}{s.activeSchema ? ` · ${s.activeSchema}` : ''}</span> : <span className="text-warn">{t('status.disconnected')}</span>}
       </div>
+      {!s && (
+        <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-warn/40 bg-warn/10 px-3 py-1.5 text-[0.92rem]">
+          <span>This query tab isn’t connected to a database.</span>
+          {Object.values(sessions).length > 0 ? (
+            <select className="input h-6 w-auto py-0" aria-label="Choose connection" value="" onChange={(e) => e.target.value && updateTab(tab.id, { sessionId: e.target.value })}>
+              <option value="">Choose connection…</option>
+              {Object.values(sessions).map((x) => <option key={x.session_id} value={x.session_id}>{x.config.name}</option>)}
+            </select>
+          ) : (
+            <button className="btn btn-primary h-6" onClick={() => useApp.setState({ launcher: true })}>Open a connection</button>
+          )}
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col">
         <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
           <Editor

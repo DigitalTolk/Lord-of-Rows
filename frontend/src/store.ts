@@ -101,10 +101,14 @@ export const useApp = create<State>((set, get) => ({
       : schemas.includes('main') ? 'main'
       : schemas[0] ?? null;
     const prev = get();
+    // Restored (unbound) query tabs attach to the first connection opened.
+    const tabs = prev.tabs.map((t) => (t.kind === 'query' && !t.sessionId ? { ...t, sessionId: s.session_id } : t));
+    const firstOwn = tabs.find((t) => t.sessionId === s.session_id);
     set({
       sessions: { ...prev.sessions, [s.session_id]: { ...s, schemas, objects: {}, activeSchema: preferred, healthy: true } },
+      tabs,
       activeSession: s.session_id,
-      activeTab: undefined,
+      activeTab: firstOwn?.id,
       lastTab: prev.activeSession && prev.activeTab ? { ...prev.lastTab, [prev.activeSession]: prev.activeTab } : prev.lastTab,
       launcher: false,
     });

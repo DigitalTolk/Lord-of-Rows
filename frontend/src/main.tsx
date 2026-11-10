@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import './i18n';
 import './index.css';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Block drag-and-drop navigation (dropping a file would otherwise navigate the webview).
 window.addEventListener('dragover', (e) => e.preventDefault());
@@ -16,6 +17,8 @@ window.addEventListener('contextmenu', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary label="the application">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

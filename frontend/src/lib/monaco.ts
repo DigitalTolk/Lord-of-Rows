@@ -6,6 +6,8 @@ import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 
 (self as unknown as { MonacoEnvironment: unknown }).MonacoEnvironment = { getWorker: () => new EditorWorker() };
 loader.config({ monaco });
+// Exposed for E2E tests (sets editor text); grants nothing the renderer doesn't already have.
+(globalThis as unknown as { __monaco: typeof monaco }).__monaco = monaco;
 
 export interface CompletionSource {
   tables: { name: string; schema?: string | null; kind: string }[];

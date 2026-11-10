@@ -174,7 +174,9 @@ export function CommandPalette() {
   const [idx, setIdx] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const s = st.activeSession ? st.sessions[st.activeSession] : undefined;
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
   const close = () => useApp.setState({ paletteOpen: false });
   const tool = (kind: TabKind, title: string) => () => st.openTab({ kind, title, sessionId: s?.session_id });
 

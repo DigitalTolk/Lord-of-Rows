@@ -1,0 +1,70 @@
+
+
+DEVELOPMENT
+dbs_test@postgres
+PostgreSQL 16.15 : public
+
+Search…
+Ctrl+K
+
+
+
+
+
+
+
+Pg
+2
+
+
+
+
+EXTENSIONS
+1
+plpgsql
+customers
+
+Query
+
+
+Run
+Run all
+
+Format
+Explain
+Explain analyze
+Minify
+Save as snippet
+dbs_test@postgres · public
+1
+select 1 as x
+Results
+Messages (2)
+Grid
+JSON
+Text
+Record
+Chart
+
+1 rows · 0 ms
+x
+1
+1
+● Connected
+dbs_test@postgres
+DEVELOPMENT
+PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on aarch64-unknown-linux-gnu
+policy: development
+Ctrl+K commands
+v0.1.0
+Unhandled: ex@tauri://localhost/assets/index-EhD3puzt.js:106:709
+cancel@tauri://localhost/assets/index-EhD3puzt.js:108:15702
+e@tauri://localhost/assets/index-EhD3puzt.js:646:27650
+click@[native code]
+@
+@
+@
+@
+Promise@[native code]
+_execute@
+evaluateJavaScriptFunction@
