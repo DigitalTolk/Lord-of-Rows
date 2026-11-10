@@ -69,13 +69,7 @@ pub trait SecretStore: Send + Sync {
     fn get(&self, owner: Uuid, kind: SecretKind) -> DbResult<Option<Secret>>;
     fn delete(&self, owner: Uuid, kind: SecretKind) -> DbResult<()>;
     fn delete_all(&self, owner: Uuid) -> DbResult<()> {
-        for k in [
-            SecretKind::DbPassword,
-            SecretKind::SshPassword,
-            SecretKind::SshKeyPassphrase,
-            SecretKind::TlsClientKey,
-            SecretKind::AuthToken,
-        ] {
+        for k in [SecretKind::DbPassword, SecretKind::SshPassword, SecretKind::SshKeyPassphrase, SecretKind::TlsClientKey, SecretKind::AuthToken] {
             self.delete(owner, k)?;
         }
         Ok(())
@@ -93,17 +87,14 @@ pub struct OsKeychain;
 #[cfg(feature = "os-keychain")]
 impl OsKeychain {
     fn entry(owner: Uuid, kind: SecretKind) -> DbResult<keyring::Entry> {
-        keyring::Entry::new(SERVICE, &account(owner, kind))
-            .map_err(|e| DbError::new(ErrorKind::Internal, format!("credential store unavailable: {e}")))
+        keyring::Entry::new(SERVICE, &account(owner, kind)).map_err(|e| DbError::new(ErrorKind::Internal, format!("credential store unavailable: {e}")))
     }
 }
 
 #[cfg(feature = "os-keychain")]
 impl SecretStore for OsKeychain {
     fn set(&self, owner: Uuid, kind: SecretKind, value: &str) -> DbResult<()> {
-        Self::entry(owner, kind)?
-            .set_password(value)
-            .map_err(|e| DbError::new(ErrorKind::Internal, format!("could not store credential: {e}")))
+        Self::entry(owner, kind)?.set_password(value).map_err(|e| DbError::new(ErrorKind::Internal, format!("could not store credential: {e}")))
     }
     fn get(&self, owner: Uuid, kind: SecretKind) -> DbResult<Option<Secret>> {
         match Self::entry(owner, kind)?.get_password() {

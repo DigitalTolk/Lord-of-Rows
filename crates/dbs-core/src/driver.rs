@@ -73,23 +73,14 @@ pub trait DatabaseConnection: Send + Sync {
 
     /// Execute user-authored SQL (possibly multiple statements). The safety
     /// policy has already been applied by the caller.
-    async fn execute(
-        &self,
-        sql: &str,
-        opts: &ExecOptions,
-        cancel: CancellationToken,
-    ) -> DbResult<Vec<StatementResult>>;
+    async fn execute(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken) -> DbResult<Vec<StatementResult>>;
 
     /// Execute one application-generated parameterised statement.
     async fn execute_params(&self, stmt: &GeneratedStatement) -> DbResult<u64>;
 
     /// Paged table read with server-side sort/filter. `filter_sql` is a WHERE
     /// fragment built by [`crate::build_filter`]; values are passed as parameters.
-    async fn fetch_table(
-        &self,
-        target: &TableTarget,
-        page: &PageRequest,
-    ) -> DbResult<ResultSet>;
+    async fn fetch_table(&self, target: &TableTarget, page: &PageRequest) -> DbResult<ResultSet>;
 
     async fn count_rows(&self, target: &TableTarget, filter: &[FilterCondition]) -> DbResult<u64>;
 
@@ -158,11 +149,7 @@ pub trait DatabaseConnection: Send + Sync {
 #[async_trait]
 pub trait DatabaseDriver: Send + Sync {
     fn engines(&self) -> &'static [Engine];
-    async fn connect(
-        &self,
-        cfg: &ConnectionConfig,
-        secrets: ConnectSecrets,
-    ) -> DbResult<Box<dyn DatabaseConnection>>;
+    async fn connect(&self, cfg: &ConnectionConfig, secrets: ConnectSecrets) -> DbResult<Box<dyn DatabaseConnection>>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

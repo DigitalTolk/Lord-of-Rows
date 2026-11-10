@@ -70,10 +70,7 @@ pub fn redact_secrets(input: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         let rest = &lower[i..];
-        let key_len = ["password=", "pwd=", "passwd=", "secret=", "token="]
-            .iter()
-            .find(|k| rest.starts_with(**k))
-            .map(|k| k.len());
+        let key_len = ["password=", "pwd=", "passwd=", "secret=", "token="].iter().find(|k| rest.starts_with(**k)).map(|k| k.len());
         if let Some(k) = key_len {
             out.push_str(&input[i..i + k]);
             out.push_str("***");

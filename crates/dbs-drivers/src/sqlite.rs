@@ -22,9 +22,7 @@ impl DatabaseDriver for SqliteDriver {
         cfg.validate()?;
         let path = cfg.database.clone().ok_or_else(|| DbError::invalid("database path required"))?;
         let read_only = cfg.read_only;
-        let conn = tokio::task::spawn_blocking(move || SqliteConnection::open(&path, read_only))
-            .await
-            .map_err(|e| DbError::internal(e.to_string()))??;
+        let conn = tokio::task::spawn_blocking(move || SqliteConnection::open(&path, read_only)).await.map_err(|e| DbError::internal(e.to_string()))??;
         Ok(Box::new(conn))
     }
 }
@@ -164,12 +162,7 @@ fn run_script(c: &Connection, sql: &str, opts: &ExecOptions) -> DbResult<Vec<Sta
         let cols: Vec<ColumnMeta> = stmt
             .columns()
             .iter()
-            .map(|col| ColumnMeta {
-                name: col.name().to_string(),
-                type_name: col.decl_type().unwrap_or("").to_string(),
-                nullable: None,
-                table: None,
-            })
+            .map(|col| ColumnMeta { name: col.name().to_string(), type_name: col.decl_type().unwrap_or("").to_string(), nullable: None, table: None })
             .collect();
         let decls: Vec<Option<String>> = stmt.columns().iter().map(|c| c.decl_type().map(String::from)).collect();
         let mut rows = stmt.query([]).map_err(map_err)?;
@@ -290,19 +283,14 @@ impl DatabaseConnection for SqliteConnection {
     }
 
     async fn list_schemas(&self, _database: Option<&str>) -> DbResult<Vec<String>> {
-        self.with(|c| Ok(text_rows(c, "SELECT name FROM pragma_database_list ORDER BY seq", &[])?.into_iter().filter_map(|r| r[0].clone()).collect()))
-            .await
+        self.with(|c| Ok(text_rows(c, "SELECT name FROM pragma_database_list ORDER BY seq", &[])?.into_iter().filter_map(|r| r[0].clone()).collect())).await
     }
 
     async fn list_objects(&self, schema: Option<&str>) -> DbResult<Vec<ObjectRef>> {
         let schema = schema_name(schema);
         self.with(move |c| {
             let master = format!("{}.sqlite_master", Dialect::Sqlite.quote_ident(&schema)?);
-            let rows = text_rows(
-                c,
-                &format!("SELECT type, name FROM {master} WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"),
-                &[],
-            )?;
+            let rows = text_rows(c, &format!("SELECT type, name FROM {master} WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name"), &[])?;
             Ok(rows
                 .into_iter()
                 .filter_map(|r| {
@@ -325,7 +313,11 @@ impl DatabaseConnection for SqliteConnection {
         let table = target.table.clone();
         self.with(move |c| {
             let qs = Dialect::Sqlite.quote_ident(&schema)?;
-            let cols = text_rows(c, &format!("SELECT cid, name, type, \"notnull\", dflt_value, pk FROM pragma_table_xinfo(?1, ?2) WHERE hidden IN (0,2,3)"), &[&table, &schema])?;
+            let cols = text_rows(
+                c,
+                "SELECT cid, name, type, \"notnull\", dflt_value, pk FROM pragma_table_xinfo(?1, ?2) WHERE hidden IN (0,2,3)",
+                &[&table, &schema],
+            )?;
             if cols.is_empty() {
                 return Err(DbError::new(ErrorKind::NotFound, "table not found"));
             }
@@ -364,13 +356,7 @@ impl DatabaseConnection for SqliteConnection {
                     .into_iter()
                     .next()
                     .and_then(|x| x[0].clone());
-                indexes.push(IndexDef {
-                    name,
-                    columns: cols,
-                    unique: r[1].as_deref() == Some("1"),
-                    primary: r[2].as_deref() == Some("pk"),
-                    definition: def,
-                });
+                indexes.push(IndexDef { name, columns: cols, unique: r[1].as_deref() == Some("1"), primary: r[2].as_deref() == Some("pk"), definition: def });
             }
             let fk_rows = text_rows(
                 c,

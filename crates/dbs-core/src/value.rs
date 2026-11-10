@@ -22,15 +22,25 @@ pub enum Value {
     Decimal(String),
     Text(String),
     /// Hex-encoded with a size cap; `truncated` set when only a prefix is included.
-    Bytes { hex: String, len: u64, truncated: bool },
+    Bytes {
+        hex: String,
+        len: u64,
+        truncated: bool,
+    },
     Json(serde_json::Value),
     Uuid(String),
     Date(String),
     Time(String),
-    Timestamp { iso: String, tz: bool },
+    Timestamp {
+        iso: String,
+        tz: bool,
+    },
     Array(Vec<Value>),
     /// Engine-specific value rendered as text with its native type name.
-    Other { type_name: String, text: String },
+    Other {
+        type_name: String,
+        text: String,
+    },
 }
 
 pub const JS_MAX_SAFE_INT: i64 = 9_007_199_254_740_991;
@@ -73,8 +83,7 @@ impl Value {
             Value::Date(s) | Value::Time(s) => s.clone(),
             Value::Timestamp { iso, .. } => iso.clone(),
             Value::Array(items) => {
-                let parts: Vec<String> =
-                    items.iter().map(|v| v.to_plain().unwrap_or_else(|| "NULL".into())).collect();
+                let parts: Vec<String> = items.iter().map(|v| v.to_plain().unwrap_or_else(|| "NULL".into())).collect();
                 format!("{{{}}}", parts.join(","))
             }
             Value::Other { text, .. } => text.clone(),
@@ -94,7 +103,7 @@ pub fn hex_encode(b: &[u8]) -> String {
 
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let s = s.strip_prefix("\\x").or_else(|| s.strip_prefix("0x")).unwrap_or(s);
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok()).collect()

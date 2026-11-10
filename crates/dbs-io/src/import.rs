@@ -307,10 +307,8 @@ impl RecordReader {
             self.columns = (1..=w).map(|i| format!("column_{i}")).collect();
         }
         let inferred = infer_types(&self.columns, &raw);
-        let rows = raw
-            .iter()
-            .map(|r| r.iter().zip(&inferred).map(|(c, t)| c.as_deref().map(|s| typed_value(s, *t)).unwrap_or(Value::Null)).collect())
-            .collect();
+        let rows =
+            raw.iter().map(|r| r.iter().zip(&inferred).map(|(c, t)| c.as_deref().map(|s| typed_value(s, *t)).unwrap_or(Value::Null)).collect()).collect();
         Ok(ImportPreview { columns: self.columns, inferred, rows })
     }
 }
@@ -409,7 +407,8 @@ mod tests {
         assert_eq!(p.columns, vec!["a", "b", "c"]);
         assert_eq!(p.rows[1][1], Value::Null);
         let l = "{\"a\":1}\n\n{\"a\":2}\n";
-        let p = RecordReader::open(l.as_bytes(), ImportOptions { format: ImportFormat::JsonLines, ..Default::default() }, 1 << 20).unwrap().preview(10).unwrap();
+        let p =
+            RecordReader::open(l.as_bytes(), ImportOptions { format: ImportFormat::JsonLines, ..Default::default() }, 1 << 20).unwrap().preview(10).unwrap();
         assert_eq!(p.rows.len(), 2);
     }
 
@@ -426,7 +425,10 @@ mod tests {
         assert!(RecordReader::open("[1,2]".as_bytes(), ImportOptions { format: ImportFormat::Json, ..Default::default() }, 1 << 20).is_err());
         assert!(RecordReader::open("{".as_bytes(), ImportOptions { format: ImportFormat::Json, ..Default::default() }, 1 << 20).is_err());
         assert!(RecordReader::open(&[0xff, 0xfe, 0x00][..], ImportOptions::default(), 1 << 20).is_err());
-        let p = RecordReader::open(&[b'a', b'\n', 0xe9, b'\n'][..], ImportOptions { encoding: "latin1".into(), ..Default::default() }, 1 << 20).unwrap().preview(5).unwrap();
+        let p = RecordReader::open(&[b'a', b'\n', 0xe9, b'\n'][..], ImportOptions { encoding: "latin1".into(), ..Default::default() }, 1 << 20)
+            .unwrap()
+            .preview(5)
+            .unwrap();
         assert_eq!(p.rows[0][0], Value::Text("é".into()));
     }
 

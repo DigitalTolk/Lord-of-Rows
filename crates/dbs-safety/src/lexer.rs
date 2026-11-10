@@ -66,12 +66,7 @@ pub fn split_statements(sql: &str, d: Dialect) -> Vec<Statement> {
         let trimmed = raw.trim();
         if !tokens.is_empty() && !trimmed.is_empty() {
             let lead = raw.len() - raw.trim_start().len();
-            out.push(Statement {
-                text: trimmed.to_string(),
-                start: start + lead,
-                end: start + lead + trimmed.len(),
-                tokens: std::mem::take(tokens),
-            });
+            out.push(Statement { text: trimmed.to_string(), start: start + lead, end: start + lead + trimmed.len(), tokens: std::mem::take(tokens) });
         }
         tokens.clear();
     };
@@ -227,9 +222,7 @@ pub fn split_statements(sql: &str, d: Dialect) -> Vec<Statement> {
 /// still splits normally.
 fn block_delta(prev: &[Token], word: &str) -> i32 {
     let is_routine = prev.first().is_some_and(|t| t.is_kw("CREATE") || t.is_kw("ALTER"))
-        && prev.iter().take(6).any(|t| {
-            matches!(t.text.as_str(), "FUNCTION" | "PROCEDURE" | "TRIGGER" | "EVENT" | "PROC")
-        });
+        && prev.iter().take(6).any(|t| matches!(t.text.as_str(), "FUNCTION" | "PROCEDURE" | "TRIGGER" | "EVENT" | "PROC"));
     if !is_routine {
         return 0;
     }
@@ -275,11 +268,7 @@ fn starts_with_ci(hay: &[u8], needle: &[u8]) -> bool {
 /// Return the statement containing byte offset `pos` (for "run statement at cursor").
 pub fn statement_at(sql: &str, d: Dialect, pos: usize) -> Option<Statement> {
     let stmts = split_statements(sql, d);
-    stmts
-        .iter()
-        .find(|s| pos >= s.start && pos <= s.end)
-        .or_else(|| stmts.iter().rev().find(|s| s.end <= pos))
-        .cloned()
+    stmts.iter().find(|s| pos >= s.start && pos <= s.end).or_else(|| stmts.iter().rev().find(|s| s.end <= pos)).cloned()
 }
 
 #[cfg(test)]

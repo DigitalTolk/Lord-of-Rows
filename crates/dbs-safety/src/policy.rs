@@ -45,13 +45,7 @@ impl SafetyPolicy {
     }
 
     pub fn read_only() -> Self {
-        SafetyPolicy {
-            name: "read-only".into(),
-            read_only: true,
-            confirm_at: None,
-            block_at: Some(Risk::Write),
-            typed_confirmation_for_destructive: false,
-        }
+        SafetyPolicy { name: "read-only".into(), read_only: true, confirm_at: None, block_at: Some(Risk::Write), typed_confirmation_for_destructive: false }
     }
 }
 
@@ -73,7 +67,9 @@ pub enum Decision {
         /// Opaque token bound to (connection, exact SQL). Resubmit to proceed.
         token: String,
     },
-    Block { findings: Vec<Finding> },
+    Block {
+        findings: Vec<Finding>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,15 +140,21 @@ fn describe(c: &Classified) -> String {
 /// Evaluate a script against a policy. Enforcement happens in the backend
 /// command handler, which refuses to call the driver unless this returns
 /// `Allow`, or `Confirm` and the caller presented a valid token (and typed phrase).
-pub fn evaluate(
-    sql: &str,
-    d: Dialect,
+pub fn evaluate(sql: &str, d: Dialect, policy: &SafetyPolicy, guard: &ConfirmationGuard, connection_id: &str, connection_name: &str) -> Evaluation {
+    evaluate_classified(classify_script(sql, d), sql, policy, guard, connection_id, connection_name)
+}
+
+/// Same as [`evaluate`] for statements classified elsewhere (e.g. Redis commands).
+/// `token_text` is the exact text the confirmation token is bound to.
+pub fn evaluate_classified(
+    statements: Vec<Classified>,
+    token_text: &str,
     policy: &SafetyPolicy,
     guard: &ConfirmationGuard,
     connection_id: &str,
     connection_name: &str,
 ) -> Evaluation {
-    let statements = classify_script(sql, d);
+    let sql = token_text;
     let mut block = Vec::new();
     let mut confirm = Vec::new();
     let mut destructive = false;
@@ -186,20 +188,12 @@ pub fn evaluate(
 }
 
 /// Final gate used by the command handler.
-pub fn authorize(
-    eval: &Evaluation,
-    guard: &ConfirmationGuard,
-    connection_id: &str,
-    sql: &str,
-    token: Option<&str>,
-    typed: Option<&str>,
-) -> Result<(), String> {
+pub fn authorize(eval: &Evaluation, guard: &ConfirmationGuard, connection_id: &str, sql: &str, token: Option<&str>, typed: Option<&str>) -> Result<(), String> {
     match &eval.decision {
         Decision::Allow => Ok(()),
-        Decision::Block { findings } => Err(format!(
-            "blocked by safety policy: {}",
-            findings.iter().map(|f| f.reason.as_str()).collect::<Vec<_>>().join(" | ")
-        )),
+        Decision::Block { findings } => {
+            Err(format!("blocked by safety policy: {}", findings.iter().map(|f| f.reason.as_str()).collect::<Vec<_>>().join(" | ")))
+        }
         Decision::Confirm { typed_phrase, .. } => {
             let Some(t) = token else { return Err("confirmation required".into()) };
             if !guard.verify(connection_id, sql, t) {

@@ -74,10 +74,8 @@ pub(crate) fn map_pg_err(e: tokio_postgres::Error) -> DbError {
         if let Some(d) = db.detail() {
             msg.push_str(&format!(" ({d})"));
         }
-        if let Some(p) = db.position() {
-            if let tokio_postgres::error::ErrorPosition::Original(n) = p {
-                msg.push_str(&format!(" at character {n}"));
-            }
+        if let Some(tokio_postgres::error::ErrorPosition::Original(n)) = db.position() {
+            msg.push_str(&format!(" at character {n}"));
         }
         let mut err = DbError::new(kind, msg).with_code(code);
         if let Some(h) = db.hint() {
@@ -124,11 +122,7 @@ impl DatabaseDriver for PgDriver {
         pc.connect_timeout(Duration::from_secs(cfg.connect_timeout_secs as u64));
         pc.keepalives(true);
         pc.keepalives_idle(Duration::from_secs(30));
-        pc.ssl_mode(if cfg.tls.mode == TlsMode::Disable {
-            tokio_postgres::config::SslMode::Disable
-        } else {
-            tokio_postgres::config::SslMode::Require
-        });
+        pc.ssl_mode(if cfg.tls.mode == TlsMode::Disable { tokio_postgres::config::SslMode::Disable } else { tokio_postgres::config::SslMode::Require });
         drop(secrets);
 
         let notices: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -215,10 +209,7 @@ impl PgConnection {
 
     async fn text_rows(&self, sql: &str, params: &[&(dyn tokio_postgres::types::ToSql + Sync)]) -> DbResult<Vec<Vec<Option<String>>>> {
         let rows = self.client.query(sql, params).await.map_err(map_pg_err)?;
-        Ok(rows
-            .iter()
-            .map(|r| (0..r.len()).map(|i| r.try_get::<_, Option<String>>(i).ok().flatten()).collect())
-            .collect())
+        Ok(rows.iter().map(|r| (0..r.len()).map(|i| r.try_get::<_, Option<String>>(i).ok().flatten()).collect()).collect())
     }
 
     async fn run_one(&self, idx: usize, text: &str, max_rows: usize) -> DbResult<StatementResult> {
@@ -248,11 +239,8 @@ impl PgConnection {
                 notices: self.take_notices(),
             });
         }
-        let columns: Vec<ColumnMeta> = stmt
-            .columns()
-            .iter()
-            .map(|c| ColumnMeta { name: c.name().into(), type_name: c.type_().name().into(), nullable: None, table: None })
-            .collect();
+        let columns: Vec<ColumnMeta> =
+            stmt.columns().iter().map(|c| ColumnMeta { name: c.name().into(), type_name: c.type_().name().into(), nullable: None, table: None }).collect();
         let ncol = columns.len();
         let stream = self.client.query_raw(&stmt, std::iter::empty::<PgParam>()).await.map_err(map_pg_err)?;
         pin_mut!(stream);
@@ -272,7 +260,7 @@ impl PgConnection {
             rows.push(row);
         }
         let affected = stream.rows_affected();
-        let verb = text.trim_start().split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+        let verb = text.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
         Ok(StatementResult {
             statement_index: idx,
             sql_excerpt: excerpt(text),
@@ -297,7 +285,8 @@ impl PgConnection {
                 }
                 M::Row(r) => {
                     if columns.is_empty() {
-                        columns = r.columns().iter().map(|c| ColumnMeta { name: c.name().into(), type_name: "text".into(), nullable: None, table: None }).collect();
+                        columns =
+                            r.columns().iter().map(|c| ColumnMeta { name: c.name().into(), type_name: "text".into(), nullable: None, table: None }).collect();
                     }
                     if rows.len() >= max_rows {
                         truncated = true;
@@ -447,9 +436,7 @@ impl DatabaseConnection for PgConnection {
             .collect();
         if s == "public" {
             if let Ok(ext) = self.text_rows("SELECT extname::text FROM pg_extension ORDER BY 1", &[]).await {
-                out.extend(ext.into_iter().filter_map(|r| {
-                    Some(ObjectRef { kind: ObjectKind::Extension, database: None, schema: None, name: r[0].clone()? })
-                }));
+                out.extend(ext.into_iter().filter_map(|r| Some(ObjectRef { kind: ObjectKind::Extension, database: None, schema: None, name: r[0].clone()? })));
             }
         }
         Ok(out)
@@ -525,15 +512,17 @@ impl DatabaseConnection for PgConnection {
             )
             .await?;
         let action = |c: Option<&str>| {
-            c.map(|c| match c {
-                "a" => "NO ACTION",
-                "r" => "RESTRICT",
-                "c" => "CASCADE",
-                "n" => "SET NULL",
-                "d" => "SET DEFAULT",
-                _ => "NO ACTION",
-            }
-            .to_string())
+            c.map(|c| {
+                match c {
+                    "a" => "NO ACTION",
+                    "r" => "RESTRICT",
+                    "c" => "CASCADE",
+                    "n" => "SET NULL",
+                    "d" => "SET DEFAULT",
+                    _ => "NO ACTION",
+                }
+                .to_string()
+            })
         };
         let split = |s: &Option<String>| s.clone().unwrap_or_default().split(',').filter(|x| !x.is_empty()).map(String::from).collect::<Vec<_>>();
         let con_rows = self
@@ -705,10 +694,7 @@ impl DatabaseConnection for PgConnection {
             .map(|c| ColumnMeta { name: c.name().into(), type_name: c.type_().name().into(), nullable: None, table: Some(t.table.clone()) })
             .collect::<Vec<_>>();
         let n = columns.len();
-        let data = rows
-            .iter()
-            .map(|r| (0..n).map(|i| r.try_get::<_, PgAny>(i).map(|v| v.0).unwrap_or(Value::Null)).collect())
-            .collect();
+        let data = rows.iter().map(|r| (0..n).map(|i| r.try_get::<_, PgAny>(i).map(|v| v.0).unwrap_or(Value::Null)).collect()).collect();
         Ok(ResultSet { columns, rows: data, truncated: false })
     }
 

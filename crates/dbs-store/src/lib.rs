@@ -113,13 +113,8 @@ impl AppStore {
     }
 
     pub fn get_connection(&self, id: Uuid) -> DbResult<ConnectionConfig> {
-        let body: Option<String> = self
-            .conn
-            .lock()
-            .unwrap()
-            .query_row("SELECT body FROM connections WHERE id = ?1", [id.to_string()], |r| r.get(0))
-            .optional()
-            .map_err(e)?;
+        let body: Option<String> =
+            self.conn.lock().unwrap().query_row("SELECT body FROM connections WHERE id = ?1", [id.to_string()], |r| r.get(0)).optional().map_err(e)?;
         let body = body.ok_or_else(|| DbError::new(ErrorKind::NotFound, "connection not found"))?;
         serde_json::from_str(&body).map_err(|x| DbError::internal(x.to_string()))
     }
@@ -127,9 +122,7 @@ impl AppStore {
     pub fn list_connections(&self) -> DbResult<Vec<StoredConnection>> {
         let c = self.conn.lock().unwrap();
         let mut st = c.prepare("SELECT body, last_used, sort FROM connections ORDER BY sort, created").map_err(e)?;
-        let rows = st
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, i64>(2)?)))
-            .map_err(e)?;
+        let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, i64>(2)?))).map_err(e)?;
         let mut out = Vec::new();
         for row in rows {
             let (body, last_used, sort) = row.map_err(e)?;
@@ -147,11 +140,7 @@ impl AppStore {
     }
 
     pub fn touch_connection(&self, id: Uuid) -> DbResult<()> {
-        self.conn
-            .lock()
-            .unwrap()
-            .execute("UPDATE connections SET last_used = ?1 WHERE id = ?2", params![now(), id.to_string()])
-            .map_err(e)?;
+        self.conn.lock().unwrap().execute("UPDATE connections SET last_used = ?1 WHERE id = ?2", params![now(), id.to_string()]).map_err(e)?;
         Ok(())
     }
 
@@ -188,9 +177,7 @@ impl AppStore {
 
     pub fn list_snippets(&self) -> DbResult<Vec<Snippet>> {
         let c = self.conn.lock().unwrap();
-        let mut st = c
-            .prepare("SELECT id,name,sql,folder,favorite,connection_id,updated FROM snippets ORDER BY favorite DESC, name")
-            .map_err(e)?;
+        let mut st = c.prepare("SELECT id,name,sql,folder,favorite,connection_id,updated FROM snippets ORDER BY favorite DESC, name").map_err(e)?;
         let rows = st
             .query_map([], |r| {
                 Ok(Snippet {
@@ -232,9 +219,8 @@ impl AppStore {
 
     pub fn list_history(&self, connection_id: &str, limit: u32) -> DbResult<Vec<HistoryEntry>> {
         let c = self.conn.lock().unwrap();
-        let mut st = c
-            .prepare("SELECT id,connection_id,ts,sql,duration_ms,rows,ok,error FROM history WHERE connection_id=?1 ORDER BY id DESC LIMIT ?2")
-            .map_err(e)?;
+        let mut st =
+            c.prepare("SELECT id,connection_id,ts,sql,duration_ms,rows,ok,error FROM history WHERE connection_id=?1 ORDER BY id DESC LIMIT ?2").map_err(e)?;
         let rows = st
             .query_map(params![connection_id, limit], |r| {
                 Ok(HistoryEntry {
@@ -265,13 +251,7 @@ impl AppStore {
 
     // ---- settings ----
     pub fn get_setting(&self, k: &str) -> DbResult<Option<serde_json::Value>> {
-        let v: Option<String> = self
-            .conn
-            .lock()
-            .unwrap()
-            .query_row("SELECT v FROM settings WHERE k=?1", [k], |r| r.get(0))
-            .optional()
-            .map_err(e)?;
+        let v: Option<String> = self.conn.lock().unwrap().query_row("SELECT v FROM settings WHERE k=?1", [k], |r| r.get(0)).optional().map_err(e)?;
         Ok(v.and_then(|s| serde_json::from_str(&s).ok()))
     }
 
@@ -282,10 +262,7 @@ impl AppStore {
         self.conn
             .lock()
             .unwrap()
-            .execute(
-                "INSERT INTO settings(k,v) VALUES(?1,?2) ON CONFLICT(k) DO UPDATE SET v=excluded.v",
-                params![k, v.to_string()],
-            )
+            .execute("INSERT INTO settings(k,v) VALUES(?1,?2) ON CONFLICT(k) DO UPDATE SET v=excluded.v", params![k, v.to_string()])
             .map_err(e)?;
         Ok(())
     }

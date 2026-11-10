@@ -35,12 +35,31 @@ pub enum Engine {
 
 impl Engine {
     pub const ALL: [Engine; 25] = [
-        Engine::Postgres, Engine::MySql, Engine::MariaDb, Engine::Sqlite, Engine::SqlServer,
-        Engine::Oracle, Engine::CockroachDb, Engine::Redshift, Engine::SingleStore,
-        Engine::Greenplum, Engine::Vertica, Engine::DuckDb, Engine::LibSql, Engine::Turso,
-        Engine::YugabyteDb, Engine::Percona, Engine::MongoDb, Engine::Redis, Engine::Cassandra,
-        Engine::DynamoDb, Engine::Elasticsearch, Engine::ClickHouse, Engine::BigQuery,
-        Engine::Snowflake, Engine::CloudflareD1,
+        Engine::Postgres,
+        Engine::MySql,
+        Engine::MariaDb,
+        Engine::Sqlite,
+        Engine::SqlServer,
+        Engine::Oracle,
+        Engine::CockroachDb,
+        Engine::Redshift,
+        Engine::SingleStore,
+        Engine::Greenplum,
+        Engine::Vertica,
+        Engine::DuckDb,
+        Engine::LibSql,
+        Engine::Turso,
+        Engine::YugabyteDb,
+        Engine::Percona,
+        Engine::MongoDb,
+        Engine::Redis,
+        Engine::Cassandra,
+        Engine::DynamoDb,
+        Engine::Elasticsearch,
+        Engine::ClickHouse,
+        Engine::BigQuery,
+        Engine::Snowflake,
+        Engine::CloudflareD1,
     ];
 
     pub fn default_port(self) -> Option<u16> {
@@ -64,11 +83,8 @@ impl Engine {
     /// Engines that speak a protocol we already implement.
     pub fn wire_family(self) -> Option<Engine> {
         match self {
-            Engine::Postgres | Engine::CockroachDb | Engine::YugabyteDb | Engine::Redshift
-            | Engine::Greenplum => Some(Engine::Postgres),
-            Engine::MySql | Engine::MariaDb | Engine::Percona | Engine::SingleStore => {
-                Some(Engine::MySql)
-            }
+            Engine::Postgres | Engine::CockroachDb | Engine::YugabyteDb | Engine::Redshift | Engine::Greenplum => Some(Engine::Postgres),
+            Engine::MySql | Engine::MariaDb | Engine::Percona | Engine::SingleStore => Some(Engine::MySql),
             Engine::Sqlite => Some(Engine::Sqlite),
             Engine::Redis => Some(Engine::Redis),
             _ => None,
@@ -195,14 +211,12 @@ impl ConnectionConfig {
         }
         match self.engine {
             Engine::Sqlite | Engine::DuckDb => {
-                if self.database.as_deref().map_or(true, |d| d.trim().is_empty()) {
+                if self.database.as_deref().is_none_or(|d| d.trim().is_empty()) {
                     return Err(DbError::invalid("a database file path is required"));
                 }
             }
             _ => {
-                if self.socket_path.is_none()
-                    && self.host.as_deref().map_or(true, |h| h.trim().is_empty())
-                {
+                if self.socket_path.is_none() && self.host.as_deref().is_none_or(|h| h.trim().is_empty()) {
                     return Err(DbError::invalid("host is required"));
                 }
             }
@@ -215,9 +229,7 @@ impl ConnectionConfig {
         if self.tls.mode == TlsMode::Disable && self.ssh.is_none() {
             if let Some(h) = &self.host {
                 if !is_loopback(h) && self.environment == EnvironmentKind::Production {
-                    return Err(DbError::invalid(
-                        "TLS cannot be disabled for a non-local production connection without an SSH tunnel",
-                    ));
+                    return Err(DbError::invalid("TLS cannot be disabled for a non-local production connection without an SSH tunnel"));
                 }
             }
         }

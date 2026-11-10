@@ -126,10 +126,8 @@ async fn crud_scenario(c: &dyn DatabaseConnection, schema: Option<&str>, table: 
     assert_eq!(c.count_rows(&t, &[]).await.unwrap(), 3, "delete must have been rolled back");
 
     // Constraint violation surfaces as Constraint and rolls back.
-    let err = c
-        .apply_changes(&t, &[RowChange::Insert { values: vec![("id".into(), Value::Int(1)), ("name".into(), Value::Text("dup".into()))] }])
-        .await
-        .unwrap_err();
+    let err =
+        c.apply_changes(&t, &[RowChange::Insert { values: vec![("id".into(), Value::Int(1)), ("name".into(), Value::Text("dup".into()))] }]).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Constraint, "{err:?}");
 
     let desc = c.describe_table(&t).await.expect("describe");
@@ -358,10 +356,8 @@ async fn sqlite_end_to_end() {
         tokio::time::sleep(Duration::from_millis(200)).await;
         t2.cancel();
     });
-    let err = c
-        .execute("WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM r) SELECT count(*) FROM r", &ExecOptions::default(), tok)
-        .await
-        .unwrap_err();
+    let err =
+        c.execute("WITH RECURSIVE r(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM r) SELECT count(*) FROM r", &ExecOptions::default(), tok).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::Cancelled, "{err:?}");
 
     // Missing file is NOT silently created.

@@ -125,9 +125,7 @@ fn decode(v: mysql_async::Value, col: &mysql_async::Column) -> Value {
                 Value::Timestamp { iso: format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}{}", frac(us)), tz: false }
             }
         }
-        M::Time(neg, d, h, mi, s, us) => {
-            Value::Time(format!("{}{:02}:{mi:02}:{s:02}{}", if neg { "-" } else { "" }, d * 24 + h as u32, frac(us)))
-        }
+        M::Time(neg, d, h, mi, s, us) => Value::Time(format!("{}{:02}:{mi:02}:{s:02}{}", if neg { "-" } else { "" }, d * 24 + h as u32, frac(us))),
         M::Bytes(b) => {
             use ColumnType::*;
             match ct {
@@ -161,7 +159,11 @@ fn decode(v: mysql_async::Value, col: &mysql_async::Column) -> Value {
                     for byte in b.iter().take(8) {
                         n = (n << 8) | *byte as u64;
                     }
-                    if col.column_length() == 1 { Value::Bool(n != 0) } else { Value::from_u64(n) }
+                    if col.column_length() == 1 {
+                        Value::Bool(n != 0)
+                    } else {
+                        Value::from_u64(n)
+                    }
                 }
                 MYSQL_TYPE_GEOMETRY => Value::Other { type_name: "geometry".into(), text: hex_encode(&b) },
                 _ if binary_cs => Value::from_bytes(&b),
@@ -175,7 +177,11 @@ fn decode(v: mysql_async::Value, col: &mysql_async::Column) -> Value {
 }
 
 fn frac(us: u32) -> String {
-    if us == 0 { String::new() } else { format!(".{us:06}") }
+    if us == 0 {
+        String::new()
+    } else {
+        format!(".{us:06}")
+    }
 }
 
 fn type_name(c: &mysql_async::Column) -> String {
@@ -330,7 +336,15 @@ impl DatabaseConnection for MySqlConnection {
             sessions_monitor: true,
             kill_session: true,
             native_backup: false,
-            object_kinds: vec![ObjectKind::Table, ObjectKind::View, ObjectKind::Function, ObjectKind::Procedure, ObjectKind::Trigger, ObjectKind::Event, ObjectKind::Index],
+            object_kinds: vec![
+                ObjectKind::Table,
+                ObjectKind::View,
+                ObjectKind::Function,
+                ObjectKind::Procedure,
+                ObjectKind::Trigger,
+                ObjectKind::Event,
+                ObjectKind::Index,
+            ],
         }
     }
 
@@ -583,7 +597,10 @@ impl DatabaseConnection for MySqlConnection {
 
     async fn list_sessions(&self) -> DbResult<Vec<SessionInfo>> {
         let rows = self
-            .text_rows("SELECT ID, USER, DB, HOST, COMMAND, LEFT(INFO, 2000), TIME * 1000, STATE FROM information_schema.PROCESSLIST ORDER BY TIME DESC", vec![])
+            .text_rows(
+                "SELECT ID, USER, DB, HOST, COMMAND, LEFT(INFO, 2000), TIME * 1000, STATE FROM information_schema.PROCESSLIST ORDER BY TIME DESC",
+                vec![],
+            )
             .await?;
         Ok(rows
             .into_iter()

@@ -53,13 +53,39 @@ pub struct Classified {
 
 /// Functions known to have side effects or privileged behaviour even inside SELECT.
 const SIDE_EFFECT_FUNCS: &[&str] = &[
-    "PG_TERMINATE_BACKEND", "PG_CANCEL_BACKEND", "PG_RELOAD_CONF", "PG_ROTATE_LOGFILE",
-    "SETVAL", "NEXTVAL", "SET_CONFIG", "LO_UNLINK", "LO_IMPORT", "LO_EXPORT", "LO_FROM_BYTEA",
-    "DBLINK_EXEC", "DBLINK", "PG_READ_FILE", "PG_READ_BINARY_FILE", "PG_LS_DIR", "PG_FILE_WRITE",
-    "PG_ADVISORY_LOCK", "PG_ADVISORY_XACT_LOCK", "PG_SWITCH_WAL", "PG_PROMOTE",
-    "PG_CREATE_RESTORE_POINT", "PG_DROP_REPLICATION_SLOT", "PG_CREATE_LOGICAL_REPLICATION_SLOT",
-    "LOAD_FILE", "SLEEP", "BENCHMARK", "GET_LOCK", "RELEASE_LOCK",
-    "LOAD_EXTENSION", "XP_CMDSHELL", "OPENROWSET", "OPENDATASOURCE",
+    "PG_TERMINATE_BACKEND",
+    "PG_CANCEL_BACKEND",
+    "PG_RELOAD_CONF",
+    "PG_ROTATE_LOGFILE",
+    "SETVAL",
+    "NEXTVAL",
+    "SET_CONFIG",
+    "LO_UNLINK",
+    "LO_IMPORT",
+    "LO_EXPORT",
+    "LO_FROM_BYTEA",
+    "DBLINK_EXEC",
+    "DBLINK",
+    "PG_READ_FILE",
+    "PG_READ_BINARY_FILE",
+    "PG_LS_DIR",
+    "PG_FILE_WRITE",
+    "PG_ADVISORY_LOCK",
+    "PG_ADVISORY_XACT_LOCK",
+    "PG_SWITCH_WAL",
+    "PG_PROMOTE",
+    "PG_CREATE_RESTORE_POINT",
+    "PG_DROP_REPLICATION_SLOT",
+    "PG_CREATE_LOGICAL_REPLICATION_SLOT",
+    "LOAD_FILE",
+    "SLEEP",
+    "BENCHMARK",
+    "GET_LOCK",
+    "RELEASE_LOCK",
+    "LOAD_EXTENSION",
+    "XP_CMDSHELL",
+    "OPENROWSET",
+    "OPENDATASOURCE",
 ];
 
 pub fn classify_script(sql: &str, d: Dialect) -> Vec<Classified> {
@@ -83,9 +109,7 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
 
     let first = kw(0);
     let (verb, mut risk) = match first {
-        "SELECT" | "VALUES" | "TABLE" | "SHOW" | "DESCRIBE" | "DESC" | "PRAGMA" if first != "PRAGMA" => {
-            (first.to_string(), Risk::Read)
-        }
+        "SELECT" | "VALUES" | "TABLE" | "SHOW" | "DESCRIBE" | "DESC" | "PRAGMA" if first != "PRAGMA" => (first.to_string(), Risk::Read),
         "PRAGMA" => {
             if toks.iter().any(|t| t.text == "=") || toks.iter().any(|t| t.text == "(") && !is_readonly_pragma(kw(1)) {
                 ("PRAGMA".into(), Risk::Admin)
@@ -133,7 +157,8 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
             } else {
                 if kw(1) == "TABLE" {
                     flags.push(Flag::MayLockTable);
-                    if has_kw("TYPE") || (has_kw("ALTER") && has_kw("COLUMN") && has_kw("SET") && has_kw("DATA"))
+                    if has_kw("TYPE")
+                        || (has_kw("ALTER") && has_kw("COLUMN") && has_kw("SET") && has_kw("DATA"))
                         || (d == Dialect::MySql && (has_kw("MODIFY") || has_kw("CHANGE")))
                     {
                         flags.push(Flag::MayRewriteTable);
@@ -152,9 +177,10 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
             flags.push(Flag::PrivilegeChange);
             (first.into(), Risk::Admin)
         }
-        "VACUUM" | "ANALYZE" | "ANALYSE" | "REINDEX" | "CLUSTER" | "CHECKPOINT" | "OPTIMIZE" | "REPAIR"
-        | "FLUSH" | "KILL" | "SHUTDOWN" | "LOCK" | "UNLOCK" | "ATTACH" | "DETACH" | "INSTALL"
-        | "UNINSTALL" | "PURGE" | "RESET" if !(first == "RESET" && d != Dialect::MySql) => {
+        "VACUUM" | "ANALYZE" | "ANALYSE" | "REINDEX" | "CLUSTER" | "CHECKPOINT" | "OPTIMIZE" | "REPAIR" | "FLUSH" | "KILL" | "SHUTDOWN" | "LOCK" | "UNLOCK"
+        | "ATTACH" | "DETACH" | "INSTALL" | "UNINSTALL" | "PURGE" | "RESET"
+            if !(first == "RESET" && d != Dialect::MySql) =>
+        {
             if matches!(first, "LOCK") {
                 flags.push(Flag::MayLockTable);
             }
@@ -164,15 +190,13 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
             flags.push(Flag::DynamicSql);
             ("BEGIN".into(), Risk::Unknown)
         }
-        "BEGIN" | "START" | "COMMIT" | "ROLLBACK" | "SAVEPOINT" | "RELEASE" | "END" | "ABORT" => {
-            (first.into(), Risk::Session)
-        }
+        "BEGIN" | "START" | "COMMIT" | "ROLLBACK" | "SAVEPOINT" | "RELEASE" | "END" | "ABORT" => (first.into(), Risk::Session),
         "SET" | "USE" | "RESET" | "DISCARD" => {
             let joined: Vec<&str> = words.iter().map(|t| t.text.as_str()).collect();
             let disables_ro = joined.windows(2).any(|w| w == ["READ", "WRITE"])
-                || joined.iter().any(|w| {
-                    matches!(*w, "DEFAULT_TRANSACTION_READ_ONLY" | "TRANSACTION_READ_ONLY" | "TX_READ_ONLY" | "ROLE" | "AUTHORIZATION" | "ALL")
-                });
+                || joined
+                    .iter()
+                    .any(|w| matches!(*w, "DEFAULT_TRANSACTION_READ_ONLY" | "TRANSACTION_READ_ONLY" | "TX_READ_ONLY" | "ROLE" | "AUTHORIZATION" | "ALL"));
             if disables_ro {
                 flags.push(Flag::DisablesReadOnly);
             }
@@ -186,11 +210,12 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
             let analyze = words.iter().skip(1).take(6).any(|t| matches!(t.text.as_str(), "ANALYZE" | "ANALYSE"));
             if analyze {
                 // EXPLAIN ANALYZE actually runs the statement.
-                let inner_pos = words.iter().position(|t| {
-                    matches!(t.text.as_str(), "SELECT" | "INSERT" | "UPDATE" | "DELETE" | "WITH" | "MERGE" | "VALUES" | "TABLE")
-                });
+                let inner_pos =
+                    words.iter().position(|t| matches!(t.text.as_str(), "SELECT" | "INSERT" | "UPDATE" | "DELETE" | "WITH" | "MERGE" | "VALUES" | "TABLE"));
                 let inner_kw = inner_pos.map(|p| words[p].text.as_str()).unwrap_or("");
-                if inner_kw == "SELECT" || inner_kw == "VALUES" || inner_kw == "TABLE"
+                if inner_kw == "SELECT"
+                    || inner_kw == "VALUES"
+                    || inner_kw == "TABLE"
                     || (inner_kw == "WITH" && !words.iter().any(|t| matches!(t.text.as_str(), "INSERT" | "UPDATE" | "DELETE" | "MERGE")))
                 {
                     ("EXPLAIN".into(), Risk::Read)
@@ -246,9 +271,8 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
     }
 
     // Known side-effect functions anywhere in the statement.
-    let calls_side_effect = toks.windows(2).any(|w| {
-        w[0].kind == TokKind::Word && w[1].text == "(" && SIDE_EFFECT_FUNCS.contains(&w[0].text.as_str())
-    }) || words.iter().any(|t| t.text == "XP_CMDSHELL");
+    let calls_side_effect = toks.windows(2).any(|w| w[0].kind == TokKind::Word && w[1].text == "(" && SIDE_EFFECT_FUNCS.contains(&w[0].text.as_str()))
+        || words.iter().any(|t| t.text == "XP_CMDSHELL");
     if calls_side_effect {
         flags.push(Flag::SideEffectFunction);
         if risk < Risk::Admin {
@@ -260,7 +284,22 @@ pub fn classify_statement(index: usize, st: &Statement, d: Dialect) -> Classifie
 }
 
 fn is_readonly_pragma(name: &str) -> bool {
-    matches!(name, "TABLE_INFO" | "TABLE_XINFO" | "INDEX_LIST" | "INDEX_INFO" | "INDEX_XINFO" | "FOREIGN_KEY_LIST" | "INTEGRITY_CHECK" | "QUICK_CHECK" | "FUNCTION_LIST" | "PRAGMA_LIST" | "COLLATION_LIST" | "DATABASE_LIST" | "TABLE_LIST")
+    matches!(
+        name,
+        "TABLE_INFO"
+            | "TABLE_XINFO"
+            | "INDEX_LIST"
+            | "INDEX_INFO"
+            | "INDEX_XINFO"
+            | "FOREIGN_KEY_LIST"
+            | "INTEGRITY_CHECK"
+            | "QUICK_CHECK"
+            | "FUNCTION_LIST"
+            | "PRAGMA_LIST"
+            | "COLLATION_LIST"
+            | "DATABASE_LIST"
+            | "TABLE_LIST"
+    )
 }
 
 /// Index (in `toks`) of a WHERE at paren depth 0, if any.
@@ -296,10 +335,7 @@ fn main_dml_after_cte(toks: &[Token]) -> Option<&'static str> {
 
 /// `WHERE TRUE`, `WHERE 1`, `WHERE 1=1`, `WHERE 'a'='a'` (and nothing else follows except LIMIT/RETURNING/ORDER).
 fn is_tautology(rest: &[Token]) -> bool {
-    let end = rest
-        .iter()
-        .position(|t| t.kind == TokKind::Word && matches!(t.text.as_str(), "LIMIT" | "RETURNING" | "ORDER" | "OR"))
-        .unwrap_or(rest.len());
+    let end = rest.iter().position(|t| t.kind == TokKind::Word && matches!(t.text.as_str(), "LIMIT" | "RETURNING" | "ORDER" | "OR")).unwrap_or(rest.len());
     let cond: Vec<&str> = rest[..end].iter().map(|t| t.text.as_str()).filter(|s| *s != "(" && *s != ")").collect();
     match cond.as_slice() {
         ["TRUE"] | ["1"] => true,

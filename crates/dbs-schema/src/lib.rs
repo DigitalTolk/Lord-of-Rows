@@ -262,10 +262,8 @@ fn order_changes(mut v: Vec<Change>) -> Vec<Change> {
     // FKs are added at the end anyway, so cycles are harmless.
     let creates: Vec<Change> = v.iter().filter(|c| matches!(c, Change::CreateTable { .. })).cloned().collect();
     if creates.len() > 1 {
-        let new_names: BTreeSet<String> = creates
-            .iter()
-            .filter_map(|c| if let Change::CreateTable { table } = c { Some(table.object.name.clone()) } else { None })
-            .collect();
+        let new_names: BTreeSet<String> =
+            creates.iter().filter_map(|c| if let Change::CreateTable { table } = c { Some(table.object.name.clone()) } else { None }).collect();
         let mut done: BTreeSet<String> = BTreeSet::new();
         let mut ordered = Vec::new();
         let mut pending = creates;
@@ -273,7 +271,8 @@ fn order_changes(mut v: Vec<Change>) -> Vec<Change> {
             let before = pending.len();
             pending.retain(|c| {
                 let Change::CreateTable { table } = c else { return false };
-                let deps_ok = table.foreign_keys.iter().all(|f| f.ref_table == table.object.name || done.contains(&f.ref_table) || !new_names.contains(&f.ref_table));
+                let deps_ok =
+                    table.foreign_keys.iter().all(|f| f.ref_table == table.object.name || done.contains(&f.ref_table) || !new_names.contains(&f.ref_table));
                 if deps_ok {
                     done.insert(table.object.name.clone());
                     ordered.push(c.clone());
@@ -395,11 +394,10 @@ fn drop_fk_sql(d: Dialect, t: &TableTarget, f: &ForeignKeyDef) -> DbResult<Strin
 /// required table rebuild instead of emitting incorrect SQL.
 pub fn plan(d: Dialect, changes: &[Change], current: &[TableDescription]) -> DbResult<Migration> {
     let mut steps = Vec::new();
-    let col_of = |t: &TableTarget, c: &str| {
-        current.iter().find(|x| x.object.name == t.table).and_then(|x| x.columns.iter().find(|cc| cc.name == c)).cloned()
-    };
+    let col_of = |t: &TableTarget, c: &str| current.iter().find(|x| x.object.name == t.table).and_then(|x| x.columns.iter().find(|cc| cc.name == c)).cloned();
     for ch in changes {
-        let mut st = MigrationStep { change: ch.clone(), sql: vec![], reverse_sql: None, destructive: false, may_lock: false, may_rewrite: false, warnings: vec![] };
+        let mut st =
+            MigrationStep { change: ch.clone(), sql: vec![], reverse_sql: None, destructive: false, may_lock: false, may_rewrite: false, warnings: vec![] };
         match ch {
             Change::CreateTable { table } => {
                 st.sql = create_table_sql(d, table)?;
@@ -502,7 +500,9 @@ pub fn plan(d: Dialect, changes: &[Change], current: &[TableDescription]) -> DbR
                 st.sql = vec![match (d, column) {
                     (Dialect::Postgres, Some(c)) => format!("COMMENT ON COLUMN {t}.{} IS {lit}", d.quote_ident(c)?),
                     (Dialect::Postgres, None) => format!("COMMENT ON TABLE {t} IS {lit}"),
-                    (Dialect::MySql, None) => format!("ALTER TABLE {t} COMMENT = {}", to.as_ref().map(|s| d.literal(&Value::Text(s.clone()))).unwrap_or("''".into())),
+                    (Dialect::MySql, None) => {
+                        format!("ALTER TABLE {t} COMMENT = {}", to.as_ref().map(|s| d.literal(&Value::Text(s.clone()))).unwrap_or("''".into()))
+                    }
                     (Dialect::MySql, Some(c)) => {
                         let mut def = col_of(table, c).ok_or_else(|| DbError::invalid("unknown column"))?;
                         def.comment = to.clone();
@@ -544,13 +544,25 @@ pub fn plan(d: Dialect, changes: &[Change], current: &[TableDescription]) -> DbR
                 let t = d.qualified(table)?;
                 let def = constraint.definition.clone().ok_or_else(|| DbError::invalid("constraint has no definition"))?;
                 st.sql = vec![format!("ALTER TABLE {t} ADD CONSTRAINT {} {def}", d.quote_ident(&constraint.name)?)];
-                let drop_kw = if d == Dialect::MySql && constraint.kind == "UNIQUE" { "INDEX" } else if d == Dialect::MySql { "CHECK" } else { "CONSTRAINT" };
+                let drop_kw = if d == Dialect::MySql && constraint.kind == "UNIQUE" {
+                    "INDEX"
+                } else if d == Dialect::MySql {
+                    "CHECK"
+                } else {
+                    "CONSTRAINT"
+                };
                 st.reverse_sql = Some(vec![format!("ALTER TABLE {t} DROP {drop_kw} {}", d.quote_ident(&constraint.name)?)]);
                 st.may_lock = true;
             }
             Change::DropConstraint { table, constraint } => {
                 let t = d.qualified(table)?;
-                let drop_kw = if d == Dialect::MySql && constraint.kind == "UNIQUE" { "INDEX" } else if d == Dialect::MySql { "CHECK" } else { "CONSTRAINT" };
+                let drop_kw = if d == Dialect::MySql && constraint.kind == "UNIQUE" {
+                    "INDEX"
+                } else if d == Dialect::MySql {
+                    "CHECK"
+                } else {
+                    "CONSTRAINT"
+                };
                 st.sql = vec![format!("ALTER TABLE {t} DROP {drop_kw} {}", d.quote_ident(&constraint.name)?)];
                 if let Some(def) = &constraint.definition {
                     st.reverse_sql = Some(vec![format!("ALTER TABLE {t} ADD CONSTRAINT {} {def}", d.quote_ident(&constraint.name)?)]);
@@ -592,7 +604,11 @@ pub fn designer_migration(d: Dialect, original: Option<&TableDescription>, edite
         };
         let back = match d {
             Dialect::MySql => format!("RENAME TABLE {} TO {from}", d.qualified(&TableTarget { schema: tt.schema.clone(), table: edited.object.name.clone() })?),
-            _ => format!("ALTER TABLE {} RENAME TO {}", d.qualified(&TableTarget { schema: tt.schema.clone(), table: edited.object.name.clone() })?, d.quote_ident(&orig.object.name)?),
+            _ => format!(
+                "ALTER TABLE {} RENAME TO {}",
+                d.qualified(&TableTarget { schema: tt.schema.clone(), table: edited.object.name.clone() })?,
+                d.quote_ident(&orig.object.name)?
+            ),
         };
         m.steps.push(MigrationStep {
             change: Change::RenameColumn { table: tt, from: orig.object.name.clone(), to: edited.object.name.clone() },

@@ -1,0 +1,1249 @@
+use std::sync::Arc;
+use std::time::Instant;
+
+use dbs_audit::{AuditEntry, AuditFilter, Category, NewEvent, Outcome, VerifyReport};
+use dbs_core::*;
+use dbs_safety::{Classified, Decision, Evaluation, Risk};
+use dbs_secrets::{SecretKind, SecretStore};
+use dbs_store::{Document, HistoryEntry, Snippet, StoredConnection};
+use serde::{Deserialize, Serialize};
+use tauri::State;
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
+use crate::state::{AppState, FileGrant, GrantMode, Session, APP_VERSION};
+
+type R<T> = Result<T, DbError>;
+
+fn env_name(c: &ConnectionConfig) -> String {
+    serde_json::to_value(c.environment).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+}
+
+fn engine_name(e: Engine) -> String {
+    serde_json::to_value(e).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
+}
+
+fn audit(st: &AppState, cat: Category, outcome: Outcome, cfg: Option<&ConnectionConfig>, f: impl FnOnce(&mut NewEvent)) {
+    let mut ev = NewEvent { category: Some(cat), outcome: Some(outcome), ..Default::default() };
+    if let Some(c) = cfg {
+        ev.connection_id = Some(c.id.to_string());
+        ev.engine = Some(engine_name(c.engine));
+        ev.environment = Some(env_name(c));
+    }
+    f(&mut ev);
+    if let Err(e) = st.audit.record(ev) {
+        tracing::error!("audit write failed: {}", e.message);
+    }
+}
+
+fn check_len(s: &str, max: usize, what: &str) -> R<()> {
+    if s.len() > max {
+        return Err(DbError::invalid(format!("{what} is too large")));
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- app
+
+#[derive(Serialize)]
+pub struct AppInfo {
+    version: &'static str,
+    os: &'static str,
+    arch: &'static str,
+    secret_backend: &'static str,
+    supported_engines: Vec<Engine>,
+    all_engines: Vec<Engine>,
+}
+
+#[tauri::command]
+pub fn app_info(st: State<'_, AppState>) -> AppInfo {
+    AppInfo {
+        version: APP_VERSION,
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        secret_backend: st.secrets.backend_name(),
+        supported_engines: dbs_drivers::supported_engines(),
+        all_engines: Engine::ALL.to_vec(),
+    }
+}
+
+// ---------------------------------------------------------------- connections
+
+#[derive(Deserialize)]
+pub struct SaveConnection {
+    config: ConnectionConfig,
+    /// `Some("")` clears, `None` leaves unchanged.
+    password: Option<String>,
+    /// Save password to the OS keychain (true) or keep it only for this app run.
+    #[serde(default = "yes")]
+    remember_password: bool,
+}
+fn yes() -> bool {
+    true
+}
+
+#[tauri::command]
+pub fn list_connections(st: State<'_, AppState>) -> R<Vec<StoredConnection>> {
+    st.store.list_connections()
+}
+
+#[tauri::command]
+pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<ConnectionConfig> {
+    let mut cfg = req.config;
+    if cfg.id.is_nil() {
+        cfg.id = Uuid::new_v4();
+    }
+    cfg.validate()?;
+    let existed = st.store.get_connection(cfg.id).is_ok();
+    st.store.save_connection(&cfg)?;
+    if let Some(pw) = req.password {
+        check_len(&pw, 4096, "password")?;
+        if pw.is_empty() {
+            st.secrets.delete(cfg.id, SecretKind::DbPassword)?;
+            st.session_secrets.delete(cfg.id, SecretKind::DbPassword)?;
+        } else if req.remember_password {
+            st.secrets.set(cfg.id, SecretKind::DbPassword, &pw)?;
+            st.session_secrets.delete(cfg.id, SecretKind::DbPassword)?;
+        } else {
+            st.secrets.delete(cfg.id, SecretKind::DbPassword)?;
+            st.session_secrets.set(cfg.id, SecretKind::DbPassword, &pw)?;
+        }
+        audit(&st, Category::CredentialChanged, Outcome::Success, Some(&cfg), |_| {});
+    }
+    audit(&st, if existed { Category::ConnectionModified } else { Category::ConnectionCreated }, Outcome::Success, Some(&cfg), |_| {});
+    Ok(cfg)
+}
+
+#[tauri::command]
+pub fn delete_connection(st: State<'_, AppState>, id: Uuid) -> R<()> {
+    let cfg = st.store.get_connection(id).ok();
+    st.store.delete_connection(id)?;
+    st.secrets.delete_all(id)?;
+    st.session_secrets.delete_all(id)?;
+    audit(&st, Category::ConnectionDeleted, Outcome::Success, cfg.as_ref(), |e| e.connection_id = Some(id.to_string()));
+    audit(&st, Category::CredentialDeleted, Outcome::Success, cfg.as_ref(), |e| e.connection_id = Some(id.to_string()));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reorder_connections(st: State<'_, AppState>, ids: Vec<Uuid>) -> R<()> {
+    st.store.reorder_connections(&ids)
+}
+
+fn resolve_secrets(st: &AppState, cfg: &ConnectionConfig, override_pw: Option<String>) -> R<ConnectSecrets> {
+    if let Some(p) = override_pw {
+        return Ok(ConnectSecrets { password: Some(p) });
+    }
+    let p = match st.session_secrets.get(cfg.id, SecretKind::DbPassword)? {
+        Some(s) => Some(s.into_inner()),
+        None => st.secrets.get(cfg.id, SecretKind::DbPassword)?.map(|s| s.into_inner()),
+    };
+    Ok(ConnectSecrets { password: p })
+}
+
+async fn connect(cfg: &ConnectionConfig, secrets: ConnectSecrets) -> R<Box<dyn DatabaseConnection>> {
+    if cfg.ssh.is_some() {
+        return Err(DbError::unsupported("SSH tunnelling (not yet implemented in this build; see KNOWN_LIMITATIONS.md)"));
+    }
+    let drv = dbs_drivers::driver_for(cfg.engine)
+        .ok_or_else(|| DbError::unsupported(&format!("the {} driver (not yet implemented; see FEATURE_MATRIX.md)", engine_name(cfg.engine))))?;
+    drv.connect(cfg, secrets).await
+}
+
+#[derive(Serialize)]
+pub struct TestResult {
+    server: ServerInfo,
+    latency_ms: u64,
+}
+
+#[tauri::command]
+pub async fn test_connection(st: State<'_, AppState>, config: ConnectionConfig, password: Option<String>) -> R<TestResult> {
+    config.validate()?;
+    let secrets = resolve_secrets(&st, &config, password)?;
+    let t = Instant::now();
+    let r = async {
+        let c = connect(&config, secrets).await?;
+        let info = c.server_info().await?;
+        let _ = c.close().await;
+        Ok::<_, DbError>(info)
+    }
+    .await;
+    match r {
+        Ok(server) => Ok(TestResult { server, latency_ms: t.elapsed().as_millis() as u64 }),
+        Err(e) => {
+            audit(&st, Category::ConnectionFailed, Outcome::Failure, Some(&config), |ev| ev.error_kind = Some(e.kind));
+            Err(e)
+        }
+    }
+}
+
+/// Export connection definitions as JSON. Never includes secrets.
+#[tauri::command]
+pub fn export_connections(st: State<'_, AppState>) -> R<String> {
+    let list: Vec<ConnectionConfig> = st.store.list_connections()?.into_iter().map(|c| c.config).collect();
+    audit(&st, Category::Export, Outcome::Success, None, |e| e.detail = Some(format!("{} connection definitions (no secrets)", list.len())));
+    serde_json::to_string_pretty(&serde_json::json!({ "format": "dbstudio.connections.v1", "connections": list })).map_err(|e| DbError::internal(e.to_string()))
+}
+
+#[tauri::command]
+pub fn import_connections(st: State<'_, AppState>, json: String) -> R<usize> {
+    check_len(&json, 10 * 1024 * 1024, "import")?;
+    let v: serde_json::Value = serde_json::from_str(&json).map_err(|e| DbError::invalid(e.to_string()))?;
+    if v.get("format").and_then(|f| f.as_str()) != Some("dbstudio.connections.v1") {
+        return Err(DbError::invalid("unrecognised connections file"));
+    }
+    let list: Vec<ConnectionConfig> = serde_json::from_value(v["connections"].clone()).map_err(|e| DbError::invalid(e.to_string()))?;
+    let mut n = 0;
+    for mut c in list {
+        c.id = Uuid::new_v4(); // never collide with / overwrite existing entries
+        c.init_sql = None; // imported init SQL could be malicious; user must re-add it
+        if c.validate().is_ok() {
+            st.store.save_connection(&c)?;
+            audit(&st, Category::ConnectionCreated, Outcome::Success, Some(&c), |e| e.detail = Some("imported".into()));
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// Parse `postgres://user@host:5432/db?sslmode=...` into a config. Any password in
+/// the URL is returned separately so the UI can store it in the keychain.
+#[derive(Serialize)]
+pub struct ParsedUrl {
+    config: ConnectionConfig,
+    password: Option<String>,
+}
+
+#[tauri::command]
+pub fn parse_connection_url(url: String) -> R<ParsedUrl> {
+    check_len(&url, 4096, "URL")?;
+    let (scheme, rest) = url.split_once("://").ok_or_else(|| DbError::invalid("not a connection URL"))?;
+    let engine = match scheme.to_ascii_lowercase().as_str() {
+        "postgres" | "postgresql" => Engine::Postgres,
+        "mysql" => Engine::MySql,
+        "mariadb" => Engine::MariaDb,
+        "redis" | "rediss" => Engine::Redis,
+        "sqlite" | "file" => Engine::Sqlite,
+        "cockroachdb" => Engine::CockroachDb,
+        _ => return Err(DbError::unsupported(&format!("URL scheme {scheme}"))),
+    };
+    let mut cfg = ConnectionConfig {
+        id: Uuid::nil(),
+        name: String::new(),
+        engine,
+        host: None,
+        port: None,
+        database: None,
+        username: None,
+        socket_path: None,
+        tls: TlsConfig::default(),
+        ssh: None,
+        environment: EnvironmentKind::Development,
+        read_only: false,
+        color: None,
+        group: None,
+        tags: vec![],
+        notes: None,
+        favorite: false,
+        connect_timeout_secs: 10,
+        query_timeout_secs: None,
+        init_sql: None,
+    };
+    if engine == Engine::Sqlite {
+        cfg.database = Some(rest.to_string());
+        cfg.name = rest.rsplit('/').next().unwrap_or("sqlite").to_string();
+        return Ok(ParsedUrl { config: cfg, password: None });
+    }
+    let (main, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let (auth_host, db) = main.split_once('/').unwrap_or((main, ""));
+    let (auth, hostport) = match auth_host.rsplit_once('@') {
+        Some((a, h)) => (Some(a), h),
+        None => (None, auth_host),
+    };
+    let mut password = None;
+    if let Some(a) = auth {
+        let (u, p) = a.split_once(':').map(|(u, p)| (u, Some(p))).unwrap_or((a, None));
+        cfg.username = Some(pct_decode(u)).filter(|s| !s.is_empty());
+        password = p.map(pct_decode);
+    }
+    let (h, p) = match hostport.rsplit_once(':') {
+        Some((h, p)) if !h.ends_with(']') || hostport.starts_with('[') => (h, Some(p)),
+        _ => (hostport, None),
+    };
+    cfg.host = Some(h.to_string()).filter(|s| !s.is_empty());
+    if let Some(p) = p {
+        cfg.port = Some(p.parse().map_err(|_| DbError::invalid("invalid port"))?);
+    }
+    cfg.database = Some(pct_decode(db)).filter(|s| !s.is_empty());
+    for kv in query.split('&').filter(|s| !s.is_empty()) {
+        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+        match (k, v) {
+            ("sslmode", "disable") | ("ssl-mode", "DISABLED") => cfg.tls.mode = TlsMode::Disable,
+            ("sslmode", "verify-ca") => cfg.tls.mode = TlsMode::VerifyCa,
+            // "require"/"prefer" in libpq don't verify certs; we deliberately upgrade to full verification.
+            ("sslmode", _) => cfg.tls.mode = TlsMode::VerifyFull,
+            _ => {}
+        }
+    }
+    if scheme == "redis" && !url.contains("sslmode") {
+        cfg.tls.mode = TlsMode::Disable;
+    }
+    if cfg.host.as_deref().is_some_and(is_loopback) && !query.contains("sslmode") {
+        cfg.tls.mode = TlsMode::Disable;
+    }
+    cfg.name = format!("{}@{}", cfg.database.clone().unwrap_or_default(), cfg.host.clone().unwrap_or_default());
+    Ok(ParsedUrl { config: cfg, password })
+}
+
+fn pct_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+// ---------------------------------------------------------------- sessions
+
+#[derive(Serialize)]
+pub struct SessionOpened {
+    session_id: Uuid,
+    server: ServerInfo,
+    capabilities: Capabilities,
+    policy: dbs_safety::SafetyPolicy,
+    config: ConnectionConfig,
+}
+
+#[tauri::command]
+pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password: Option<String>) -> R<SessionOpened> {
+    let cfg = st.store.get_connection(connection_id)?;
+    let secrets = resolve_secrets(&st, &cfg, password)?;
+    let t = Instant::now();
+    let conn = match connect(&cfg, secrets).await {
+        Ok(c) => c,
+        Err(e) => {
+            audit(&st, Category::ConnectionFailed, Outcome::Failure, Some(&cfg), |ev| ev.error_kind = Some(e.kind));
+            return Err(e);
+        }
+    };
+    let server = conn.server_info().await?;
+    let capabilities = conn.capabilities();
+    let id = Uuid::new_v4();
+    st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn) }));
+    st.store.touch_connection(cfg.id)?;
+    audit(&st, Category::ConnectionOpened, Outcome::Success, Some(&cfg), |e| {
+        e.session_id = Some(id.to_string());
+        e.duration_ms = Some(t.elapsed().as_millis() as u64);
+    });
+    Ok(SessionOpened { session_id: id, server, capabilities, policy: st.policy_for(&cfg), config: cfg })
+}
+
+#[tauri::command]
+pub async fn close_session(st: State<'_, AppState>, session_id: String) -> R<()> {
+    let s = st.session(&session_id)?;
+    st.sessions.lock().unwrap().remove(&s.id);
+    s.conn.close().await
+}
+
+#[tauri::command]
+pub async fn ping_session(st: State<'_, AppState>, session_id: String) -> R<u64> {
+    let s = st.session(&session_id)?;
+    let t = Instant::now();
+    s.conn.ping().await?;
+    Ok(t.elapsed().as_millis() as u64)
+}
+
+// ---------------------------------------------------------------- metadata
+
+#[tauri::command]
+pub async fn list_databases(st: State<'_, AppState>, session_id: String) -> R<Vec<String>> {
+    st.session(&session_id)?.conn.list_databases().await
+}
+
+#[tauri::command]
+pub async fn list_schemas(st: State<'_, AppState>, session_id: String) -> R<Vec<String>> {
+    st.session(&session_id)?.conn.list_schemas(None).await
+}
+
+#[tauri::command]
+pub async fn list_objects(st: State<'_, AppState>, session_id: String, schema: Option<String>) -> R<Vec<ObjectRef>> {
+    st.session(&session_id)?.conn.list_objects(schema.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn describe_table(st: State<'_, AppState>, session_id: String, target: TableTarget) -> R<TableDescription> {
+    st.session(&session_id)?.conn.describe_table(&target).await
+}
+
+#[tauri::command]
+pub async fn object_ddl(st: State<'_, AppState>, session_id: String, object: ObjectRef) -> R<String> {
+    st.session(&session_id)?.conn.object_ddl(&object).await
+}
+
+// ---------------------------------------------------------------- query
+
+fn redis_risk(class: &str) -> Risk {
+    match class {
+        "read" => Risk::Read,
+        "write" => Risk::Write,
+        "destructive" => Risk::Destructive,
+        "admin" => Risk::Admin,
+        _ => Risk::Unknown,
+    }
+}
+
+fn evaluate_for(st: &AppState, s: &Session, sql: &str) -> Evaluation {
+    let policy = st.policy_for(&s.config);
+    let id = s.config.id.to_string();
+    if s.config.engine == Engine::Redis {
+        let mut pos = 0;
+        let statements = sql
+            .lines()
+            .enumerate()
+            .filter_map(|(i, l)| {
+                let start = pos;
+                pos += l.len() + 1;
+                let t = l.trim();
+                if t.is_empty() || t.starts_with('#') {
+                    return None;
+                }
+                let cmd = dbs_drivers::redis::tokenize_command(t).ok()?.into_iter().next()?;
+                Some(Classified {
+                    index: i,
+                    verb: cmd.to_ascii_uppercase(),
+                    risk: redis_risk(dbs_drivers::redis::classify_redis_command(&cmd)),
+                    flags: vec![],
+                    start,
+                    end: start + l.len(),
+                    excerpt: t.chars().take(200).collect(),
+                })
+            })
+            .collect();
+        return dbs_safety::evaluate_classified(statements, sql, &policy, &st.guard, &id, &s.config.name);
+    }
+    dbs_safety::evaluate(sql, s.conn.dialect(), &policy, &st.guard, &id, &s.config.name)
+}
+
+#[tauri::command]
+pub fn evaluate_sql(st: State<'_, AppState>, session_id: String, sql: String) -> R<Evaluation> {
+    check_len(&sql, 50 * 1024 * 1024, "SQL")?;
+    let s = st.session(&session_id)?;
+    Ok(evaluate_for(&st, &s, &sql))
+}
+
+#[tauri::command]
+pub fn split_sql(engine: Engine, sql: String) -> R<Vec<(usize, usize)>> {
+    check_len(&sql, 50 * 1024 * 1024, "SQL")?;
+    Ok(dbs_safety::split_statements(&sql, Dialect::from(engine)).into_iter().map(|s| (s.start, s.end)).collect())
+}
+
+#[derive(Deserialize)]
+pub struct RunSql {
+    session_id: String,
+    sql: String,
+    /// Client-chosen id used for cancellation.
+    query_id: String,
+    confirm_token: Option<String>,
+    typed_confirmation: Option<String>,
+    max_rows: Option<usize>,
+}
+
+#[derive(Serialize)]
+pub struct RunResult {
+    results: Vec<StatementResult>,
+    duration_ms: u64,
+}
+
+#[tauri::command]
+pub async fn run_sql(st: State<'_, AppState>, req: RunSql) -> R<RunResult> {
+    check_len(&req.sql, 50 * 1024 * 1024, "SQL")?;
+    check_len(&req.query_id, 100, "query id")?;
+    let s = st.session(&req.session_id)?;
+    let eval = evaluate_for(&st, &s, &req.sql);
+    let kinds: Vec<String> = eval.statements.iter().map(|c| c.verb.clone()).collect();
+    let max_risk = eval.statements.iter().map(|c| c.risk).max().unwrap_or(Risk::Read);
+    let cid = s.config.id.to_string();
+    if let Err(msg) = dbs_safety::authorize(&eval, &st.guard, &cid, &req.sql, req.confirm_token.as_deref(), req.typed_confirmation.as_deref()) {
+        let blocked = matches!(eval.decision, Decision::Block { .. });
+        audit(&st, Category::SafetyBlocked, Outcome::Denied, Some(&s.config), |e| {
+            e.statement_kinds = Some(kinds.clone());
+            e.query_text = Some(req.sql.clone());
+            e.detail = Some(msg.clone());
+        });
+        return Err(DbError::new(if blocked { ErrorKind::PolicyBlocked } else { ErrorKind::ConfirmationRequired }, msg));
+    }
+    if matches!(eval.decision, Decision::Confirm { .. }) {
+        audit(&st, Category::SafetyConfirmed, Outcome::Success, Some(&s.config), |e| {
+            e.statement_kinds = Some(kinds.clone());
+            e.query_text = Some(req.sql.clone());
+        });
+    }
+    let token = CancellationToken::new();
+    st.running.lock().unwrap().insert(req.query_id.clone(), token.clone());
+    let opts = ExecOptions {
+        max_rows: req.max_rows.unwrap_or_else(|| st.max_rows()).clamp(1, 1_000_000),
+        timeout_ms: s.config.query_timeout_secs.map(|t| t as u64 * 1000),
+    };
+    let t = Instant::now();
+    let res = s.conn.execute(&req.sql, &opts, token).await;
+    st.running.lock().unwrap().remove(&req.query_id);
+    let dur = t.elapsed().as_millis() as u64;
+    let cat = match max_risk {
+        Risk::Schema | Risk::Destructive if kinds.iter().any(|k| matches!(k.as_str(), "CREATE" | "ALTER" | "DROP" | "TRUNCATE" | "RENAME" | "COMMENT")) => {
+            Category::DdlExecuted
+        }
+        Risk::Admin if kinds.iter().any(|k| matches!(k.as_str(), "GRANT" | "REVOKE")) => Category::PrivilegeChange,
+        Risk::Write | Risk::Destructive => Category::DmlExecuted,
+        _ => Category::QueryExecuted,
+    };
+    let affected: u64 = res.as_ref().map(|r| r.iter().filter_map(|s| s.rows_affected).sum()).unwrap_or(0);
+    audit(&st, cat, if res.is_ok() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.session_id = Some(s.id.to_string());
+        e.duration_ms = Some(dur);
+        e.rows_affected = Some(affected);
+        e.statement_kinds = Some(kinds.clone());
+        e.query_text = Some(req.sql.clone());
+        e.error_kind = res.as_ref().err().map(|e| e.kind);
+    });
+    let _ = st.store.add_history(
+        &HistoryEntry {
+            id: 0,
+            connection_id: cid,
+            ts: String::new(),
+            sql: st.store_query_text(&s.config).then(|| req.sql.chars().take(100_000).collect()),
+            duration_ms: Some(dur as i64),
+            rows: Some(affected as i64),
+            ok: res.is_ok(),
+            error: res.as_ref().err().map(|e| e.message.chars().take(500).collect()),
+        },
+        2000,
+    );
+    Ok(RunResult { results: res?, duration_ms: dur })
+}
+
+#[tauri::command]
+pub async fn cancel_query(st: State<'_, AppState>, query_id: String) -> R<bool> {
+    let tok = st.running.lock().unwrap().get(&query_id).cloned();
+    Ok(match tok {
+        Some(t) => {
+            t.cancel();
+            true
+        }
+        None => false,
+    })
+}
+
+#[tauri::command]
+pub async fn explain_sql(
+    st: State<'_, AppState>,
+    session_id: String,
+    sql: String,
+    analyze: bool,
+    confirm_token: Option<String>,
+    typed_confirmation: Option<String>,
+) -> R<ResultSet> {
+    let s = st.session(&session_id)?;
+    if analyze {
+        // EXPLAIN ANALYZE executes the statement; run it through the policy.
+        let full = format!("EXPLAIN ANALYZE {sql}");
+        let eval = evaluate_for(&st, &s, &full);
+        dbs_safety::authorize(&eval, &st.guard, &s.config.id.to_string(), &full, confirm_token.as_deref(), typed_confirmation.as_deref())
+            .map_err(|m| DbError::new(ErrorKind::ConfirmationRequired, m))?;
+    }
+    s.conn.explain(&sql, analyze).await
+}
+
+// ---------------------------------------------------------------- table data
+
+#[tauri::command]
+pub async fn fetch_table(st: State<'_, AppState>, session_id: String, target: TableTarget, page: PageRequest) -> R<ResultSet> {
+    st.session(&session_id)?.conn.fetch_table(&target, &page).await
+}
+
+#[tauri::command]
+pub async fn count_rows(st: State<'_, AppState>, session_id: String, target: TableTarget, filters: Vec<FilterCondition>) -> R<u64> {
+    st.session(&session_id)?.conn.count_rows(&target, &filters).await
+}
+
+#[derive(Serialize)]
+pub struct ChangePreview {
+    statements: Vec<String>,
+    decision: Decision,
+}
+
+fn change_preview_text(d: Dialect, target: &TableTarget, changes: &[RowChange]) -> R<Vec<String>> {
+    changes.iter().map(|c| build_change_sql(d, target, c).map(|g| g.preview(d))).collect()
+}
+
+fn edit_policy_decision(st: &AppState, s: &Session, text: &str, changes: &[RowChange]) -> Decision {
+    let policy = st.policy_for(&s.config);
+    if policy.read_only {
+        return Decision::Block { findings: vec![dbs_safety::Finding { statement: 0, risk: Risk::Write, reason: "connection is read-only".into() }] };
+    }
+    let risk = Risk::Write;
+    if policy.confirm_at.is_some_and(|c| risk >= c) {
+        Decision::Confirm {
+            findings: vec![dbs_safety::Finding { statement: 0, risk, reason: format!("{} row change(s) on {} connection", changes.len(), policy.name) }],
+            typed_phrase: None,
+            token: st.guard.token(&s.config.id.to_string(), text),
+        }
+    } else {
+        Decision::Allow
+    }
+}
+
+#[tauri::command]
+pub fn preview_changes(st: State<'_, AppState>, session_id: String, target: TableTarget, changes: Vec<RowChange>) -> R<ChangePreview> {
+    let s = st.session(&session_id)?;
+    if changes.len() > 100_000 {
+        return Err(DbError::invalid("too many staged changes"));
+    }
+    let statements = change_preview_text(s.conn.dialect(), &target, &changes)?;
+    let decision = edit_policy_decision(&st, &s, &statements.join(";\n"), &changes);
+    Ok(ChangePreview { statements, decision })
+}
+
+#[tauri::command]
+pub async fn apply_changes(
+    st: State<'_, AppState>,
+    session_id: String,
+    target: TableTarget,
+    changes: Vec<RowChange>,
+    confirm_token: Option<String>,
+) -> R<ApplyReport> {
+    let s = st.session(&session_id)?;
+    let text = change_preview_text(s.conn.dialect(), &target, &changes)?.join(";\n");
+    match edit_policy_decision(&st, &s, &text, &changes) {
+        Decision::Allow => {}
+        Decision::Block { .. } => return Err(DbError::new(ErrorKind::PolicyBlocked, "connection is read-only")),
+        Decision::Confirm { .. } => {
+            if !confirm_token.is_some_and(|t| st.guard.verify(&s.config.id.to_string(), &text, &t)) {
+                return Err(DbError::new(ErrorKind::ConfirmationRequired, "confirmation required for these changes"));
+            }
+        }
+    }
+    let t = Instant::now();
+    let r = s.conn.apply_changes(&target, &changes).await;
+    audit(&st, Category::DataEdited, if r.as_ref().is_ok_and(|r| r.committed) { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.object = Some(format!("{}.{}", target.schema.clone().unwrap_or_default(), target.table));
+        e.duration_ms = Some(t.elapsed().as_millis() as u64);
+        e.rows_affected = r.as_ref().ok().map(|r| r.rows_affected);
+        e.error_kind = r.as_ref().err().map(|e| e.kind);
+        e.detail = r.as_ref().ok().filter(|r| !r.conflicts.is_empty()).map(|r| format!("{} conflict(s); rolled back", r.conflicts.len()));
+    });
+    r
+}
+
+#[tauri::command]
+pub fn copy_rows(columns: Vec<ColumnMeta>, rows: Vec<Vec<Value>>, options: dbs_io::ExportOptions) -> R<String> {
+    if rows.len() > 1_000_000 {
+        return Err(DbError::invalid("too many rows to copy"));
+    }
+    dbs_io::export_to_string(&columns, &rows, options)
+}
+
+// ---------------------------------------------------------------- files
+
+#[derive(Serialize)]
+pub struct PickedFile {
+    grant: String,
+    name: String,
+    display_path: String,
+}
+
+/// Opens a native dialog in the backend. Returns an opaque grant id, or None if cancelled.
+#[tauri::command]
+pub async fn pick_file(
+    app: tauri::AppHandle,
+    st: State<'_, AppState>,
+    save: bool,
+    default_name: Option<String>,
+    extensions: Vec<String>,
+) -> R<Option<PickedFile>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut d = app.dialog().file();
+    if !extensions.is_empty() {
+        let exts: Vec<&str> = extensions.iter().map(String::as_str).filter(|e| e.chars().all(|c| c.is_ascii_alphanumeric())).collect();
+        d = d.add_filter("Files", &exts);
+    }
+    if let Some(n) = default_name.as_deref().filter(|n| !n.contains(['/', '\\'])) {
+        d = d.set_file_name(n);
+    }
+    if save {
+        d.save_file(move |p| {
+            let _ = tx.send(p);
+        });
+    } else {
+        d.pick_file(move |p| {
+            let _ = tx.send(p);
+        });
+    }
+    let Some(fp) = rx.await.map_err(|_| DbError::internal("dialog closed"))? else { return Ok(None) };
+    let path = fp.into_path().map_err(|_| DbError::invalid("unsupported file location"))?;
+    let grant = Uuid::new_v4().to_string();
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let display_path = path.to_string_lossy().into_owned();
+    st.grants.lock().unwrap().insert(grant.clone(), FileGrant { path, mode: if save { GrantMode::Write } else { GrantMode::Read } });
+    Ok(Some(PickedFile { grant, name, display_path }))
+}
+
+fn open_writer(g: &FileGrant, gzip: bool) -> R<Box<dyn std::io::Write + Send>> {
+    // Overwrite confirmation is handled by the native save dialog that issued the grant.
+    let f = std::fs::File::create(&g.path).map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
+    let w = std::io::BufWriter::new(f);
+    Ok(if gzip { Box::new(flate2::write::GzEncoder::new(w, flate2::Compression::default())) } else { Box::new(w) })
+}
+
+#[derive(Serialize)]
+pub struct ExportReport {
+    rows: u64,
+    path: String,
+}
+
+#[tauri::command]
+pub async fn export_table(
+    st: State<'_, AppState>,
+    session_id: String,
+    target: TableTarget,
+    filters: Vec<FilterCondition>,
+    grant: String,
+    options: dbs_io::ExportOptions,
+    gzip: bool,
+) -> R<ExportReport> {
+    let s = st.session(&session_id)?;
+    let g = st.grant(&grant, GrantMode::Write)?;
+    let mut opts = options;
+    if opts.table.is_none() {
+        opts.table = Some(target.clone());
+    }
+    if opts.dialect.is_none() {
+        opts.dialect = Some(s.conn.dialect());
+    }
+    let w = open_writer(&g, gzip)?;
+    let first = s.conn.fetch_table(&target, &PageRequest { offset: 0, limit: 5000, order_by: vec![], filters: filters.clone() }).await?;
+    let mut ex = dbs_io::Exporter::begin(w, &first.columns, opts)?;
+    ex.write_rows(&first.rows)?;
+    let mut offset = first.rows.len() as u64;
+    let mut last = first.rows.len();
+    // Stable paging requires an order; use the primary key when available.
+    let order: Vec<(String, SortDir)> =
+        s.conn.describe_table(&target).await.map(|d| d.primary_key.into_iter().map(|c| (c, SortDir::Asc)).collect()).unwrap_or_default();
+    while last == 5000 {
+        let page = s.conn.fetch_table(&target, &PageRequest { offset, limit: 5000, order_by: order.clone(), filters: filters.clone() }).await?;
+        ex.write_rows(&page.rows)?;
+        last = page.rows.len();
+        offset += last as u64;
+    }
+    let rows = ex.finish()?;
+    audit(&st, Category::Export, Outcome::Success, Some(&s.config), |e| {
+        e.object = Some(target.table.clone());
+        e.rows_affected = Some(rows);
+    });
+    Ok(ExportReport { rows, path: g.path.to_string_lossy().into_owned() })
+}
+
+#[tauri::command]
+pub async fn export_query(
+    st: State<'_, AppState>,
+    session_id: String,
+    sql: String,
+    grant: String,
+    options: dbs_io::ExportOptions,
+    gzip: bool,
+) -> R<ExportReport> {
+    let s = st.session(&session_id)?;
+    let g = st.grant(&grant, GrantMode::Write)?;
+    let eval = evaluate_for(&st, &s, &sql);
+    if eval.statements.iter().any(|c| c.risk > Risk::Read) {
+        return Err(DbError::new(ErrorKind::PolicyBlocked, "only read-only queries can be exported"));
+    }
+    let res = s.conn.execute(&sql, &ExecOptions { max_rows: 5_000_000, timeout_ms: None }, CancellationToken::new()).await?;
+    let rs = res.into_iter().rev().find_map(|r| r.result).ok_or_else(|| DbError::invalid("query returned no rows"))?;
+    let mut ex = dbs_io::Exporter::begin(open_writer(&g, gzip)?, &rs.columns, options)?;
+    for chunk in rs.rows.chunks(5000) {
+        ex.write_rows(chunk)?;
+    }
+    let rows = ex.finish()?;
+    audit(&st, Category::Export, Outcome::Success, Some(&s.config), |e| {
+        e.rows_affected = Some(rows);
+        e.query_text = Some(sql.clone());
+    });
+    Ok(ExportReport { rows, path: g.path.to_string_lossy().into_owned() })
+}
+
+const MAX_IMPORT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+#[tauri::command]
+pub fn import_preview(st: State<'_, AppState>, grant: String, options: dbs_io::ImportOptions) -> R<dbs_io::ImportPreview> {
+    let g = st.grant(&grant, GrantMode::Read)?;
+    let f = std::fs::File::open(&g.path).map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
+    dbs_io::RecordReader::open(f, options, MAX_IMPORT_BYTES)?.preview(100)
+}
+
+#[derive(Deserialize)]
+pub struct ImportRun {
+    session_id: String,
+    grant: String,
+    options: dbs_io::ImportOptions,
+    target: TableTarget,
+    mapping: Vec<dbs_io::ColumnMapping>,
+    create_table: bool,
+    /// Stop on the first error (and roll back everything) vs. skip bad batches.
+    #[serde(default = "yes")]
+    atomic: bool,
+    confirm_token: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ImportReport {
+    rows_imported: u64,
+    batches_failed: Vec<(u64, String)>,
+    committed: bool,
+    confirm: Option<Decision>,
+}
+
+#[tauri::command]
+pub async fn import_run(st: State<'_, AppState>, req: ImportRun) -> R<ImportReport> {
+    let s = st.session(&req.session_id)?;
+    let g = st.grant(&req.grant, GrantMode::Read)?;
+    let d = s.conn.dialect();
+    // Policy: importing is a write. Bind the token to target+mapping.
+    let token_text = format!("IMPORT INTO {} {}", d.qualified(&req.target)?, serde_json::to_string(&req.mapping).unwrap_or_default());
+    let policy = st.policy_for(&s.config);
+    if policy.read_only {
+        return Err(DbError::new(ErrorKind::PolicyBlocked, "connection is read-only"));
+    }
+    if policy.confirm_at.is_some_and(|c| Risk::Write >= c)
+        && !req.confirm_token.as_deref().is_some_and(|t| st.guard.verify(&s.config.id.to_string(), &token_text, t))
+    {
+        return Ok(ImportReport {
+            rows_imported: 0,
+            batches_failed: vec![],
+            committed: false,
+            confirm: Some(Decision::Confirm {
+                findings: vec![dbs_safety::Finding {
+                    statement: 0,
+                    risk: Risk::Write,
+                    reason: format!("import into {} ({} environment)", req.target.table, policy.name),
+                }],
+                typed_phrase: None,
+                token: st.guard.token(&s.config.id.to_string(), &token_text),
+            }),
+        });
+    }
+    let f = std::fs::File::open(&g.path).map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
+    let batch_size = req.options.batch_size.clamp(1, 5000);
+    let mut rdr = dbs_io::RecordReader::open(f, req.options, MAX_IMPORT_BYTES)?;
+    if req.create_table {
+        s.conn.execute_params(&GeneratedStatement { sql: dbs_io::create_table_sql(d, &req.target, &req.mapping)?, params: vec![] }).await?;
+    }
+    let caps = s.conn.capabilities();
+    let use_tx = caps.transactions && req.atomic;
+    if use_tx {
+        s.conn.begin().await?;
+    }
+    let mut rows = 0u64;
+    let mut failed = Vec::new();
+    let mut batch = Vec::with_capacity(batch_size);
+    let mut batch_no = 0u64;
+    loop {
+        let rec = rdr.next_record();
+        let done = rec.is_none();
+        if let Some(r) = rec {
+            match r {
+                Ok(cells) => batch.push(cells),
+                Err(e) => {
+                    if use_tx {
+                        let _ = s.conn.rollback().await;
+                        return Err(e);
+                    }
+                    failed.push((rdr.line, e.message));
+                    continue;
+                }
+            }
+        }
+        if batch.len() >= batch_size || (done && !batch.is_empty()) {
+            batch_no += 1;
+            let stmt = dbs_io::build_insert_batch(d, &req.target, &req.mapping, &batch)?;
+            match s.conn.execute_params(&stmt).await {
+                Ok(n) => rows += n,
+                Err(e) => {
+                    if use_tx {
+                        let _ = s.conn.rollback().await;
+                        audit(&st, Category::Import, Outcome::Failure, Some(&s.config), |ev| {
+                            ev.object = Some(req.target.table.clone());
+                            ev.error_kind = Some(e.kind);
+                        });
+                        return Err(DbError::new(e.kind, format!("batch {batch_no}: {}", e.message)));
+                    }
+                    failed.push((batch_no, e.message));
+                }
+            }
+            batch.clear();
+        }
+        if done {
+            break;
+        }
+    }
+    if use_tx {
+        s.conn.commit().await?;
+    }
+    audit(&st, Category::Import, if failed.is_empty() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.object = Some(req.target.table.clone());
+        e.rows_affected = Some(rows);
+    });
+    Ok(ImportReport { rows_imported: rows, batches_failed: failed, committed: true, confirm: None })
+}
+
+// ---------------------------------------------------------------- schema diff / designer
+
+#[tauri::command]
+pub async fn schema_snapshot(st: State<'_, AppState>, session_id: String, schema: Option<String>) -> R<Vec<TableDescription>> {
+    let s = st.session(&session_id)?;
+    let objs = s.conn.list_objects(schema.as_deref()).await?;
+    let mut out = Vec::new();
+    for o in objs.into_iter().filter(|o| o.kind == ObjectKind::Table).take(5000) {
+        out.push(s.conn.describe_table(&TableTarget { schema: o.schema.clone(), table: o.name.clone() }).await?);
+    }
+    Ok(out)
+}
+
+#[derive(Serialize)]
+pub struct DiffResult {
+    changes: Vec<dbs_schema::Change>,
+    migration: Option<dbs_schema::Migration>,
+    plan_error: Option<DbError>,
+    forward_sql: Option<String>,
+    reverse_sql: Option<String>,
+}
+
+#[tauri::command]
+pub async fn schema_diff(
+    st: State<'_, AppState>,
+    source_session: String,
+    source_schema: Option<String>,
+    target_session: String,
+    target_schema: Option<String>,
+    include_drops: bool,
+) -> R<DiffResult> {
+    let src = schema_snapshot(st.clone(), source_session, source_schema).await?;
+    let tgt_s = st.session(&target_session)?;
+    let tgt = schema_snapshot(st.clone(), target_session, target_schema.clone()).await?;
+    let opts = dbs_schema::DiffOptions {
+        ignore_schema_names: true,
+        target_schema: target_schema.or_else(|| tgt.first().and_then(|t| t.object.schema.clone())),
+        include_drops,
+    };
+    let changes = dbs_schema::diff(&src, &tgt, &opts);
+    let (migration, plan_error) = match dbs_schema::plan(tgt_s.conn.dialect(), &changes, &tgt) {
+        Ok(m) => (Some(m), None),
+        Err(e) => (None, Some(e)),
+    };
+    Ok(DiffResult {
+        forward_sql: migration.as_ref().map(|m| m.forward_script()),
+        reverse_sql: migration.as_ref().and_then(|m| m.reverse_script()),
+        changes,
+        migration,
+        plan_error,
+    })
+}
+
+#[tauri::command]
+pub async fn designer_preview(
+    st: State<'_, AppState>,
+    session_id: String,
+    original: Option<TableTarget>,
+    edited: TableDescription,
+    renames: Vec<(String, String)>,
+) -> R<dbs_schema::Migration> {
+    let s = st.session(&session_id)?;
+    let orig = match original {
+        Some(t) => Some(s.conn.describe_table(&t).await?),
+        None => None,
+    };
+    dbs_schema::designer_migration(s.conn.dialect(), orig.as_ref(), &edited, &renames)
+}
+
+/// Runs a reviewed migration script. The safety policy is evaluated on the exact
+/// script the user saw; the backend then adds a transaction wrapper where the
+/// engine supports transactional DDL (not MySQL, whose DDL auto-commits).
+#[tauri::command]
+pub async fn run_migration(
+    st: State<'_, AppState>,
+    session_id: String,
+    sql: String,
+    confirm_token: Option<String>,
+    typed_confirmation: Option<String>,
+) -> R<RunResult> {
+    check_len(&sql, 50 * 1024 * 1024, "SQL")?;
+    let s = st.session(&session_id)?;
+    let eval = evaluate_for(&st, &s, &sql);
+    let cid = s.config.id.to_string();
+    if let Err(msg) = dbs_safety::authorize(&eval, &st.guard, &cid, &sql, confirm_token.as_deref(), typed_confirmation.as_deref()) {
+        audit(&st, Category::SafetyBlocked, Outcome::Denied, Some(&s.config), |e| e.detail = Some(msg.clone()));
+        return Err(DbError::new(
+            if matches!(eval.decision, Decision::Block { .. }) { ErrorKind::PolicyBlocked } else { ErrorKind::ConfirmationRequired },
+            msg,
+        ));
+    }
+    let script = if s.conn.dialect() == Dialect::MySql || !s.conn.capabilities().transactions { sql.clone() } else { format!("BEGIN;\n{sql}\nCOMMIT;") };
+    let t = Instant::now();
+    let res = s.conn.execute(&script, &ExecOptions { max_rows: 100, timeout_ms: None }, CancellationToken::new()).await;
+    if res.is_err() && script != sql {
+        let _ = s.conn.rollback().await;
+    }
+    let dur = t.elapsed().as_millis() as u64;
+    audit(&st, Category::DdlExecuted, if res.is_ok() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.duration_ms = Some(dur);
+        e.statement_kinds = Some(eval.statements.iter().map(|c| c.verb.clone()).collect());
+        e.query_text = Some(sql.clone());
+        e.error_kind = res.as_ref().err().map(|e| e.kind);
+    });
+    Ok(RunResult { results: res?, duration_ms: dur })
+}
+
+// ---------------------------------------------------------------- monitoring
+
+#[tauri::command]
+pub async fn list_db_sessions(st: State<'_, AppState>, session_id: String) -> R<Vec<SessionInfo>> {
+    st.session(&session_id)?.conn.list_sessions().await
+}
+
+#[tauri::command]
+pub async fn kill_db_session(st: State<'_, AppState>, session_id: String, target_id: String, confirm_token: Option<String>) -> R<serde_json::Value> {
+    let s = st.session(&session_id)?;
+    if st.policy_for(&s.config).read_only {
+        return Err(DbError::new(ErrorKind::PolicyBlocked, "connection is read-only"));
+    }
+    let text = format!("TERMINATE SESSION {target_id}");
+    let cid = s.config.id.to_string();
+    if !confirm_token.as_deref().is_some_and(|t| st.guard.verify(&cid, &text, t)) {
+        return Ok(serde_json::json!({ "confirm": { "token": st.guard.token(&cid, &text), "message": format!("Terminate session {target_id}?") } }));
+    }
+    let r = s.conn.kill_session(&target_id).await;
+    audit(&st, Category::SessionKilled, if r.is_ok() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| e.object = Some(target_id.clone()));
+    r.map(|_| serde_json::json!({ "ok": true }))
+}
+
+// ---------------------------------------------------------------- audit
+
+#[tauri::command]
+pub fn audit_query(st: State<'_, AppState>, filter: AuditFilter) -> R<Vec<AuditEntry>> {
+    st.audit.query(&filter)
+}
+
+#[tauri::command]
+pub fn audit_verify(st: State<'_, AppState>) -> R<VerifyReport> {
+    st.audit.verify()
+}
+
+#[tauri::command]
+pub fn audit_export(st: State<'_, AppState>, filter: AuditFilter, grant: String) -> R<u64> {
+    let g = st.grant(&grant, GrantMode::Write)?;
+    let s = st.audit.export_jsonl(&filter)?;
+    std::fs::write(&g.path, &s).map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
+    audit(&st, Category::AuditExported, Outcome::Success, None, |_| {});
+    Ok(s.lines().count() as u64)
+}
+
+#[tauri::command]
+pub fn audit_purge(st: State<'_, AppState>, before: String) -> R<u64> {
+    chrono::DateTime::parse_from_rfc3339(&before).map_err(|_| DbError::invalid("timestamp must be RFC 3339"))?;
+    st.audit.purge_before(&before)
+}
+
+// ---------------------------------------------------------------- settings / snippets / history / documents
+
+const SETTING_PREFIXES: &[&str] = &[
+    "appearance.",
+    "editor.",
+    "grid.",
+    "query.",
+    "privacy.",
+    "safety.",
+    "audit.",
+    "keys.",
+    "workspace.",
+    "ai.",
+    "updates.",
+    "a11y.",
+    "general.",
+    "io.",
+    "backup.",
+];
+
+#[tauri::command]
+pub fn get_settings(st: State<'_, AppState>) -> R<serde_json::Map<String, serde_json::Value>> {
+    st.store.all_settings()
+}
+
+#[tauri::command]
+pub fn set_setting(st: State<'_, AppState>, key: String, value: serde_json::Value) -> R<()> {
+    if !SETTING_PREFIXES.iter().any(|p| key.starts_with(p)) {
+        return Err(DbError::invalid("unknown setting"));
+    }
+    check_len(&value.to_string(), 1024 * 1024, "setting")?;
+    if key.starts_with("safety.") {
+        // Validate shape; refuse to weaken production below "confirm writes".
+        if key == "safety.policy.production" {
+            let p: dbs_safety::SafetyPolicy = serde_json::from_value(value.clone()).map_err(|e| DbError::invalid(e.to_string()))?;
+            if !p.read_only && !p.confirm_at.is_some_and(|c| c <= Risk::Write) {
+                return Err(DbError::invalid("production policy must at least confirm writes"));
+            }
+        }
+        audit(&st, Category::SecurityPolicyChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));
+    } else if key.starts_with("privacy.") || key.starts_with("audit.") {
+        audit(&st, Category::SecurityPolicyChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));
+    } else {
+        audit(&st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));
+    }
+    if key == "audit.queryText" {
+        let p: dbs_audit::QueryTextPolicy = serde_json::from_value(value.clone()).map_err(|e| DbError::invalid(e.to_string()))?;
+        *st.audit.query_policy.lock().unwrap() = p;
+    }
+    st.store.set_setting(&key, &value)
+}
+
+#[tauri::command]
+pub fn reset_settings(st: State<'_, AppState>) -> R<()> {
+    audit(&st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some("reset all".into()));
+    *st.audit.query_policy.lock().unwrap() = Default::default();
+    st.store.reset_settings()
+}
+
+#[tauri::command]
+pub fn list_snippets(st: State<'_, AppState>) -> R<Vec<Snippet>> {
+    st.store.list_snippets()
+}
+
+#[tauri::command]
+pub fn save_snippet(st: State<'_, AppState>, snippet: Snippet) -> R<Snippet> {
+    check_len(&snippet.sql, 5 * 1024 * 1024, "snippet")?;
+    st.store.save_snippet(snippet)
+}
+
+#[tauri::command]
+pub fn delete_snippet(st: State<'_, AppState>, id: String) -> R<()> {
+    st.store.delete_snippet(&id)
+}
+
+#[tauri::command]
+pub fn list_history(st: State<'_, AppState>, connection_id: String, limit: u32) -> R<Vec<HistoryEntry>> {
+    st.store.list_history(&connection_id, limit.min(5000))
+}
+
+#[tauri::command]
+pub fn clear_history(st: State<'_, AppState>, connection_id: Option<String>) -> R<()> {
+    st.store.clear_history(connection_id.as_deref())
+}
+
+#[tauri::command]
+pub fn list_documents(st: State<'_, AppState>, kind: String) -> R<Vec<Document>> {
+    st.store.list_documents(&kind)
+}
+
+#[tauri::command]
+pub fn save_document(st: State<'_, AppState>, kind: String, id: String, name: String, body: serde_json::Value) -> R<()> {
+    // Dashboards/workspaces must never embed secrets.
+    let s = body.to_string().to_ascii_lowercase();
+    if s.contains("\"password\"") || s.contains("\"secret\"") {
+        return Err(DbError::invalid("documents must not contain credentials"));
+    }
+    st.store.save_document(&kind, &id, &name, &body)
+}
+
+#[tauri::command]
+pub fn delete_document(st: State<'_, AppState>, kind: String, id: String) -> R<()> {
+    st.store.delete_document(&kind, &id)
+}
+
+// ---------------------------------------------------------------- backup
+
+#[tauri::command]
+pub fn backup_tools() -> Vec<crate::backup::ToolStatus> {
+    crate::backup::tool_status()
+}
+
+#[tauri::command]
+pub async fn run_backup(st: State<'_, AppState>, session_id: String, grant: String, options: crate::backup::BackupOptions) -> R<crate::backup::BackupReport> {
+    let s = st.session(&session_id)?;
+    let g = st.grant(&grant, GrantMode::Write)?;
+    let secrets = resolve_secrets(&st, &s.config, None)?;
+    let t = Instant::now();
+    let r = crate::backup::backup(&s.config, secrets, &g.path, &options).await;
+    audit(&st, Category::Backup, if r.is_ok() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.duration_ms = Some(t.elapsed().as_millis() as u64);
+        e.error_kind = r.as_ref().err().map(|e| e.kind);
+        e.detail = Some(format!("{:?}", options.scope));
+    });
+    r
+}
+
+#[tauri::command]
+pub async fn run_restore(
+    st: State<'_, AppState>,
+    session_id: String,
+    grant: String,
+    confirm_token: Option<String>,
+    typed_confirmation: Option<String>,
+) -> R<crate::backup::BackupReport> {
+    let s = st.session(&session_id)?;
+    let g = st.grant(&grant, GrantMode::Read)?;
+    let policy = st.policy_for(&s.config);
+    if policy.read_only {
+        return Err(DbError::new(ErrorKind::PolicyBlocked, "connection is read-only"));
+    }
+    // Restore is always treated as destructive.
+    let text = format!("RESTORE {} INTO {}", g.path.display(), s.config.name);
+    let cid = s.config.id.to_string();
+    let ok_token = confirm_token.as_deref().is_some_and(|t| st.guard.verify(&cid, &text, t));
+    let ok_typed = !s.config.is_production() || typed_confirmation.as_deref().map(str::trim) == Some(s.config.name.as_str());
+    if !ok_token || !ok_typed {
+        return Err(DbError::new(ErrorKind::ConfirmationRequired, "restore requires confirmation").with_hint(st.guard.token(&cid, &text)));
+    }
+    let secrets = resolve_secrets(&st, &s.config, None)?;
+    let t = Instant::now();
+    let r = crate::backup::restore(&s.config, secrets, &g.path).await;
+    audit(&st, Category::Restore, if r.is_ok() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.duration_ms = Some(t.elapsed().as_millis() as u64);
+        e.error_kind = r.as_ref().err().map(|e| e.kind);
+    });
+    r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn url_parsing_splits_password_and_forces_verification() {
+        let p = parse_connection_url("postgresql://bob:p%40ss@db.example.com:6543/app?sslmode=require".into()).unwrap();
+        assert_eq!(p.password.as_deref(), Some("p@ss"));
+        assert_eq!(p.config.username.as_deref(), Some("bob"));
+        assert_eq!(p.config.host.as_deref(), Some("db.example.com"));
+        assert_eq!(p.config.port, Some(6543));
+        assert_eq!(p.config.database.as_deref(), Some("app"));
+        assert_eq!(p.config.tls.mode, TlsMode::VerifyFull);
+        let p = parse_connection_url("mysql://root@localhost/x".into()).unwrap();
+        assert_eq!(p.config.tls.mode, TlsMode::Disable);
+        assert!(parse_connection_url("javascript://alert(1)".into()).is_err());
+    }
+
+    #[test]
+    fn pct_decode_handles_edge_cases() {
+        assert_eq!(pct_decode("a%2"), "a%2");
+        assert_eq!(pct_decode("%zz"), "%zz");
+        assert_eq!(pct_decode("%41"), "A");
+    }
+}

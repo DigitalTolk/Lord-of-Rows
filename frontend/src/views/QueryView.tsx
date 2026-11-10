@@ -1,0 +1,235 @@
+import Editor, { type OnMount } from '@monaco-editor/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { format as formatSql } from 'sql-formatter';
+import { confirmDecision } from '../components/confirm';
+import { Results } from '../components/Results';
+import { ask } from '../components/ask';
+import { ErrorBox, Spinner, Toolbar } from '../components/ui';
+import { api, IpcError } from '../lib/ipc';
+import { monaco, registerSqlCompletion, setCompletionSource } from '../lib/monaco';
+import { family } from '../lib/sqlgen';
+import type { StatementResult } from '../lib/types';
+import { errMsg, useApp, type Tab } from '../store';
+
+const formatterLang = (e: string) => (family(e as never) === 'pg' ? 'postgresql' : family(e as never) === 'mysql' ? 'mysql' : family(e as never) === 'sqlite' ? 'sqlite' : family(e as never) === 'mssql' ? 'transactsql' : 'sql');
+
+export function QueryView({ tab }: { tab: Tab }) {
+  const { t } = useTranslation();
+  const { sessions, updateTab, settings, toast } = useApp();
+  const s = tab.sessionId ? sessions[tab.sessionId] : undefined;
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
+  const [running, setRunning] = useState<string | null>(null);
+  const [results, setResults] = useState<StatementResult[]>([]);
+  const [messages, setMessages] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [split, setSplit] = useState(0.5);
+  const isRedis = s?.config.engine === 'redis';
+
+  // Feed schema metadata into autocomplete.
+  useEffect(() => {
+    if (!s) return;
+    const objs = s.objects[s.activeSchema ?? ''] ?? [];
+    setCompletionSource({ tables: objs.filter((o) => ['table', 'view', 'materialized_view'].includes(o.kind)).map((o) => ({ name: o.name, schema: o.schema, kind: o.kind })), columns: {} });
+    const tables = objs.filter((o) => o.kind === 'table').slice(0, 200);
+    let cancelled = false;
+    // Lazily describe tables for column completion (bounded).
+    void (async () => {
+      const columns: Record<string, string[]> = {};
+      for (const o of tables) {
+        if (cancelled) return;
+        try {
+          const d = await api.describeTable(s.session_id, { schema: o.schema, table: o.name });
+          columns[o.name] = d.columns.map((c) => c.name);
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!cancelled) setCompletionSource({ tables: objs.filter((o) => ['table', 'view', 'materialized_view'].includes(o.kind)).map((o) => ({ name: o.name, schema: o.schema, kind: o.kind })), columns });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [s?.session_id, s?.activeSchema, s?.objects]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const run = useCallback(
+    async (which: 'all' | 'current' | 'selection') => {
+      const ed = editorRef.current;
+      if (!ed || !s) return;
+      const model = ed.getModel()!;
+      const full = model.getValue();
+      let sql = full;
+      const selection = ed.getSelection();
+      if (which === 'selection' && selection && !selection.isEmpty()) sql = model.getValueInRange(selection);
+      else if (which === 'current' || (which === 'selection' && selection?.isEmpty())) {
+        if (!isRedis) {
+          const offset = model.getOffsetAt(ed.getPosition()!);
+          const spans = await api.splitSql(s.config.engine, full);
+          const hit = spans.find(([a, b]) => offset >= a && offset <= b) ?? [...spans].reverse().find(([, b]) => b <= offset);
+          if (hit) sql = full.slice(hit[0], hit[1]);
+        } else {
+          sql = model.getLineContent(ed.getPosition()!.lineNumber);
+        }
+      }
+      if (!sql.trim()) return;
+      setError(null);
+      setMessages([]);
+      const queryId = crypto.randomUUID();
+      setRunning(queryId);
+      try {
+        // Backend evaluates the safety policy; confirm if required, then run with the token.
+        const ev = await api.evaluateSql(s.session_id, sql);
+        let token: string | null = null;
+        let typed: string | undefined;
+        if (ev.decision.decision !== 'allow') {
+          const c = await confirmDecision(ev.decision, { production: s.config.environment === 'production' });
+          if (!c) return;
+          token = c.token;
+          typed = c.typed;
+        }
+        const r = await api.runSql({ session_id: s.session_id, sql, query_id: queryId, confirm_token: token, typed_confirmation: typed ?? null });
+        setResults(r.results);
+        setMessages([`Completed in ${r.duration_ms} ms`]);
+        // Refresh the object tree after DDL.
+        if (ev.statements.some((x) => ['CREATE', 'ALTER', 'DROP', 'RENAME'].includes(x.verb))) void useApp.getState().loadObjects(s.session_id, s.activeSchema);
+      } catch (e) {
+        const msg = e instanceof IpcError ? `${e.err.message}${e.err.code ? ` [${e.err.code}]` : ''}${e.err.hint ? `\nHint: ${e.err.hint}` : ''}` : errMsg(e);
+        setError(msg);
+        // Highlight "at character N" positions.
+        const m = /at character (\d+)/.exec(msg);
+        if (m) {
+          const pos = model.getPositionAt(full.indexOf(sql) + Number(m[1]) - 1);
+          monaco.editor.setModelMarkers(model, 'db', [{ startLineNumber: pos.lineNumber, startColumn: pos.column, endLineNumber: pos.lineNumber, endColumn: pos.column + 5, message: msg, severity: monaco.MarkerSeverity.Error }]);
+        }
+      } finally {
+        setRunning(null);
+      }
+    },
+    [s, isRedis],
+  );
+
+  const cancel = () => running && api.cancelQuery(running);
+  const fmt = () => {
+    const ed = editorRef.current;
+    if (!ed || !s) return;
+    try {
+      ed.executeEdits('format', [{ range: ed.getModel()!.getFullModelRange(), text: formatSql(ed.getValue(), { language: formatterLang(s.config.engine) as never, tabWidth: Number(settings['editor.tabSize'] ?? 2), keywordCase: (settings['editor.keywordCase'] as 'upper') ?? 'upper' }) }]);
+    } catch (e) {
+      toast('error', errMsg(e));
+    }
+  };
+  const minify = () => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    ed.executeEdits('minify', [{ range: ed.getModel()!.getFullModelRange(), text: ed.getValue().replace(/--[^\n]*\n/g, ' ').replace(/\s+/g, ' ').trim() }]);
+  };
+  const explain = async (analyze: boolean) => {
+    const ed = editorRef.current;
+    if (!ed || !s) return;
+    const sel = ed.getSelection();
+    const sql = sel && !sel.isEmpty() ? ed.getModel()!.getValueInRange(sel) : ed.getValue();
+    try {
+      let rs;
+      try {
+        rs = await api.explainSql(s.session_id, sql.trim().replace(/;$/, ''), analyze);
+      } catch (e) {
+        if (e instanceof IpcError && e.kind === 'confirmation_required' && analyze) {
+          const ev = await api.evaluateSql(s.session_id, `EXPLAIN ANALYZE ${sql.trim().replace(/;$/, '')}`);
+          const c = await confirmDecision(ev.decision, { production: s.config.environment === 'production' });
+          if (!c) return;
+          rs = await api.explainSql(s.session_id, sql.trim().replace(/;$/, ''), true, c.token, c.typed);
+        } else throw e;
+      }
+      setResults([{ statement_index: 0, sql_excerpt: analyze ? 'EXPLAIN ANALYZE' : 'EXPLAIN', result: rs, duration_ms: 0, notices: [] }]);
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  };
+  const saveSnippet = async () => {
+    const name = await ask.text(t('query.saveSnippet'), t('query.snippetName'));
+    if (!name) return;
+    await api.saveSnippet({ id: '', name, sql: editorRef.current?.getValue() ?? '', folder: null, favorite: false, connection_id: s?.config.id ?? null, updated: '' });
+    toast('ok', 'Snippet saved');
+  };
+
+  const onMount: OnMount = (ed) => {
+    editorRef.current = ed;
+    registerSqlCompletion();
+    const K = monaco.KeyMod;
+    const C = monaco.KeyCode;
+    ed.addCommand(K.CtrlCmd | C.Enter, () => void run('selection'));
+    ed.addCommand(K.CtrlCmd | K.Shift | C.Enter, () => void run('all'));
+    ed.addCommand(K.CtrlCmd | K.Alt | C.KeyF, fmt);
+    ed.addCommand(K.CtrlCmd | C.Period, () => void cancel());
+    ed.onDidChangeModelContent(() => {
+      monaco.editor.setModelMarkers(ed.getModel()!, 'db', []);
+      updateTab(tab.id, { sql: ed.getValue() });
+    });
+    ed.focus();
+  };
+
+  const startDrag = (e: React.MouseEvent) => {
+    const parent = (e.currentTarget as HTMLElement).parentElement!;
+    const rect = parent.getBoundingClientRect();
+    const move = (m: MouseEvent) => setSplit(Math.min(0.85, Math.max(0.15, (m.clientY - rect.top) / rect.height)));
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  const dark = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('hc');
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <Toolbar>
+        <button className="btn btn-primary" onClick={() => run('selection')} disabled={!s || !!running} title="⌘/Ctrl+Enter">▶ {t('query.run')}</button>
+        <button className="btn" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
+        <button className="btn" onClick={() => run('current')} disabled={!s || !!running}>{t('query.runCurrent')}</button>
+        <button className="btn" onClick={cancel} disabled={!running} title="⌘/Ctrl+.">■ {t('query.cancel')}</button>
+        {!isRedis && (
+          <>
+            <span className="mx-1 h-5 border-l border-border" />
+            <button className="btn" onClick={fmt}>{t('query.format')}</button>
+            <button className="btn" onClick={minify}>{t('query.minify')}</button>
+            {s?.capabilities.explain && <button className="btn" onClick={() => explain(false)}>{t('query.explain')}</button>}
+            {s?.capabilities.explain_analyze && <button className="btn" onClick={() => explain(true)}>{t('query.explainAnalyze')}</button>}
+          </>
+        )}
+        <button className="btn" onClick={saveSnippet}>{t('query.saveSnippet')}</button>
+        {running && <Spinner label={t('query.running')} />}
+        {!s && <span className="ml-2 text-warn">{t('status.disconnected')}</span>}
+      </Toolbar>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
+          <Editor
+            defaultLanguage={isRedis ? 'redis' : 'sql'}
+            defaultValue={tab.sql ?? ''}
+            theme={dark ? 'vs-dark' : 'vs'}
+            onMount={onMount}
+            options={{
+              fontSize: Number(settings['editor.fontSize'] ?? 13),
+              tabSize: Number(settings['editor.tabSize'] ?? 2),
+              wordWrap: settings['editor.wordWrap'] ? 'on' : 'off',
+              minimap: { enabled: !!settings['editor.minimap'] },
+              renderWhitespace: settings['editor.whitespace'] ? 'all' : 'none',
+              lineNumbers: 'on',
+              folding: true,
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              accessibilitySupport: 'auto',
+              fixedOverflowWidgets: true,
+            }}
+          />
+        </div>
+        <div role="separator" aria-orientation="horizontal" aria-label="Resize editor" tabIndex={0} className="h-1.5 shrink-0 cursor-row-resize bg-border hover:bg-accent"
+          onMouseDown={startDrag}
+          onKeyDown={(e) => { if (e.key === 'ArrowUp') setSplit((x) => Math.max(0.15, x - 0.05)); if (e.key === 'ArrowDown') setSplit((x) => Math.min(0.85, x + 0.05)); }} />
+        <div className="min-h-0 flex-1">
+          {error ? <div className="p-2"><ErrorBox error={error} /></div> : <Results results={results} messages={messages} />}
+        </div>
+      </div>
+    </div>
+  );
+}

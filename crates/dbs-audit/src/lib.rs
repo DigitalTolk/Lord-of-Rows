@@ -197,9 +197,7 @@ impl AuditLog {
         let c = self.conn.lock().unwrap();
         let prev_hash: String = c
             .query_row("SELECT hash FROM audit ORDER BY seq DESC LIMIT 1", [], |r| r.get(0))
-            .unwrap_or_else(|_| {
-                c.query_row("SELECT v FROM audit_meta WHERE k='anchor'", [], |r| r.get(0)).unwrap_or_else(|_| GENESIS.to_string())
-            });
+            .unwrap_or_else(|_| c.query_row("SELECT v FROM audit_meta WHERE k='anchor'", [], |r| r.get(0)).unwrap_or_else(|_| GENESIS.to_string()));
         let mut entry = AuditEntry {
             seq: 0,
             id: Uuid::new_v4().to_string(),
@@ -225,15 +223,7 @@ impl AuditLog {
         entry.hash = chain_hash(&prev_hash, &body);
         c.execute(
             "INSERT INTO audit (body, prev_hash, hash, ts, category, outcome, connection_id) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-            params![
-                body,
-                entry.prev_hash,
-                entry.hash,
-                entry.ts,
-                enum_str(&entry.category),
-                enum_str(&entry.outcome),
-                entry.connection_id
-            ],
+            params![body, entry.prev_hash, entry.hash, entry.ts, enum_str(&entry.category), enum_str(&entry.outcome), entry.connection_id],
         )
         .map_err(map_err)?;
         entry.seq = c.last_insert_rowid();
@@ -296,8 +286,7 @@ impl AuditLog {
     /// Recompute the whole chain.
     pub fn verify(&self) -> DbResult<VerifyReport> {
         let c = self.conn.lock().unwrap();
-        let mut prev: String =
-            c.query_row("SELECT v FROM audit_meta WHERE k='anchor'", [], |r| r.get(0)).unwrap_or_else(|_| GENESIS.to_string());
+        let mut prev: String = c.query_row("SELECT v FROM audit_meta WHERE k='anchor'", [], |r| r.get(0)).unwrap_or_else(|_| GENESIS.to_string());
         let mut st = c.prepare("SELECT seq, body, prev_hash, hash FROM audit ORDER BY seq ASC").map_err(map_err)?;
         let mut rows = st.query([]).map_err(map_err)?;
         let mut n = 0u64;
@@ -322,13 +311,10 @@ impl AuditLog {
         let n = {
             let mut c = self.conn.lock().unwrap();
             let tx = c.transaction().map_err(map_err)?;
-            let last: Option<String> = tx
-                .query_row("SELECT hash FROM audit WHERE ts < ?1 ORDER BY seq DESC LIMIT 1", [before_ts], |r| r.get(0))
-                .ok();
+            let last: Option<String> = tx.query_row("SELECT hash FROM audit WHERE ts < ?1 ORDER BY seq DESC LIMIT 1", [before_ts], |r| r.get(0)).ok();
             let Some(anchor) = last else { return Ok(0) };
             let n = tx.execute("DELETE FROM audit WHERE ts < ?1", [before_ts]).map_err(map_err)?;
-            tx.execute("INSERT INTO audit_meta(k,v) VALUES('anchor',?1) ON CONFLICT(k) DO UPDATE SET v=excluded.v", [anchor])
-                .map_err(map_err)?;
+            tx.execute("INSERT INTO audit_meta(k,v) VALUES('anchor',?1) ON CONFLICT(k) DO UPDATE SET v=excluded.v", [anchor]).map_err(map_err)?;
             tx.commit().map_err(map_err)?;
             // Reclaim space so deleted entries are not left in free pages.
             let _ = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");

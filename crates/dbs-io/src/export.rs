@@ -45,15 +45,7 @@ fn default_batch() -> usize {
 
 impl Default for ExportOptions {
     fn default() -> Self {
-        Self {
-            format: ExportFormat::Csv,
-            header: true,
-            null_text: String::new(),
-            formula_guard: true,
-            dialect: None,
-            table: None,
-            rows_per_insert: 100,
-        }
+        Self { format: ExportFormat::Csv, header: true, null_text: String::new(), formula_guard: true, dialect: None, table: None, rows_per_insert: 100 }
     }
 }
 
@@ -147,8 +139,7 @@ impl<W: Write> Exporter<W> {
             }
             ExportFormat::Json | ExportFormat::JsonLines => {
                 for r in rows {
-                    let obj: serde_json::Map<String, serde_json::Value> =
-                        self.columns.iter().zip(r).map(|(c, v)| (c.name.clone(), to_json(v))).collect();
+                    let obj: serde_json::Map<String, serde_json::Value> = self.columns.iter().zip(r).map(|(c, v)| (c.name.clone(), to_json(v))).collect();
                     let s = serde_json::to_string(&obj).map_err(|e| DbError::internal(e.to_string()))?;
                     if self.opts.format == ExportFormat::Json {
                         if self.rows_written > 0 {
@@ -188,8 +179,7 @@ impl<W: Write> Exporter<W> {
                 let t = d.qualified(self.opts.table.as_ref().unwrap())?;
                 let cols = self.columns.iter().map(|c| d.quote_ident(&c.name)).collect::<DbResult<Vec<_>>>()?.join(", ");
                 for chunk in rows.chunks(self.opts.rows_per_insert.max(1)) {
-                    let vals: Vec<String> =
-                        chunk.iter().map(|r| format!("({})", r.iter().map(|v| d.literal(v)).collect::<Vec<_>>().join(", "))).collect();
+                    let vals: Vec<String> = chunk.iter().map(|r| format!("({})", r.iter().map(|v| d.literal(v)).collect::<Vec<_>>().join(", "))).collect();
                     writeln!(self.out, "INSERT INTO {t} ({cols}) VALUES\n  {};", vals.join(",\n  ")).map_err(io)?;
                 }
             }

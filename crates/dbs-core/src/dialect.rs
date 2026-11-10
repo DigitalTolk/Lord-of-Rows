@@ -20,9 +20,7 @@ impl From<Engine> for Dialect {
             Some(Engine::MySql) => Dialect::MySql,
             Some(Engine::Sqlite) => Dialect::Sqlite,
             _ if e == Engine::SqlServer => Dialect::SqlServer,
-            _ if e == Engine::DuckDb || e == Engine::LibSql || e == Engine::Turso || e == Engine::CloudflareD1 => {
-                Dialect::Sqlite
-            }
+            _ if e == Engine::DuckDb || e == Engine::LibSql || e == Engine::Turso || e == Engine::CloudflareD1 => Dialect::Sqlite,
             _ => Dialect::Generic,
         }
     }
@@ -239,10 +237,7 @@ mod tests {
         let s = build_change_sql(Dialect::Postgres, &t, &ch).unwrap();
         assert_eq!(s.sql, "UPDATE \"public\".\"users\" SET \"name\" = $1 WHERE \"id\" = $2 AND \"name\" = $3 AND \"note\" IS NULL");
         assert_eq!(s.params.len(), 3);
-        assert_eq!(
-            s.preview(Dialect::Postgres),
-            "UPDATE \"public\".\"users\" SET \"name\" = 'new' WHERE \"id\" = 7 AND \"name\" = 'old' AND \"note\" IS NULL"
-        );
+        assert_eq!(s.preview(Dialect::Postgres), "UPDATE \"public\".\"users\" SET \"name\" = 'new' WHERE \"id\" = 7 AND \"name\" = 'old' AND \"note\" IS NULL");
     }
 
     #[test]

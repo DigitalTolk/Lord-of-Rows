@@ -13,8 +13,8 @@
 //! procedures, triggers and dynamic SQL can write. Anything we cannot classify
 //! with confidence is reported as `Unknown` and treated as a write.
 
-pub mod lexer;
 pub mod classify;
+pub mod lexer;
 pub mod policy;
 
 pub use classify::*;

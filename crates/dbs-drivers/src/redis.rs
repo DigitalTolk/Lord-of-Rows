@@ -35,13 +35,13 @@ fn map_err(e: RedisError) -> DbError {
 /// Risk class for a Redis command (mirrors `dbs_safety::Risk` names).
 pub fn classify_redis_command(cmd: &str) -> &'static str {
     match cmd.to_ascii_uppercase().as_str() {
-        "GET" | "MGET" | "EXISTS" | "TYPE" | "TTL" | "PTTL" | "STRLEN" | "HGET" | "HGETALL" | "HMGET" | "HKEYS" | "HVALS" | "HLEN"
-        | "LRANGE" | "LLEN" | "LINDEX" | "SMEMBERS" | "SCARD" | "SISMEMBER" | "ZRANGE" | "ZRANGEBYSCORE" | "ZCARD" | "ZSCORE"
-        | "SCAN" | "HSCAN" | "SSCAN" | "ZSCAN" | "INFO" | "DBSIZE" | "PING" | "ECHO" | "XRANGE" | "XLEN" | "XINFO" | "OBJECT"
-        | "MEMORY" | "GETRANGE" | "BITCOUNT" | "PFCOUNT" | "GEOPOS" | "GEODIST" | "TIME" | "LASTSAVE" | "ROLE" => "read",
+        "GET" | "MGET" | "EXISTS" | "TYPE" | "TTL" | "PTTL" | "STRLEN" | "HGET" | "HGETALL" | "HMGET" | "HKEYS" | "HVALS" | "HLEN" | "LRANGE" | "LLEN"
+        | "LINDEX" | "SMEMBERS" | "SCARD" | "SISMEMBER" | "ZRANGE" | "ZRANGEBYSCORE" | "ZCARD" | "ZSCORE" | "SCAN" | "HSCAN" | "SSCAN" | "ZSCAN" | "INFO"
+        | "DBSIZE" | "PING" | "ECHO" | "XRANGE" | "XLEN" | "XINFO" | "OBJECT" | "MEMORY" | "GETRANGE" | "BITCOUNT" | "PFCOUNT" | "GEOPOS" | "GEODIST"
+        | "TIME" | "LASTSAVE" | "ROLE" => "read",
         "FLUSHALL" | "FLUSHDB" | "DEL" | "UNLINK" => "destructive",
-        "CONFIG" | "SHUTDOWN" | "DEBUG" | "SLAVEOF" | "REPLICAOF" | "MODULE" | "ACL" | "CLIENT" | "SAVE" | "BGSAVE"
-        | "BGREWRITEAOF" | "MIGRATE" | "FAILOVER" | "CLUSTER" | "SCRIPT" | "FUNCTION" | "KEYS" | "MONITOR" | "SYNC" | "PSYNC" => "admin",
+        "CONFIG" | "SHUTDOWN" | "DEBUG" | "SLAVEOF" | "REPLICAOF" | "MODULE" | "ACL" | "CLIENT" | "SAVE" | "BGSAVE" | "BGREWRITEAOF" | "MIGRATE"
+        | "FAILOVER" | "CLUSTER" | "SCRIPT" | "FUNCTION" | "KEYS" | "MONITOR" | "SYNC" | "PSYNC" => "admin",
         "EVAL" | "EVALSHA" | "EVAL_RO" | "FCALL" | "MULTI" | "EXEC" => "unknown",
         _ => "write",
     }
@@ -103,9 +103,7 @@ fn to_value(v: redis::Value) -> Value {
         R::SimpleString(s) => Value::Text(s),
         R::Okay => Value::Text("OK".into()),
         R::Map(m) => Value::Json(serde_json::Value::Object(
-            m.into_iter()
-                .map(|(k, v)| (to_value(k).to_plain().unwrap_or_default(), serde_json::to_value(to_value(v)).unwrap_or_default()))
-                .collect(),
+            m.into_iter().map(|(k, v)| (to_value(k).to_plain().unwrap_or_default(), serde_json::to_value(to_value(v)).unwrap_or_default())).collect(),
         )),
         R::Double(d) => Value::Float(d),
         R::Boolean(b) => Value::Bool(b),
@@ -222,7 +220,16 @@ impl DatabaseConnection for RedisConnection {
         let ttl: i64 = c.ttl(&target.table).await.map_err(map_err)?;
         Ok(TableDescription {
             object: ObjectRef { kind: ObjectKind::Key, database: None, schema: None, name: target.table.clone() },
-            columns: vec![ColumnDef { name: "value".into(), data_type: ty, nullable: false, default: None, is_primary_key: false, is_identity: false, comment: None, ordinal: 1 }],
+            columns: vec![ColumnDef {
+                name: "value".into(),
+                data_type: ty,
+                nullable: false,
+                default: None,
+                is_primary_key: false,
+                is_identity: false,
+                comment: None,
+                ordinal: 1,
+            }],
             primary_key: vec![],
             indexes: vec![],
             foreign_keys: vec![],
@@ -293,7 +300,10 @@ impl DatabaseConnection for RedisConnection {
         let (columns, rows) = match ty.as_str() {
             "string" => {
                 let v: Option<Vec<u8>> = c.get(key).await.map_err(map_err)?;
-                (vec![col("value")], vec![vec![v.map(|b| String::from_utf8(b).map(Value::Text).unwrap_or_else(|e| Value::from_bytes(e.as_bytes()))).unwrap_or(Value::Null)]])
+                (
+                    vec![col("value")],
+                    vec![vec![v.map(|b| String::from_utf8(b).map(Value::Text).unwrap_or_else(|e| Value::from_bytes(e.as_bytes()))).unwrap_or(Value::Null)]],
+                )
             }
             "list" => {
                 let v: Vec<String> = c.lrange(key, start, stop).await.map_err(map_err)?;

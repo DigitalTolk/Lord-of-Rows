@@ -42,7 +42,13 @@ pub fn decode_numeric(b: &[u8]) -> Result<String, BoxErr> {
     for i in 0..ndigits {
         digits.push(be_i16(b, 8 + 2 * i)?);
     }
-    let group = |i: i32| -> i16 { if i >= 0 && (i as usize) < digits.len() { digits[i as usize] } else { 0 } };
+    let group = |i: i32| -> i16 {
+        if i >= 0 && (i as usize) < digits.len() {
+            digits[i as usize]
+        } else {
+            0
+        }
+    };
     let mut s = String::new();
     if sign == 0x4000 {
         s.push('-');
@@ -77,25 +83,19 @@ pub fn decode_numeric(b: &[u8]) -> Result<String, BoxErr> {
 
 pub fn encode_numeric(text: &str, out: &mut BytesMut) -> Result<(), BoxErr> {
     let t = text.trim();
-    match t {
-        "NaN" => {
-            out.put_i16(0);
-            out.put_i16(0);
-            out.put_u16(0xC000);
-            out.put_i16(0);
-            return Ok(());
-        }
-        _ => {}
+    if t == "NaN" {
+        out.put_i16(0);
+        out.put_i16(0);
+        out.put_u16(0xC000);
+        out.put_i16(0);
+        return Ok(());
     }
     let (neg, body) = match t.strip_prefix('-') {
         Some(r) => (true, r),
         None => (false, t.strip_prefix('+').unwrap_or(t)),
     };
     let (int_part, frac_part) = body.split_once('.').unwrap_or((body, ""));
-    if int_part.is_empty() && frac_part.is_empty()
-        || !int_part.chars().all(|c| c.is_ascii_digit())
-        || !frac_part.chars().all(|c| c.is_ascii_digit())
-    {
+    if int_part.is_empty() && frac_part.is_empty() || !int_part.chars().all(|c| c.is_ascii_digit()) || !frac_part.chars().all(|c| c.is_ascii_digit()) {
         return Err(format!("invalid numeric literal: {text}").into());
     }
     let int_part = int_part.trim_start_matches('0');
@@ -351,9 +351,7 @@ fn encode(ty: &Type, v: &Value, out: &mut BytesMut) -> Result<(), BoxErr> {
             o => as_text(o).trim().parse()?,
         }),
         Type::NUMERIC => encode_numeric(&as_text(v), out)?,
-        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME | Type::UNKNOWN | Type::XML | Type::CHAR => {
-            out.put_slice(as_text(v).as_bytes())
-        }
+        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME | Type::UNKNOWN | Type::XML | Type::CHAR => out.put_slice(as_text(v).as_bytes()),
         Type::JSON => out.put_slice(json_text(v)?.as_bytes()),
         Type::JSONB => {
             out.put_u8(1);
