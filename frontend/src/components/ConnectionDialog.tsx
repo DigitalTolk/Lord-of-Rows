@@ -1,26 +1,30 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { ConnectionConfig, Engine, EnvironmentKind, TlsMode } from '../lib/types';
 import { errMsg, useApp } from '../store';
-import { Dialog, ErrorBox, Field, Spinner } from './ui';
+import { EngineBadge } from './EngineBadge';
+import { Icon } from './icons';
+import { Dialog, Spinner } from './ui';
 
 export const ENGINE_LABELS: Record<Engine, string> = {
   postgres: 'PostgreSQL', my_sql: 'MySQL', maria_db: 'MariaDB', sqlite: 'SQLite', sql_server: 'SQL Server', oracle: 'Oracle',
-  cockroach_db: 'CockroachDB', redshift: 'Amazon Redshift', single_store: 'SingleStore', greenplum: 'Greenplum', vertica: 'Vertica',
-  duck_db: 'DuckDB', lib_sql: 'libSQL', turso: 'Turso', yugabyte_db: 'YugabyteDB', percona: 'Percona Server', mongo_db: 'MongoDB',
+  cockroach_db: 'CockroachDB', redshift: 'Redshift', single_store: 'SingleStore', greenplum: 'Greenplum', vertica: 'Vertica',
+  duck_db: 'DuckDB', lib_sql: 'libSQL', turso: 'Turso', yugabyte_db: 'YugabyteDB', percona: 'Percona', mongo_db: 'MongoDB',
   redis: 'Redis', cassandra: 'Cassandra', dynamo_db: 'DynamoDB', elasticsearch: 'Elasticsearch', click_house: 'ClickHouse',
   big_query: 'BigQuery', snowflake: 'Snowflake', cloudflare_d1: 'Cloudflare D1',
 };
 
 const ENVS: EnvironmentKind[] = ['local', 'development', 'testing', 'staging', 'production', 'custom'];
+const ENV_COLOR: Record<EnvironmentKind, string> = { local: '#1e9650', development: '#0a70f5', testing: '#7c4dff', staging: '#c47800', production: '#d72d2d', custom: '#787880' };
+const DEFAULT_PORT: Partial<Record<Engine, number>> = { postgres: 5432, my_sql: 3306, maria_db: 3306, percona: 3306, single_store: 3306, cockroach_db: 26257, yugabyte_db: 5433, redshift: 5439, greenplum: 5432, redis: 6379 };
 
 export function blankConnection(engine: Engine = 'postgres'): ConnectionConfig {
   return {
     id: '00000000-0000-0000-0000-000000000000',
     name: '',
     engine,
-    host: engine === 'sqlite' ? null : 'localhost',
+    host: engine === 'sqlite' ? null : '127.0.0.1',
     port: null,
     database: null,
     username: null,
@@ -40,69 +44,125 @@ export function blankConnection(engine: Engine = 'postgres'): ConnectionConfig {
   };
 }
 
+function Row({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
+  return (
+    <label className="grid grid-cols-[120px_1fr] items-center gap-x-3 py-1">
+      <span className="text-right text-[0.92rem] text-muted">{label}</span>
+      <span className="flex min-w-0 items-center gap-2">{children}</span>
+      {hint && <span className="col-start-2 mt-0.5 text-[0.82rem] text-muted">{hint}</span>}
+    </label>
+  );
+}
+
+function EnginePicker({ onPick }: { onPick: (e: Engine) => void }) {
+  const { info } = useApp();
+  const supported = new Set(info?.supported_engines ?? []);
+  const all = info?.all_engines ?? [];
+  const sorted = [...all].sort((a, b) => Number(supported.has(b)) - Number(supported.has(a)));
+  return (
+    <div>
+      <p className="mb-3 text-muted">Choose a database type.</p>
+      <div className="grid grid-cols-5 gap-2">
+        {sorted.map((e) => {
+          const ok = supported.has(e);
+          return (
+            <button
+              key={e}
+              disabled={!ok}
+              onClick={() => onPick(e)}
+              title={ok ? ENGINE_LABELS[e] : `${ENGINE_LABELS[e]}: driver not available yet`}
+              className="group flex flex-col items-center gap-1.5 rounded-lg border border-transparent p-2.5 transition-colors hover:border-border hover:bg-panel disabled:cursor-not-allowed"
+            >
+              <EngineBadge engine={e} size={40} dim={!ok} />
+              <span className={`text-[0.85rem] ${ok ? '' : 'text-muted/70'}`}>{ENGINE_LABELS[e]}</span>
+              {!ok && <span className="-mt-1 text-[0.68rem] text-muted/70">coming soon</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ConnectionDialog() {
   const { t } = useTranslation();
-  const { connectionDialog, connections, info, reloadConnections, toast } = useApp();
+  const { connectionDialog, connections, info, reloadConnections, toast, openSession } = useApp();
   const existing = connections.find((c) => c.config.id === (connectionDialog?.id ?? connectionDialog?.duplicateOf))?.config;
-  const [cfg, setCfg] = useState<ConnectionConfig>(() => {
-    if (!existing) return blankConnection();
+  const isNew = !connectionDialog?.id;
+  const [cfg, setCfg] = useState<ConnectionConfig | null>(() => {
+    if (!existing) return null; // show engine picker first
     if (connectionDialog?.duplicateOf) return { ...existing, id: blankConnection().id, name: `${existing.name} copy` };
     return existing;
   });
-  const isNew = !connectionDialog?.id;
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<null | 'test' | 'save' | 'connect'>(null);
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [url, setUrl] = useState('');
+  const [advanced, setAdvanced] = useState(false);
   const supported = useMemo(() => new Set(info?.supported_engines ?? []), [info]);
-
-  const set = <K extends keyof ConnectionConfig>(k: K, v: ConnectionConfig[K]) => setCfg((c) => ({ ...c, [k]: v }));
   const close = () => useApp.setState({ connectionDialog: null });
-  const pw = password === '' ? null : password;
-  const isFile = cfg.engine === 'sqlite' || cfg.engine === 'duck_db';
 
-  const importUrl = async () => {
-    setError(null);
-    try {
-      const p = await api.parseConnectionUrl(url.trim());
-      setCfg({ ...p.config, id: cfg.id });
-      if (p.password) setPassword(p.password);
-      setUrl('');
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  };
+  if (!cfg) {
+    return (
+      <Dialog title={t('conn.new')} onClose={close} wide>
+        <div className="mb-4 flex gap-2">
+          <input className="input font-mono" placeholder="Paste a URL, e.g. postgresql://user:pass@host:5432/db" value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('conn.importUrl')} />
+          <button
+            className="btn"
+            disabled={!url.trim()}
+            onClick={async () => {
+              try {
+                const p = await api.parseConnectionUrl(url.trim());
+                setCfg({ ...p.config, id: blankConnection().id });
+                if (p.password) setPassword(p.password);
+              } catch (e) {
+                setStatus({ ok: false, text: errMsg(e) });
+              }
+            }}
+          >
+            {t('conn.importUrl')}
+          </button>
+        </div>
+        {status && !status.ok && <p className="mb-2 text-danger">{status.text}</p>}
+        <EnginePicker onPick={(e) => setCfg({ ...blankConnection(e), tls: { mode: 'disable' } })} />
+      </Dialog>
+    );
+  }
+
+  const set = <K extends keyof ConnectionConfig>(k: K, v: ConnectionConfig[K]) => setCfg((c) => (c ? { ...c, [k]: v } : c));
+  const isFile = cfg.engine === 'sqlite' || cfg.engine === 'duck_db';
+  const autoName = cfg.name.trim() || (isFile ? (cfg.database ?? '').split('/').pop() || ENGINE_LABELS[cfg.engine] : `${cfg.database || ENGINE_LABELS[cfg.engine]}${cfg.host ? ' @ ' + cfg.host : ''}`);
+  const finalCfg = { ...cfg, name: autoName };
+  const pw = password === '' ? null : password;
+  const remoteHost = cfg.host && !['localhost', '127.0.0.1', '::1'].includes(cfg.host);
 
   const test = async () => {
-    setBusy(true);
-    setError(null);
-    setTestMsg(null);
+    setBusy('test');
+    setStatus(null);
     try {
-      const r = await api.testConnection({ ...cfg, name: cfg.name || 'test' }, pw);
-      setTestMsg(t('conn.testOk', { version: r.server.version.split(' on ')[0], ms: r.latency_ms }));
+      const r = await api.testConnection(finalCfg, pw);
+      setStatus({ ok: true, text: t('conn.testOk', { version: r.server.version.split(' on ')[0].split(',')[0], ms: r.latency_ms }) });
     } catch (e) {
-      setError(errMsg(e));
+      setStatus({ ok: false, text: errMsg(e) });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
-  const save = async () => {
-    setBusy(true);
-    setError(null);
+  const save = async (andConnect: boolean) => {
+    setBusy(andConnect ? 'connect' : 'save');
+    setStatus(null);
     try {
-      const toSave = { ...cfg, id: connectionDialog?.duplicateOf ? blankConnection().id : cfg.id };
-      // null = leave the stored password unchanged
-      await api.saveConnection(toSave, pw, remember);
+      const saved = await api.saveConnection(finalCfg, pw, remember);
       await reloadConnections();
-      toast('ok', `Saved ${cfg.name}`);
+      if (andConnect) await openSession(saved.id, remember ? undefined : pw ?? undefined);
+      else toast('ok', `Saved “${saved.name}”`);
       close();
     } catch (e) {
-      setError(errMsg(e));
+      setStatus({ ok: false, text: errMsg(e) });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -110,112 +170,130 @@ export function ConnectionDialog() {
     <Dialog
       title={isNew ? t('conn.new') : t('conn.edit')}
       onClose={close}
-      wide
       footer={
         <>
-          {busy && <Spinner />}
-          <button className="btn" onClick={test} disabled={busy || !supported.has(cfg.engine)}>{t('common.test')}</button>
-          <button className="btn" onClick={close}>{t('common.cancel')}</button>
-          <button className="btn btn-primary" onClick={save} disabled={busy || !cfg.name.trim()}>{t('common.save')}</button>
+          {isNew && (
+            <button className="btn btn-ghost mr-auto" onClick={() => setCfg(null)}>
+              ‹ {t('common.back')}
+            </button>
+          )}
+          <button className="btn" onClick={test} disabled={!!busy || !supported.has(cfg.engine)}>
+            {busy === 'test' ? <Spinner /> : t('common.test')}
+          </button>
+          <button className="btn" onClick={() => save(false)} disabled={!!busy}>
+            {busy === 'save' ? <Spinner /> : t('common.save')}
+          </button>
+          <button className="btn btn-primary" onClick={() => save(true)} disabled={!!busy || !supported.has(cfg.engine)}>
+            {busy === 'connect' ? <Spinner /> : t('common.connect')}
+          </button>
         </>
       }
     >
-      <div className="mb-3 flex gap-2">
-        <input className="input font-mono" placeholder={t('conn.pasteUrl')} value={url} onChange={(e) => setUrl(e.target.value)} aria-label={t('conn.importUrl')} />
-        <button className="btn whitespace-nowrap" onClick={importUrl} disabled={!url.trim()}>{t('conn.importUrl')}</button>
+      <div className="mb-3 flex items-center gap-3 rounded-lg bg-panel p-3">
+        <EngineBadge engine={cfg.engine} size={36} />
+        <div className="min-w-0">
+          <div className="font-semibold">{ENGINE_LABELS[cfg.engine]}</div>
+          <div className="truncate text-[0.85rem] text-muted">{supported.has(cfg.engine) ? 'Native driver' : t('conn.unsupported')}</div>
+        </div>
+        <div className="ml-auto flex items-center gap-1" role="radiogroup" aria-label={t('conn.color')}>
+          {['#0a70f5', '#1e9650', '#c47800', '#d72d2d', '#7c4dff', '#787880'].map((c) => (
+            <button key={c} role="radio" aria-checked={cfg.color === c} aria-label={c} onClick={() => set('color', cfg.color === c ? null : c)} className={`h-4 w-4 rounded-full ring-offset-1 ring-offset-panel ${cfg.color === c ? 'ring-2 ring-fg/60' : ''}`} style={{ background: c }} />
+          ))}
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-x-4">
-        <div>
-          <Field label={t('conn.name')}>
-            <input className="input" value={cfg.name} onChange={(e) => set('name', e.target.value)} autoFocus />
-          </Field>
-          <Field label={t('conn.engine')} hint={!supported.has(cfg.engine) ? t('conn.unsupported') : undefined}>
-            <select className="input" value={cfg.engine} onChange={(e) => set('engine', e.target.value as Engine)}>
-              {(info?.all_engines ?? []).map((e) => (
-                <option key={e} value={e}>{ENGINE_LABELS[e]}{supported.has(e) ? '' : ' — not available'}</option>
-              ))}
+
+      <Row label={t('conn.name')}>
+        <input className="input" data-autofocus value={cfg.name} placeholder={autoName} onChange={(e) => set('name', e.target.value)} />
+      </Row>
+      <Row label={t('conn.environment')}>
+        <div className="seg" role="radiogroup" aria-label={t('conn.environment')}>
+          {ENVS.map((e) => (
+            <button key={e} role="radio" aria-checked={cfg.environment === e} onClick={() => set('environment', e)} className="flex items-center gap-1">
+              <span className="h-2 w-2 rounded-full" style={{ background: ENV_COLOR[e] }} />
+              {t(`env.${e}`)}
+            </button>
+          ))}
+        </div>
+      </Row>
+      {cfg.environment === 'production' && (
+        <p className="mb-1 ml-[132px] rounded-md bg-danger/10 px-2 py-1 text-[0.85rem] text-danger">Writes need confirmation; destructive statements need the connection name typed. Consider also enabling read-only.</p>
+      )}
+
+      <div className="my-2 border-t border-border" />
+
+      {isFile ? (
+        <Row label={t('conn.file')}>
+          <input className="input font-mono" value={cfg.database ?? ''} placeholder="/path/to/database.sqlite" onChange={(e) => set('database', e.target.value || null)} />
+        </Row>
+      ) : (
+        <>
+          <Row label={t('conn.host')}>
+            <input className="input" value={cfg.host ?? ''} placeholder="127.0.0.1" onChange={(e) => set('host', e.target.value || null)} />
+            <span className="text-muted">{t('conn.port')}</span>
+            <input className="input w-20" inputMode="numeric" value={cfg.port ?? ''} placeholder={String(DEFAULT_PORT[cfg.engine] ?? '')} onChange={(e) => set('port', e.target.value ? Number(e.target.value.replace(/\D/g, '')) : null)} />
+          </Row>
+          <Row label={t('conn.user')}>
+            <input className="input" value={cfg.username ?? ''} onChange={(e) => set('username', e.target.value || null)} autoComplete="off" spellCheck={false} />
+          </Row>
+          <Row label={t('conn.password')} hint={!isNew && !password ? t('conn.passwordUnchanged') : undefined}>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            <label className="flex shrink-0 items-center gap-1.5 text-[0.88rem] text-muted" title={t('conn.rememberPassword', { backend: info?.secret_backend ?? 'keychain' })}>
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              <Icon name="lock" size={13} /> Keychain
+            </label>
+          </Row>
+          <Row label={cfg.engine === 'redis' ? 'Database #' : t('conn.database')}>
+            <input className="input" value={cfg.database ?? ''} placeholder={cfg.engine === 'redis' ? '0' : 'optional'} onChange={(e) => set('database', e.target.value || null)} />
+          </Row>
+          <Row label="SSL / TLS" hint={cfg.tls.mode === 'disable' && remoteHost ? <span className="text-warn">{t('conn.plaintextWarning')}</span> : undefined}>
+            <select className="input" value={cfg.tls.mode} onChange={(e) => set('tls', { ...cfg.tls, mode: e.target.value as TlsMode })}>
+              <option value="disable">{t('conn.tlsDisable')}</option>
+              <option value="verify_full">{t('conn.tlsVerifyFull')}</option>
+              <option value="verify_ca">{t('conn.tlsVerifyCa')}</option>
             </select>
-          </Field>
-          {isFile ? (
-            <Field label={t('conn.file')}>
-              <input className="input font-mono" value={cfg.database ?? ''} onChange={(e) => set('database', e.target.value || null)} />
-            </Field>
-          ) : (
+          </Row>
+        </>
+      )}
+      <Row label="">
+        <label className="flex items-center gap-2 text-[0.92rem]">
+          <input type="checkbox" checked={cfg.read_only} onChange={(e) => set('read_only', e.target.checked)} />
+          {t('conn.readOnly')}
+        </label>
+      </Row>
+
+      <button className="mt-1 flex items-center gap-1 text-[0.9rem] text-muted hover:text-fg" onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>
+        <Icon name={advanced ? 'chevronDown' : 'chevronRight'} size={14} /> Advanced
+      </button>
+      {advanced && (
+        <div className="mt-1">
+          {!isFile && cfg.tls.mode !== 'disable' && (
             <>
-              <div className="grid grid-cols-[1fr_6rem] gap-2">
-                <Field label={t('conn.host')}>
-                  <input className="input" value={cfg.host ?? ''} onChange={(e) => set('host', e.target.value || null)} />
-                </Field>
-                <Field label={t('conn.port')}>
-                  <input className="input" inputMode="numeric" value={cfg.port ?? ''} placeholder="default" onChange={(e) => set('port', e.target.value ? Number(e.target.value.replace(/\D/g, '')) : null)} />
-                </Field>
-              </div>
-              <Field label={t('conn.socket')}>
-                <input className="input font-mono" value={cfg.socket_path ?? ''} onChange={(e) => set('socket_path', e.target.value || null)} />
-              </Field>
-              <Field label={t('conn.user')}>
-                <input className="input" value={cfg.username ?? ''} onChange={(e) => set('username', e.target.value || null)} autoComplete="off" />
-              </Field>
-              <Field label={t('conn.password')} hint={!isNew ? t('conn.passwordUnchanged') : undefined}>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-              </Field>
-              <label className="mb-2 flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                {t('conn.rememberPassword', { backend: info?.secret_backend ?? 'keychain' })}
-              </label>
-              <Field label={t('conn.database')}>
-                <input className="input" value={cfg.database ?? ''} onChange={(e) => set('database', e.target.value || null)} />
-              </Field>
+              <Row label="CA cert"><input className="input font-mono" value={cfg.tls.ca_cert_path ?? ''} placeholder="path to CA bundle (PEM)" onChange={(e) => set('tls', { ...cfg.tls, ca_cert_path: e.target.value || null })} /></Row>
+              <Row label="Client cert"><input className="input font-mono" value={cfg.tls.client_cert_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, client_cert_path: e.target.value || null })} /></Row>
+              <Row label="Client key"><input className="input font-mono" value={cfg.tls.client_key_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, client_key_path: e.target.value || null })} /></Row>
             </>
           )}
+          {!isFile && <Row label={t('conn.socket')}><input className="input font-mono" value={cfg.socket_path ?? ''} onChange={(e) => set('socket_path', e.target.value || null)} /></Row>}
+          <Row label="SSH" hint={t('conn.sshUnavailable')}><span className="text-muted">—</span></Row>
+          <Row label="Timeouts">
+            <input className="input w-20" inputMode="numeric" value={cfg.connect_timeout_secs} onChange={(e) => set('connect_timeout_secs', Number(e.target.value.replace(/\D/g, '')) || 10)} />
+            <span className="text-muted">s connect</span>
+            <input className="input w-20" inputMode="numeric" placeholder="none" value={cfg.query_timeout_secs ?? ''} onChange={(e) => set('query_timeout_secs', e.target.value ? Number(e.target.value.replace(/\D/g, '')) : null)} />
+            <span className="text-muted">s query</span>
+          </Row>
+          <Row label={t('conn.group')}><input className="input" value={cfg.group ?? ''} onChange={(e) => set('group', e.target.value || null)} /></Row>
+          <Row label="Tags"><input className="input" value={cfg.tags.join(', ')} placeholder="comma separated" onChange={(e) => set('tags', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} /></Row>
+          <Row label={t('conn.initSql')}><textarea className="input font-mono" rows={2} value={cfg.init_sql ?? ''} onChange={(e) => set('init_sql', e.target.value || null)} /></Row>
+          <Row label={t('conn.notes')}><textarea className="input" rows={2} value={cfg.notes ?? ''} onChange={(e) => set('notes', e.target.value || null)} /></Row>
         </div>
-        <div>
-          <Field label={t('conn.environment')}>
-            <select className="input" value={cfg.environment} onChange={(e) => set('environment', e.target.value as EnvironmentKind)}>
-              {ENVS.map((e) => <option key={e} value={e}>{t(`env.${e}`)}</option>)}
-            </select>
-          </Field>
-          <label className="mb-2 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={cfg.read_only} onChange={(e) => set('read_only', e.target.checked)} />
-            {t('conn.readOnly')}
-          </label>
-          {!isFile && (
-            <fieldset className="mb-2 rounded border border-border p-2">
-              <legend className="px-1 text-xs text-muted">{t('conn.tls')}</legend>
-              <select className="input mb-2" aria-label={t('conn.tlsMode')} value={cfg.tls.mode} onChange={(e) => set('tls', { ...cfg.tls, mode: e.target.value as TlsMode })}>
-                <option value="verify_full">{t('conn.tlsVerifyFull')}</option>
-                <option value="verify_ca">{t('conn.tlsVerifyCa')}</option>
-                <option value="disable">{t('conn.tlsDisable')}</option>
-              </select>
-              {cfg.tls.mode === 'disable' && cfg.host && !['localhost', '127.0.0.1', '::1'].includes(cfg.host) && (
-                <p className="mb-2 text-xs text-warn">{t('conn.plaintextWarning')}</p>
-              )}
-              {cfg.tls.mode !== 'disable' && (
-                <>
-                  <Field label={t('conn.caCert')}><input className="input font-mono" value={cfg.tls.ca_cert_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, ca_cert_path: e.target.value || null })} /></Field>
-                  <Field label={t('conn.clientCert')}><input className="input font-mono" value={cfg.tls.client_cert_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, client_cert_path: e.target.value || null })} /></Field>
-                  <Field label={t('conn.clientKey')}><input className="input font-mono" value={cfg.tls.client_key_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, client_key_path: e.target.value || null })} /></Field>
-                </>
-              )}
-            </fieldset>
-          )}
-          <fieldset className="mb-2 rounded border border-border p-2">
-            <legend className="px-1 text-xs text-muted">{t('conn.ssh')}</legend>
-            <p className="text-xs text-muted">{t('conn.sshUnavailable')}</p>
-          </fieldset>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label={t('conn.group')}><input className="input" value={cfg.group ?? ''} onChange={(e) => set('group', e.target.value || null)} /></Field>
-            <Field label={t('conn.color')}><input className="input h-7 p-0" type="color" value={cfg.color ?? '#2563eb'} onChange={(e) => set('color', e.target.value)} /></Field>
-            <Field label={t('conn.connectTimeout')}><input className="input" inputMode="numeric" value={cfg.connect_timeout_secs} onChange={(e) => set('connect_timeout_secs', Number(e.target.value.replace(/\D/g, '')) || 10)} /></Field>
-            <Field label={t('conn.queryTimeout')}><input className="input" inputMode="numeric" value={cfg.query_timeout_secs ?? ''} onChange={(e) => set('query_timeout_secs', e.target.value ? Number(e.target.value.replace(/\D/g, '')) : null)} /></Field>
-          </div>
-          <Field label={t('conn.tags')}><input className="input" value={cfg.tags.join(', ')} onChange={(e) => set('tags', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} /></Field>
-          <Field label={t('conn.notes')}><textarea className="input" rows={2} value={cfg.notes ?? ''} onChange={(e) => set('notes', e.target.value || null)} /></Field>
-          <Field label={t('conn.initSql')}><textarea className="input font-mono" rows={2} value={cfg.init_sql ?? ''} onChange={(e) => set('init_sql', e.target.value || null)} /></Field>
+      )}
+
+      {status && (
+        <div role={status.ok ? 'status' : 'alert'} className={`mt-3 flex items-start gap-2 rounded-md px-3 py-2 text-[0.92rem] ${status.ok ? 'bg-ok/10 text-ok' : 'bg-danger/10 text-danger'}`}>
+          <span>{status.ok ? '●' : '▲'}</span>
+          <span className="selectable whitespace-pre-wrap">{status.text}</span>
         </div>
-      </div>
-      {testMsg && <div role="status" className="rounded border border-ok/50 bg-ok/10 p-2 text-sm text-ok">{testMsg}</div>}
-      <ErrorBox error={error} />
+      )}
     </Dialog>
   );
 }

@@ -6,7 +6,7 @@ BIN=${1:-/target/debug/dbstudio}
 OUT=${2:-/work/tests/smoke/screenshot.png}
 export HOME=$(mktemp -d)
 export XDG_DATA_HOME=$HOME/.local/share
-export WEBKIT_DISABLE_COMPOSITING_MODE=1
+export WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1
 Xvfb :99 -screen 0 1440x900x24 >/dev/null 2>&1 &
 XVFB=$!
 export DISPLAY=:99

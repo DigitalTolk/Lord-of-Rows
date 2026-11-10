@@ -53,7 +53,7 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-border bg-panel px-2 py-1" role="tablist">
+      <div className="flex h-[32px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2" role="tablist">
         <button role="tab" aria-selected={tab === 'results'} className={`btn btn-ghost ${tab === 'results' ? 'font-semibold' : ''}`} onClick={() => setTab('results')}>Results</button>
         <button role="tab" aria-selected={tab === 'messages'} className={`btn btn-ghost ${tab === 'messages' ? 'font-semibold' : ''}`} onClick={() => setTab('messages')}>{t('query.messages')} ({allMessages.length})</button>
         {tab === 'results' && withRows.length > 1 && (
@@ -63,13 +63,13 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
         )}
         {tab === 'results' && rs && (
           <>
-            <div className="ml-2 flex gap-0.5" role="radiogroup" aria-label="View">
+            <div className="seg ml-2" role="radiogroup" aria-label="View">
               {(['grid', 'json', 'text', 'record', 'chart'] as Mode[]).map((m) => (
-                <button key={m} role="radio" aria-checked={mode === m} className={`btn px-1.5 ${mode === m ? 'btn-primary' : ''}`} onClick={() => setMode(m)}>{t(`query.${m}`)}</button>
+                <button key={m} role="radio" aria-checked={mode === m} onClick={() => setMode(m)}>{t(`query.${m}`)}</button>
               ))}
             </div>
-            <input className="input ml-2 w-48" placeholder={t('grid.searchResults')} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t('grid.searchResults')} />
-            <select className="input w-auto" aria-label={t('grid.copyAs')} value="" onChange={(e) => e.target.value && copy([], [], e.target.value as ExportFormat)}>
+            <input className="input ml-2 h-6 w-48" placeholder={t('grid.searchResults')} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t('grid.searchResults')} />
+            <select className="input h-6 w-auto py-0" aria-label={t('grid.copyAs')} value="" onChange={(e) => e.target.value && copy([], [], e.target.value as ExportFormat)}>
               <option value="">{t('grid.copyAs')}…</option>
               <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="sql_insert">SQL INSERT</option><option value="markdown">Markdown</option>
             </select>

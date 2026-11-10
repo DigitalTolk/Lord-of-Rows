@@ -2,18 +2,81 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useApp, type Tab, type TabKind } from '../store';
 import { EnvBadge } from './ui';
+import { Icon, type IconName } from './icons';
+import { EngineBadge } from './EngineBadge';
 import { displayCombo, DEFAULT_KEYS } from '../lib/keys';
 import { api } from '../lib/ipc';
 import { ask } from './ask';
 
-const KIND_ICON: Record<TabKind, string> = { query: '⌨', table: '▦', structure: '⚙', diff: '⇄', audit: '🛡', monitor: '📈', er: '⧉', settings: '⚙', import: '⤓', backup: '💾', history: '🕘', dashboard: '📊' };
+const KIND_ICON: Record<TabKind, IconName> = { query: 'sql', table: 'table', structure: 'structure', diff: 'copy', audit: 'shield', monitor: 'pulse', er: 'diagram', settings: 'gear', import: 'download', backup: 'db', history: 'history', dashboard: 'chart' };
+
+const ENV_BG: Record<string, string> = { production: 'bg-danger text-white', staging: 'bg-warn/90 text-white', testing: 'bg-[#7c4dff] text-white', development: 'bg-accent text-white', local: 'bg-ok text-white', custom: 'bg-muted text-white' };
+
+export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+  const { t } = useTranslation();
+  const { sessions, activeSession, openTab, closeSession, loadObjects } = useApp();
+  const s = activeSession ? sessions[activeSession] : undefined;
+  const [menu, setMenu] = useState(false);
+  const tool = (kind: TabKind, title: string) => () => openTab({ kind, title, sessionId: s?.session_id });
+  return (
+    <header className="relative flex h-[42px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
+      <button className="icon-btn" aria-label="Toggle sidebar" title="Toggle sidebar" onClick={onToggleSidebar}><Icon name="sidebar" /></button>
+      <button className="icon-btn" aria-label={t('conn.title')} title={t('conn.title')} onClick={() => useApp.setState({ launcher: true })}><Icon name="db" /></button>
+      <span className="mx-1 h-5 border-l border-border" />
+      <button className="icon-btn" title={`${t('query.newTab')} (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label={t('query.newTab')} disabled={!s} onClick={() => openTab({ kind: 'query', title: 'Query', sessionId: s?.session_id, sql: '' })}><Icon name="sql" /></button>
+      <button className="icon-btn" title={t('common.refresh')} aria-label={t('common.refresh')} disabled={!s} onClick={() => s && loadObjects(s.session_id, s.activeSchema)}><Icon name="refresh" /></button>
+      <button className="icon-btn" title={t('io.importTitle')} aria-label={t('io.importTitle')} disabled={!s} onClick={tool('import', t('io.importTitle'))}><Icon name="download" /></button>
+      <button className="icon-btn" title={t('backup.title')} aria-label={t('backup.title')} disabled={!s} onClick={tool('backup', t('backup.title'))}><Icon name="upload" /></button>
+
+      {/* Connection pill */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+        {s ? (
+          <button onClick={() => setMenu(!menu)} className="flex h-7 max-w-[46vw] items-center gap-2 rounded-md border border-border bg-raised pl-1 pr-3 text-[0.92rem] shadow-sm hover:bg-hover" aria-haspopup="menu">
+            <span className={`rounded px-1.5 py-[1px] text-[0.68rem] font-bold uppercase tracking-wide ${ENV_BG[s.config.environment]}`}>{t(`env.${s.config.environment}`)}</span>
+            <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'}`} aria-label={s.healthy ? 'healthy' : 'connection lost'} />
+            <span className="truncate font-medium">{s.config.name}</span>
+            <span className="truncate text-muted">{s.server.version.split(' on ')[0].split(',')[0].replace(/\s*\(.*\)/, '')}{s.activeSchema ? ` : ${s.activeSchema}` : ''}</span>
+            {s.config.read_only && <Icon name="lock" size={13} />}
+          </button>
+        ) : (
+          <span className="text-muted">{t('status.disconnected')}</span>
+        )}
+        {menu && s && (
+          <div role="menu" className="absolute left-1/2 top-9 z-50 w-64 -translate-x-1/2 rounded-lg border border-border bg-raised p-1 shadow-xl" onMouseLeave={() => setMenu(false)}>
+            {Object.values(sessions).map((x) => (
+              <button key={x.session_id} role="menuitem" className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-accent hover:text-white ${x.session_id === s.session_id ? 'font-semibold' : ''}`} onClick={() => { useApp.getState().switchSession(x.session_id); setMenu(false); }}>
+                <EngineBadge engine={x.config.engine} size={18} /> <span className="truncate">{x.config.name}</span>
+              </button>
+            ))}
+            <div className="my-1 border-t border-border" />
+            <button role="menuitem" className="block w-full rounded-md px-2 py-1 text-left hover:bg-accent hover:text-white" onClick={() => { useApp.setState({ launcher: true }); setMenu(false); }}>Open another connection…</button>
+            <button role="menuitem" className="block w-full rounded-md px-2 py-1 text-left text-danger hover:bg-accent hover:text-white" onClick={() => { void closeSession(s.session_id); setMenu(false); }}>{t('common.disconnect')} {s.config.name}</button>
+          </div>
+        )}
+      </div>
+
+      <div className="ml-auto flex items-center gap-1">
+        <button className="flex h-7 w-52 items-center gap-2 rounded-md border border-border bg-raised px-2 text-muted hover:bg-hover" onClick={() => useApp.setState({ paletteOpen: true })}>
+          <Icon name="search" size={13} /> <span className="flex-1 text-left">Search…</span> <span className="kbd">{displayCombo(DEFAULT_KEYS.palette)}</span>
+        </button>
+        <button className="icon-btn" title={t('er.title')} aria-label={t('er.title')} disabled={!s} onClick={tool('er', t('er.title'))}><Icon name="diagram" /></button>
+        <button className="icon-btn" title={t('monitor.title')} aria-label={t('monitor.title')} disabled={!s} onClick={tool('monitor', t('monitor.title'))}><Icon name="pulse" /></button>
+        <button className="icon-btn" title="Dashboards" aria-label="Dashboards" disabled={!s} onClick={tool('dashboard', 'Dashboards')}><Icon name="chart" /></button>
+        <button className="icon-btn" title={t('query.history')} aria-label={t('query.history')} onClick={tool('history', t('query.history'))}><Icon name="history" /></button>
+        <button className="icon-btn" title={t('audit.title')} aria-label={t('audit.title')} onClick={() => openTab({ kind: 'audit', title: t('audit.title') })}><Icon name="shield" /></button>
+        <button className="icon-btn" title={t('settings.title')} aria-label={t('settings.title')} onClick={() => openTab({ kind: 'settings', title: t('settings.title') })}><Icon name="gear" /></button>
+      </div>
+    </header>
+  );
+}
 
 export function TabBar() {
-  const { tabs, activeTab, closeTab, updateTab, moveTab, sessions } = useApp();
+  const { tabs: allTabs, activeTab, closeTab, updateTab, moveTab, sessions, activeSession, openTab } = useApp();
+  const tabs = allTabs.filter((x) => !x.sessionId || x.sessionId === activeSession);
   const drag = useRef<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   return (
-    <div role="tablist" aria-label="Open tabs" className="flex h-8 shrink-0 items-end gap-0.5 overflow-x-auto border-b border-border bg-panel px-1">
+    <div role="tablist" aria-label="Open tabs" className="flex h-[30px] shrink-0 items-stretch overflow-x-auto border-b border-border bg-panel">
       {tabs.map((t, i) => {
         const s = t.sessionId ? sessions[t.sessionId] : undefined;
         const prod = s?.config.environment === 'production';
@@ -26,28 +89,33 @@ export function TabBar() {
             draggable
             onDragStart={() => (drag.current = t.id)}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={() => drag.current && moveTab(drag.current, i)}
+            onDrop={() => drag.current && moveTab(drag.current, allTabs.findIndex((x) => x.id === tabs[i].id))}
             onClick={() => useApp.setState({ activeTab: t.id })}
             onAuxClick={(e) => e.button === 1 && closeTab(t.id)}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ id: t.id, x: e.clientX, y: e.clientY }); }}
-            className={`group flex h-7 max-w-56 cursor-default items-center gap-1 rounded-t border border-b-0 px-2 ${t.id === activeTab ? 'border-border bg-bg' : 'border-transparent hover:bg-raised'} ${prod ? 'border-t-2 border-t-danger' : ''}`}
-            style={s?.config.color ? { borderTopColor: s.config.color, borderTopWidth: 2 } : undefined}
+            className={`group relative flex min-w-[120px] max-w-[220px] cursor-default items-center gap-1.5 border-r border-border px-3 text-[0.92rem] ${t.id === activeTab ? 'bg-bg text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
           >
-            <span aria-hidden>{t.pinned ? '📌' : KIND_ICON[t.kind]}</span>
-            <span className="truncate">{t.title}</span>
-            {!t.pinned && <button className="ml-1 rounded px-0.5 opacity-50 hover:bg-panel hover:opacity-100" aria-label={`Close ${t.title}`} onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}>✕</button>}
+            {t.id === activeTab && <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: prod ? 'rgb(var(--danger))' : s?.config.color ?? 'rgb(var(--accent))' }} />}
+            <Icon name={KIND_ICON[t.kind]} size={13} className="shrink-0" />
+            <span className="flex-1 truncate">{t.title}</span>
+            {t.pinned ? <span aria-label="pinned" className="text-[0.7rem]">●</span> : (
+              <button className="flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 hover:bg-hover group-hover:opacity-100" aria-label={`Close ${t.title}`} onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}><Icon name="x" size={11} /></button>
+            )}
           </div>
         );
       })}
+      <button className="flex w-9 shrink-0 items-center justify-center text-muted hover:bg-hover hover:text-fg" title={`New SQL query (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label="New SQL query" disabled={!activeSession} onClick={() => openTab({ kind: 'query', title: 'Query', sessionId: activeSession, sql: '' })}>
+        <Icon name="plus" size={15} />
+      </button>
       {menu && (
-        <div role="menu" className="fixed z-50 w-44 rounded border border-border bg-raised py-1 shadow-lg" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
+        <div role="menu" className="fixed z-50 w-44 rounded-lg border border-border bg-raised p-1 shadow-xl" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
           {[
             ['Pin / unpin', () => { const t = tabs.find((x) => x.id === menu.id); if (t) updateTab(t.id, { pinned: !t.pinned }); }],
             ['Duplicate', () => { const t = tabs.find((x) => x.id === menu.id); if (t) useApp.getState().openTab({ ...t, id: undefined, title: t.title + ' copy', pinned: false } as Omit<Tab, 'id'>); }],
             ['Close others', () => tabs.filter((x) => x.id !== menu.id).forEach((x) => closeTab(x.id))],
             ['Close', () => closeTab(menu.id)],
           ].map(([l, f]) => (
-            <button key={l as string} role="menuitem" className="block w-full px-3 py-1 text-left hover:bg-panel" onClick={() => { setMenu(null); (f as () => void)(); }}>{l as string}</button>
+            <button key={l as string} role="menuitem" className="block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white" onClick={() => { setMenu(null); (f as () => void)(); }}>{l as string}</button>
           ))}
         </div>
       )}
@@ -60,7 +128,7 @@ export function StatusBar() {
   const { sessions, activeSession, info } = useApp();
   const s = activeSession ? sessions[activeSession] : undefined;
   return (
-    <footer className="flex h-6 shrink-0 items-center gap-3 border-t border-border bg-panel px-2 text-xs text-muted" role="contentinfo">
+    <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-border bg-panel px-3 text-[0.8rem] text-muted" role="contentinfo">
       {s ? (
         <>
           <span className={s.healthy ? 'text-ok' : 'text-danger'} aria-live="polite">● {s.healthy ? t('status.connected') : 'Connection lost'}</span>
@@ -154,10 +222,10 @@ export function CommandPalette() {
   };
   return (
     <div className="fixed inset-0 z-50 flex justify-center bg-black/30 pt-24" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div role="dialog" aria-modal="true" aria-label="Command palette" className="h-fit w-[min(640px,90vw)] overflow-hidden rounded-lg border border-border bg-raised shadow-2xl">
+      <div role="dialog" aria-modal="true" aria-label="Command palette" className="h-fit w-[min(620px,90vw)] overflow-hidden rounded-xl border border-border bg-raised shadow-[0_20px_60px_rgb(0_0_0/0.3)]">
         <input
           ref={input}
-          className="w-full border-b border-border bg-transparent px-3 py-2 text-base outline-none"
+          className="h-11 w-full border-b border-border bg-transparent px-4 text-[1.05rem] outline-none"
           placeholder={t('palette.placeholder')}
           value={q}
           role="combobox"
@@ -175,7 +243,7 @@ export function CommandPalette() {
         <ul id="palette-list" role="listbox" className="max-h-96 overflow-auto py-1">
           {results.length === 0 && <li className="px-3 py-2 text-muted">{t('palette.noMatches')}</li>}
           {results.map(({ c }, i) => (
-            <li key={c.id} id={`pc-${i}`} role="option" aria-selected={i === idx} className={`flex cursor-default px-3 py-1 ${i === idx ? 'bg-accent/20' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => run(c)}>
+            <li key={c.id} id={`pc-${i}`} role="option" aria-selected={i === idx} className={`mx-1 flex cursor-default rounded-md px-3 py-1.5 ${i === idx ? 'bg-accent text-white' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => run(c)}>
               <span className="truncate">{c.label}</span>
               {c.hint && <span className="ml-auto pl-2 text-xs text-muted">{c.hint}</span>}
             </li>

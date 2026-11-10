@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -u
-export DISPLAY=:99 HOME=/home/app XDG_DATA_HOME=/home/app/.local/share WEBKIT_DISABLE_COMPOSITING_MODE=1
+export DISPLAY=:99 HOME=/home/app XDG_DATA_HOME=/home/app/.local/share WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1
 mkdir -p $XDG_DATA_HOME /home/app/demo
+# Clear stale display locks left by a previous run (container restart keeps /tmp).
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
 Xvfb :99 -screen 0 1600x1000x24 >/tmp/xvfb.log 2>&1 &
 sleep 1
 fluxbox >/tmp/fluxbox.log 2>&1 &

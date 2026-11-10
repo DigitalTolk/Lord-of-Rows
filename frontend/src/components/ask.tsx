@@ -49,7 +49,7 @@ export function AskHost() {
           className="input"
           type={req.input}
           value={val}
-          autoFocus
+          data-autofocus
           autoComplete={req.input === 'password' ? 'current-password' : 'off'}
           onChange={(e) => setVal(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}

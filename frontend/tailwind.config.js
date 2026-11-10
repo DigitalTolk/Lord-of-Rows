@@ -9,6 +9,8 @@ export default {
         panel: 'rgb(var(--panel) / <alpha-value>)',
         raised: 'rgb(var(--raised) / <alpha-value>)',
         border: 'rgb(var(--border) / <alpha-value>)',
+        hover: 'rgb(var(--hover) / <alpha-value>)',
+        select: 'rgb(var(--select) / <alpha-value>)',
         fg: 'rgb(var(--fg) / <alpha-value>)',
         muted: 'rgb(var(--muted) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)',

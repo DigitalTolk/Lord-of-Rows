@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { confirmDecision } from '../components/confirm';
 import { DataGrid } from '../components/DataGrid';
 import { copyAs } from '../components/Results';
-import { Dialog, ErrorBox, Spinner, Toolbar } from '../components/ui';
+import { Dialog, ErrorBox, Spinner } from '../components/ui';
+import { Icon } from '../components/icons';
+import { StructureView } from './StructureView';
 import { addRow, buildChanges, emptyStaged, History, pendingCount, setCell, setInsertedCell, toggleDelete, type StagedState } from '../lib/changes';
 import { api } from '../lib/ipc';
 import type { ExportFormat, FilterCondition, FilterOp, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
@@ -33,6 +35,7 @@ export function TableView({ tab }: { tab: Tab }) {
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<{ statements: string[] } | null>(null);
   const hist = useRef(new History<StagedState>());
+  const [mode, setMode] = useState<'data' | 'structure'>('data');
   const isKeyValue = s?.config.engine === 'redis';
   const editable = !!s?.capabilities.inline_edit && !s.config.read_only && !isKeyValue;
   const keyCols = desc?.primary_key ?? [];
@@ -197,37 +200,40 @@ export function TableView({ tab }: { tab: Tab }) {
     setSort(nextDir ? [...rest, [col, nextDir]] : rest);
   };
 
-  const header = useMemo(() => `${target.schema ? target.schema + '.' : ''}${target.table}`, [target]);
+  const header = `${target.schema ? target.schema + '.' : ''}${target.table}`;
 
   if (!s) return <div className="p-4 text-muted">{t('status.disconnected')}</div>;
   return (
     <div className="flex h-full min-h-0 flex-col" onKeyDown={onKeyDown}>
-      <Toolbar>
-        <span className="mr-2 font-semibold">{header}</span>
-        <button className="btn" onClick={() => load()} title="⌘/Ctrl+R">⟳ {t('common.refresh')}</button>
+      <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border bg-panel px-2">
+        <button className="icon-btn" title="Refresh (⌘/Ctrl+R)" aria-label={t('common.refresh')} onClick={() => load()}><Icon name="refresh" size={15} /></button>
         {editable && (
           <>
-            <button className="btn" onClick={() => change(addRow(staged))}>+ {t('grid.addRow')}</button>
-            <button className="btn" onClick={duplicateSelected} disabled={!selRows.length}>{t('grid.duplicateRow')}</button>
-            <button className="btn" onClick={() => change(toggleDelete(staged, selRows.filter((r) => r < (rs?.rows.length ?? 0))))} disabled={!selRows.length || keyCols.length === 0}>🗑 {t('grid.deleteRows')}</button>
-            <button className="btn" onClick={() => { const p = hist.current.undo(staged); if (p) setStaged(p); }} title="⌘/Ctrl+Z">↶</button>
-            <button className="btn" onClick={() => { const n = hist.current.redo(staged); if (n) setStaged(n); }} title="⌘/Ctrl+Shift+Z">↷</button>
+            <span className="mx-1 h-4 border-l border-border" />
+            <button className="icon-btn" title={t('grid.addRow')} aria-label={t('grid.addRow')} onClick={() => change(addRow(staged))}><Icon name="plus" size={16} /></button>
+            <button className="icon-btn" title={t('grid.duplicateRow')} aria-label={t('grid.duplicateRow')} onClick={duplicateSelected} disabled={!selRows.length}><Icon name="copy" size={15} /></button>
+            <button className="icon-btn" title={t('grid.deleteRows')} aria-label={t('grid.deleteRows')} onClick={() => change(toggleDelete(staged, selRows.filter((r) => r < (rs?.rows.length ?? 0))))} disabled={!selRows.length || keyCols.length === 0}><Icon name="trash" size={15} /></button>
+            <span className="mx-1 h-4 border-l border-border" />
+            <button className="icon-btn" title="Undo (⌘/Ctrl+Z)" aria-label={t('grid.undo')} onClick={() => { const p = hist.current.undo(staged); if (p) setStaged(p); }}>↶</button>
+            <button className="icon-btn" title="Redo (⌘/Ctrl+Shift+Z)" aria-label={t('grid.redo')} onClick={() => { const n = hist.current.redo(staged); if (n) setStaged(n); }}>↷</button>
           </>
         )}
         {pending > 0 && (
-          <>
-            <span className="ml-2 rounded bg-warn/20 px-2 text-warn" aria-live="polite">{t('grid.pending', { n: pending })}</span>
-            <button className="btn btn-primary" onClick={startReview} title="⌘/Ctrl+S">{t('grid.review')}</button>
-            <button className="btn" onClick={() => change(emptyStaged())}>{t('grid.discard')}</button>
-          </>
+          <div className="ml-2 flex items-center gap-1.5" aria-live="polite">
+            <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn">{t('grid.pending', { n: pending })}</span>
+            <button className="btn h-6" onClick={() => change(emptyStaged())}>{t('grid.discard')}</button>
+            <button className="btn btn-primary h-6" onClick={startReview} title="⌘/Ctrl+S">{t('grid.commit')}…</button>
+          </div>
         )}
-        <select className="input ml-auto w-auto" aria-label={t('common.export')} value="" onChange={(e) => e.target.value && exportAll(e.target.value as ExportFormat)}>
-          <option value="">{t('common.export')}…</option>
-          <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="json_lines">JSON Lines</option>
-          <option value="sql_insert">SQL INSERT</option><option value="xlsx">Excel (XLSX)</option><option value="markdown">Markdown</option><option value="xml">XML</option>
-        </select>
-        <button className="btn" onClick={() => setFilters([...filters, { column: columns[0]?.name ?? '', op: 'eq', text: '' }])}>{t('grid.filterAdd')}</button>
-      </Toolbar>
+        <div className="ml-auto flex items-center gap-1">
+          <button className={`icon-btn ${filters.length ? 'bg-accent/15 text-accent' : ''}`} title={t('grid.filterAdd')} aria-label={t('grid.filterAdd')} onClick={() => setFilters(filters.length ? [] : [{ column: columns[0]?.name ?? '', op: 'eq', text: '' }])}><Icon name="filter" size={15} /></button>
+          <select className="input h-7 w-auto" aria-label={t('common.export')} value="" onChange={(e) => e.target.value && exportAll(e.target.value as ExportFormat)}>
+            <option value="">{t('common.export')}…</option>
+            <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="json_lines">JSON Lines</option>
+            <option value="sql_insert">SQL INSERT</option><option value="xlsx">Excel (XLSX)</option><option value="markdown">Markdown</option><option value="xml">XML</option>
+          </select>
+        </div>
+      </div>
       {editable && desc && keyCols.length === 0 && <div className="border-b border-border bg-warn/10 px-2 py-1 text-sm text-warn">{t('grid.noKey')}</div>}
       {filters.length > 0 && (
         <div className="space-y-1 border-b border-border bg-panel p-2">
@@ -252,7 +258,9 @@ export function TableView({ tab }: { tab: Tab }) {
         </div>
       )}
       <ErrorBox error={error} />
-      {loading && !rs ? (
+      {mode === 'structure' ? (
+        <div className="min-h-0 flex-1"><StructureView tab={tab} /></div>
+      ) : loading && !rs ? (
         <div className="p-4"><Spinner label={t('common.loading')} /></div>
       ) : rs ? (
         <DataGrid
@@ -269,18 +277,25 @@ export function TableView({ tab }: { tab: Tab }) {
           ariaLabel={`Table ${header}`}
         />
       ) : null}
-      <div className="flex items-center gap-2 border-t border-border bg-panel px-2 py-1 text-sm">
-        <button className="btn" disabled={page === 0} onClick={() => setPage(0)} aria-label="First page">⏮</button>
-        <button className="btn" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Previous page">◀</button>
-        <span>{t('grid.page', { p: page + 1 })} {pages != null && t('grid.of', { n: pages })}</span>
-        <button className="btn" disabled={pages != null ? page + 1 >= pages : (rs?.rows.length ?? 0) < pageSize} onClick={() => setPage(page + 1)} aria-label="Next page">▶</button>
-        <label className="ml-2 flex items-center gap-1">{t('grid.pageSize')}
-          <select className="input w-auto" value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
-            {[100, 500, 1000, 5000, 10000, 50000].map((n) => <option key={n}>{n}</option>)}
-          </select>
-        </label>
-        <span className="ml-auto text-muted">{count != null ? `${count.toLocaleString()} ${t('common.rows')}` : ''}</span>
-        {loading && <Spinner />}
+      <div className="flex h-[30px] shrink-0 items-center gap-2 border-t border-border bg-panel px-2 text-[0.88rem]">
+        <div className="seg" role="tablist" aria-label="View">
+          <button role="tab" aria-selected={mode === 'data'} onClick={() => setMode('data')}>Data</button>
+          <button role="tab" aria-selected={mode === 'structure'} onClick={() => setMode('structure')}>Structure</button>
+        </div>
+        {mode === 'data' && (
+          <>
+            <span className="text-muted">{count != null ? `${count.toLocaleString()} ${t('common.rows')}` : ''}{applied.length ? ' (filtered)' : ''}</span>
+            {loading && <Spinner />}
+            <div className="ml-auto flex items-center gap-1">
+              <button className="icon-btn h-6 w-6" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Previous page"><Icon name="chevronRight" size={14} className="rotate-180" /></button>
+              <span className="tabular-nums text-muted">{page * pageSize + 1}–{page * pageSize + (rs?.rows.length ?? 0)}{count != null ? ` of ${count.toLocaleString()}` : ''}</span>
+              <button className="icon-btn h-6 w-6" disabled={pages != null ? page + 1 >= pages : (rs?.rows.length ?? 0) < pageSize} onClick={() => setPage(page + 1)} aria-label="Next page"><Icon name="chevronRight" size={14} /></button>
+              <select className="input h-6 w-auto py-0 text-[0.85rem]" aria-label={t('grid.pageSize')} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
+                {[100, 500, 1000, 5000, 10000, 50000].map((n) => <option key={n} value={n}>{n} / page</option>)}
+              </select>
+            </div>
+          </>
+        )}
       </div>
       {review && (
         <Dialog

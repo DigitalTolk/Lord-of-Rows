@@ -2,41 +2,46 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Native-feeling neutral palette. Values are RGB triplets for Tailwind alpha. */
 :root {
-  --bg: 250 250 251;
-  --panel: 243 244 246;
-  --raised: 255 255 255;
-  --border: 214 217 222;
-  --fg: 24 26 31;
-  --muted: 102 108 120;
-  --accent: 37 99 235;
-  --danger: 200 30 30;
-  --warn: 180 110 0;
-  --ok: 22 130 70;
-  --mono-font: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --bg: 255 255 255;
+  --panel: 246 246 247;      /* sidebar / toolbars */
+  --raised: 255 255 255;     /* inputs, cards */
+  --hover: 236 236 238;
+  --border: 226 226 229;
+  --fg: 28 28 30;
+  --muted: 120 120 128;
+  --accent: 10 112 245;
+  --danger: 215 45 45;
+  --warn: 196 120 0;
+  --ok: 30 150 80;
+  --select: 10 112 245;
+  --mono-font: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
   --ui-scale: 1;
   color-scheme: light;
 }
 
 :root.dark {
-  --bg: 22 23 27;
-  --panel: 30 32 37;
-  --raised: 38 40 46;
-  --border: 56 59 67;
-  --fg: 228 230 235;
-  --muted: 150 155 166;
-  --accent: 96 145 255;
-  --danger: 245 90 90;
-  --warn: 240 175 60;
-  --ok: 70 200 120;
+  --bg: 30 30 32;
+  --panel: 38 38 41;
+  --raised: 46 46 50;
+  --hover: 54 54 58;
+  --border: 60 60 65;
+  --fg: 232 232 236;
+  --muted: 150 150 158;
+  --accent: 64 145 255;
+  --danger: 255 95 90;
+  --warn: 245 175 60;
+  --ok: 80 205 125;
+  --select: 64 145 255;
   color-scheme: dark;
 }
 
-/* High contrast: WCAG AAA-leaning palette, thick focus rings. */
 :root.hc {
   --bg: 0 0 0;
   --panel: 0 0 0;
   --raised: 0 0 0;
+  --hover: 40 40 40;
   --border: 255 255 255;
   --fg: 255 255 255;
   --muted: 230 230 230;
@@ -44,26 +49,54 @@
   --danger: 255 110 110;
   --warn: 255 200 0;
   --ok: 120 255 120;
+  --select: 255 230 0;
   color-scheme: dark;
 }
 
 html { font-size: calc(13px * var(--ui-scale)); }
 html, body, #root { height: 100%; }
-body { @apply bg-bg text-fg antialiased; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; overflow: hidden; }
+body {
+  @apply bg-bg text-fg antialiased;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, 'Helvetica Neue', 'DejaVu Sans', sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+input, textarea, pre, [role='gridcell'], .selectable { user-select: text; -webkit-user-select: text; }
 
-:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 1px; }
-:root.hc :focus-visible { outline-width: 3px; }
+:focus-visible { outline: 2px solid rgb(var(--accent) / 0.7); outline-offset: 1px; border-radius: 4px; }
+:root.hc :focus-visible { outline: 3px solid rgb(var(--accent)); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 :root.reduce-motion * { transition: none !important; animation: none !important; }
 
-.btn { @apply inline-flex items-center gap-1 rounded border border-border bg-raised px-2 py-1 text-fg hover:bg-panel disabled:opacity-50 disabled:cursor-not-allowed; }
-.btn-primary { @apply border-accent bg-accent text-white hover:opacity-90; }
-:root.hc .btn-primary { @apply text-black; }
-.btn-danger { @apply border-danger bg-danger text-white hover:opacity-90; }
-.btn-ghost { @apply border-transparent bg-transparent hover:bg-panel; }
-.input { @apply w-full rounded border border-border bg-raised px-2 py-1 text-fg placeholder:text-muted; }
-.label { @apply mb-0.5 block text-xs font-medium text-muted; }
-.cell-null { @apply italic text-muted; }
-.kbd { @apply rounded border border-border bg-panel px-1 font-mono text-[0.85em]; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--muted) / 0.35); border-radius: 10px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgb(var(--muted) / 0.6); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+@layer components {
+  .btn {
+    @apply inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-raised px-2.5 text-[0.95rem] text-fg shadow-[0_1px_0_rgb(0_0_0/0.04)] transition-colors hover:bg-hover active:bg-hover disabled:cursor-default disabled:opacity-45;
+  }
+  .btn-primary { @apply border-transparent bg-accent text-white shadow-none hover:bg-accent/90 active:bg-accent/80; }
+  :root.hc .btn-primary { @apply text-black; }
+  .btn-danger { @apply border-transparent bg-danger text-white shadow-none hover:bg-danger/90; }
+  .btn-ghost { @apply border-transparent bg-transparent shadow-none hover:bg-hover; }
+  .icon-btn { @apply inline-flex h-7 w-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-fg disabled:opacity-40; }
+  .input {
+    @apply h-7 w-full rounded-md border border-border bg-raised px-2 text-fg outline-none transition-shadow placeholder:text-muted/70 focus:border-accent/60 focus:ring-[3px] focus:ring-accent/20 disabled:opacity-60;
+  }
+  textarea.input { @apply h-auto py-1.5; }
+  select.input { @apply pr-6; }
+  .label { @apply mb-1 block text-[0.85rem] font-medium text-muted; }
+  .cell-null { @apply italic text-muted/80; }
+  .kbd { @apply rounded border border-border bg-panel px-1 font-mono text-[0.8em] text-muted; }
+  .section-title { @apply px-3 pb-1 pt-3 text-[0.72rem] font-semibold uppercase tracking-wider text-muted; }
+  .seg { @apply inline-flex rounded-md border border-border bg-panel p-0.5; }
+  .seg > button { @apply h-6 rounded-[5px] px-1.5 text-[0.9rem] text-muted transition-colors hover:text-fg; }
+  .seg > button[aria-checked='true'], .seg > button[aria-selected='true'] { @apply bg-raised text-fg shadow-sm; }
+  .card { @apply rounded-lg border border-border bg-raised; }
+}
+
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }

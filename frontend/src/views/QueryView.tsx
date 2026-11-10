@@ -5,7 +5,8 @@ import { format as formatSql } from 'sql-formatter';
 import { confirmDecision } from '../components/confirm';
 import { Results } from '../components/Results';
 import { ask } from '../components/ask';
-import { ErrorBox, Spinner, Toolbar } from '../components/ui';
+import { ErrorBox, Spinner } from '../components/ui';
+import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
 import { monaco, registerSqlCompletion, setCompletionSource } from '../lib/monaco';
 import { family } from '../lib/sqlgen';
@@ -183,24 +184,23 @@ export function QueryView({ tab }: { tab: Tab }) {
   const dark = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('hc');
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Toolbar>
-        <button className="btn btn-primary" onClick={() => run('selection')} disabled={!s || !!running} title="⌘/Ctrl+Enter">▶ {t('query.run')}</button>
-        <button className="btn" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
-        <button className="btn" onClick={() => run('current')} disabled={!s || !!running}>{t('query.runCurrent')}</button>
-        <button className="btn" onClick={cancel} disabled={!running} title="⌘/Ctrl+.">■ {t('query.cancel')}</button>
+      <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
+        <button className="btn btn-primary h-6 px-2" onClick={() => run('selection')} disabled={!s || !!running} title="Run selection or current statement (⌘/Ctrl+Enter)"><Icon name="play" size={12} fill="currentColor" /> {t('query.run')}</button>
+        <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
+        <button className="icon-btn h-6 w-6" onClick={cancel} disabled={!running} title={`${t('query.cancel')} (⌘/Ctrl+.)`} aria-label={t('query.cancel')}><Icon name="stop" size={13} /></button>
+        {running && <Spinner label={t('query.running')} />}
         {!isRedis && (
           <>
-            <span className="mx-1 h-5 border-l border-border" />
-            <button className="btn" onClick={fmt}>{t('query.format')}</button>
-            <button className="btn" onClick={minify}>{t('query.minify')}</button>
-            {s?.capabilities.explain && <button className="btn" onClick={() => explain(false)}>{t('query.explain')}</button>}
-            {s?.capabilities.explain_analyze && <button className="btn" onClick={() => explain(true)}>{t('query.explainAnalyze')}</button>}
+            <span className="mx-1 h-4 border-l border-border" />
+            <button className="btn btn-ghost h-6 px-2" onClick={fmt} title="⌘/Ctrl+Alt+F">{t('query.format')}</button>
+            {s?.capabilities.explain && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(false)}>{t('query.explain')}</button>}
+            {s?.capabilities.explain_analyze && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(true)}>{t('query.explainAnalyze')}</button>}
+            <button className="btn btn-ghost h-6 px-2" onClick={minify}>{t('query.minify')}</button>
           </>
         )}
-        <button className="btn" onClick={saveSnippet}>{t('query.saveSnippet')}</button>
-        {running && <Spinner label={t('query.running')} />}
-        {!s && <span className="ml-2 text-warn">{t('status.disconnected')}</span>}
-      </Toolbar>
+        <button className="btn btn-ghost ml-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
+        {s ? <span className="text-[0.82rem] text-muted">{s.config.name}{s.activeSchema ? ` · ${s.activeSchema}` : ''}</span> : <span className="text-warn">{t('status.disconnected')}</span>}
+      </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
           <Editor

@@ -1,0 +1,8 @@
+SET SESSION cte_max_recursion_depth = 10000;
+DROP TABLE IF EXISTS order_items, orders, products, customers;
+CREATE TABLE customers (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, email VARCHAR(200) UNIQUE, country CHAR(2), vip TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE products (id INT AUTO_INCREMENT PRIMARY KEY, sku VARCHAR(20) UNIQUE NOT NULL, title VARCHAR(200) NOT NULL, price DECIMAL(12,2) NOT NULL, attributes JSON);
+CREATE TABLE orders (id BIGINT AUTO_INCREMENT PRIMARY KEY, customer_id BIGINT NOT NULL, status ENUM('pending','paid','shipped','refunded') NOT NULL DEFAULT 'pending', total DECIMAL(12,2) NOT NULL, placed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE, INDEX (status));
+INSERT INTO customers (name,email,country,vip) WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM g WHERE n < 300) SELECT CONCAT('Customer ',n), CONCAT('user',n,'@example.com'), ELT(1+n%5,'US','GB','DE','PK','SE'), n%11=0 FROM g;
+INSERT INTO products (sku,title,price,attributes) WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM g WHERE n < 80) SELECT CONCAT('SKU-',LPAD(n,4,'0')), CONCAT(ELT(1+n%4,'Desk','Chair','Lamp','Monitor'),' ',n), ROUND(5+RAND()*500,2), JSON_OBJECT('color',ELT(1+n%3,'black','white','oak')) FROM g;
+INSERT INTO orders (customer_id,status,total) WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM g WHERE n < 2000) SELECT 1+(n*7)%300, ELT(1+n%4,'pending','paid','shipped','refunded'), ROUND(10+RAND()*900,2) FROM g;

@@ -20,7 +20,7 @@ export interface GridProps {
   ariaLabel?: string;
 }
 
-const ROW_H = 24;
+const ROW_H = 23;
 const MIN_W = 60;
 
 interface Sel {
@@ -40,7 +40,7 @@ export function DataGrid(p: GridProps) {
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [order, setOrder] = useState<number[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
-  const [frozen, setFrozen] = useState(1);
+  const [frozen, setFrozen] = useState(0);
   const [sel, setSel] = useState<Sel | null>(null);
   const [editing, setEditing] = useState<{ r: number; c: number; big?: boolean } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; col?: number } | null>(null);
@@ -54,7 +54,16 @@ export function DataGrid(p: GridProps) {
   const inserted = useMemo(() => p.staged?.inserted ?? [], [p.staged]);
   const total = p.rows.length + inserted.length;
   const visibleCols = useMemo(() => order.filter((i) => p.columns[i] && !hidden.has(p.columns[i].name)), [order, hidden, p.columns]);
-  const width = (i: number) => widths[p.columns[i].name] ?? Math.min(320, Math.max(MIN_W, p.columns[i].name.length * 8 + 40));
+  // Auto-size from header + a sample of cell contents (monospace ~7.2px/char).
+  const autoWidths = useMemo(() => {
+    const sample = p.rows.slice(0, 60);
+    return p.columns.map((c, i) => {
+      let len = c.name.length + 2;
+      for (const r of sample) len = Math.max(len, Math.min(60, displayValue(r[i] ?? { t: 'null' }).length));
+      return Math.min(420, Math.max(MIN_W, Math.round(len * 7.4 + 22)));
+    });
+  }, [p.columns, p.rows]);
+  const width = (i: number) => widths[p.columns[i].name] ?? autoWidths[i];
   const left = useMemo(() => {
     const l: number[] = [];
     let x = 48;
@@ -188,7 +197,7 @@ export function DataGrid(p: GridProps) {
         aria-rowcount={total + 1}
         aria-colcount={visibleCols.length}
         onKeyDown={onKey}
-        className="min-h-0 flex-1 overflow-auto font-mono text-[0.92em] outline-none"
+        className="min-h-0 flex-1 overflow-auto bg-bg font-mono text-[0.9em] outline-none"
       >
         <div style={{ width: totalWidth, height: virt.getTotalSize() + ROW_H, position: 'relative' }}>
           {/* header */}
@@ -220,12 +229,11 @@ export function DataGrid(p: GridProps) {
                     setMenu({ x: e.clientX, y: e.clientY, col: ci });
                   }}
                   title={`${c.name} : ${c.type_name}`}
-                  className={`relative flex shrink-0 cursor-pointer select-none items-center gap-1 truncate border-r border-border px-2 font-sans font-semibold ${isFrozen ? 'sticky z-20 bg-panel' : ''}`}
+                  className={`relative flex shrink-0 cursor-default select-none items-center gap-1 truncate border-r border-border px-2 font-sans text-[0.92rem] font-semibold hover:bg-hover ${isFrozen ? 'sticky z-20 bg-panel' : ''}`}
                   style={{ width: width(ci), left: isFrozen ? left[vc] : undefined }}
                 >
                   <span className="truncate">{c.name}</span>
-                  <span className="text-[0.75em] font-normal text-muted">{c.type_name}</span>
-                  {s && <span aria-hidden>{s === 'asc' ? '▲' : '▼'}</span>}
+                  {s && <span aria-hidden className="ml-auto text-[0.7em] text-accent">{s === 'asc' ? '▲' : '▼'}</span>}
                   <span className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize" onMouseDown={(e) => startResize(e, ci)} onClick={(e) => e.stopPropagation()} aria-hidden />
                 </div>
               );
@@ -240,10 +248,10 @@ export function DataGrid(p: GridProps) {
                 key={vr.key}
                 role="row"
                 aria-rowindex={r + 2}
-                className={`absolute left-0 flex border-b border-border/50 ${deleted ? 'bg-danger/10 line-through' : isNew ? 'bg-ok/10' : r % 2 ? 'bg-panel/40' : ''}`}
+                className={`absolute left-0 flex border-b border-border/40 ${deleted ? 'bg-danger/10 line-through' : isNew ? 'bg-ok/10' : r % 2 ? 'bg-panel/60' : 'bg-bg'}`}
                 style={{ top: vr.start + ROW_H, height: ROW_H, width: totalWidth }}
               >
-                <div role="rowheader" className="sticky left-0 z-10 w-12 shrink-0 border-r border-border bg-panel pr-1 text-right text-muted" onClick={() => setSel({ r0: r, c0: 0, r1: r, c1: visibleCols.length - 1 })}>
+                <div role="rowheader" className="sticky left-0 z-10 w-12 shrink-0 border-r border-border bg-panel pr-2 text-right text-[0.85em] leading-[23px] text-muted" onClick={() => setSel({ r0: r, c0: 0, r1: r, c1: visibleCols.length - 1 })}>
                   {isNew ? '+' : r + 1}
                 </div>
                 {visibleCols.map((ci, vc) => {
@@ -256,7 +264,7 @@ export function DataGrid(p: GridProps) {
                       key={ci}
                       role="gridcell"
                       aria-selected={!!selected}
-                      className={`shrink-0 truncate border-r border-border/50 px-2 leading-6 ${isNumeric(v) ? 'text-right' : ''} ${edited ? 'bg-warn/20' : ''} ${selected ? '!bg-accent/25' : ''} ${isFrozen ? 'sticky z-[5] bg-bg' : ''}`}
+                      className={`shrink-0 truncate border-r border-border/40 px-2 leading-[23px] ${isNumeric(v) ? 'text-right tabular-nums' : ''} ${edited ? 'bg-warn/20' : ''} ${selected ? '!bg-select/20' : ''} ${isFrozen ? 'sticky z-[5] bg-inherit' : ''}`}
                       style={{ width: width(ci), left: isFrozen ? left[vc] : undefined }}
                       onMouseDown={(e) => {
                         if (e.button !== 0) return;
@@ -301,7 +309,7 @@ export function DataGrid(p: GridProps) {
         />
       )}
       {menu && (
-        <div role="menu" className="fixed z-50 w-56 rounded border border-border bg-raised py-1 font-sans shadow-lg" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
+        <div role="menu" className="fixed z-50 w-56 rounded-lg border border-border bg-raised p-1 font-sans shadow-xl" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
           {menu.col !== undefined ? (
             <>
               <MenuItem onClick={() => { setHidden((h) => new Set([...h, p.columns[menu.col!].name])); setMenu(null); }}>{t('grid.hideColumn')}</MenuItem>
@@ -327,7 +335,7 @@ export function DataGrid(p: GridProps) {
 }
 
 function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return <button role="menuitem" className="block w-full px-3 py-1 text-left hover:bg-panel" onClick={onClick}>{children}</button>;
+  return <button role="menuitem" className="block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white" onClick={onClick}>{children}</button>;
 }
 
 function InlineEditor({ initial, onDone, onCancel }: { initial: string; onDone: (t: string) => void; onCancel: () => void }) {

@@ -32,6 +32,9 @@ interface State {
   closedTabs: Tab[];
   activeTab?: string;
   paletteOpen: boolean;
+  launcher: boolean;
+  lastTab: Record<string, string>;
+  switchSession(id: string): void;
   connectionDialog?: { id?: string; duplicateOf?: string } | null;
   toasts: { id: number; kind: 'info' | 'error' | 'ok'; text: string }[];
 
@@ -60,6 +63,8 @@ export const useApp = create<State>((set, get) => ({
   tabs: [],
   closedTabs: [],
   paletteOpen: false,
+  launcher: false,
+  lastTab: {},
   toasts: [],
 
   async init() {
@@ -95,21 +100,47 @@ export const useApp = create<State>((set, get) => ({
       : schemas.includes('public') ? 'public'
       : schemas.includes('main') ? 'main'
       : schemas[0] ?? null;
+    const prev = get();
     set({
-      sessions: { ...get().sessions, [s.session_id]: { ...s, schemas, objects: {}, activeSchema: preferred, healthy: true } },
+      sessions: { ...prev.sessions, [s.session_id]: { ...s, schemas, objects: {}, activeSchema: preferred, healthy: true } },
       activeSession: s.session_id,
+      activeTab: undefined,
+      lastTab: prev.activeSession && prev.activeTab ? { ...prev.lastTab, [prev.activeSession]: prev.activeTab } : prev.lastTab,
+      launcher: false,
     });
     await get().loadObjects(s.session_id, preferred);
+    // If the default schema has no tables, switch to the first user schema that does.
+    const hasTables = (sch: string | null) => (get().sessions[s.session_id]?.objects[sch ?? ''] ?? []).some((o) => o.kind === 'table' || o.kind === 'view');
+    if (!hasTables(preferred)) {
+      const system = new Set(['information_schema', 'pg_catalog', 'mysql', 'performance_schema', 'sys', 'crdb_internal', 'pg_extension']);
+      for (const sch of schemas.filter((x) => x !== preferred && !system.has(x)).slice(0, 20)) {
+        await get().loadObjects(s.session_id, sch);
+        if (hasTables(sch)) {
+          get().setActiveSchema(s.session_id, sch);
+          break;
+        }
+      }
+    }
     void get().reloadConnections();
     return s.session_id;
+  },
+
+  switchSession(id) {
+    const st = get();
+    const cur = st.activeTab;
+    const lastTab = { ...st.lastTab };
+    if (st.activeSession && cur) lastTab[st.activeSession] = cur;
+    const target = lastTab[id] && st.tabs.some((t) => t.id === lastTab[id]) ? lastTab[id] : st.tabs.find((t) => t.sessionId === id)?.id;
+    set({ activeSession: id, activeTab: target, lastTab, launcher: false });
   },
 
   async closeSession(sessionId) {
     await api.closeSession(sessionId).catch(() => undefined);
     const sessions = { ...get().sessions };
     delete sessions[sessionId];
-    const tabs = get().tabs.map((t) => (t.sessionId === sessionId ? { ...t, sessionId: undefined } : t));
-    set({ sessions, tabs, activeSession: Object.keys(sessions)[0] });
+    const tabs = get().tabs.filter((t) => t.sessionId !== sessionId);
+    const next = Object.keys(sessions)[0];
+    set({ sessions, tabs, activeSession: next, activeTab: tabs.find((t) => t.sessionId === next)?.id });
   },
 
   async loadObjects(sessionId, schema) {

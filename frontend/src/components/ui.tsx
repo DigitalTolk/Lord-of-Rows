@@ -5,15 +5,21 @@ import type { EnvironmentKind } from '../lib/types';
 export function Dialog({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // Runs once per mount: set initial focus, trap Tab, restore focus on unmount.
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     const el = ref.current;
     const focusable = () => Array.from(el?.querySelectorAll<HTMLElement>('button,input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? []).filter((x) => !x.hasAttribute('disabled'));
-    (focusable()[0] ?? el)?.focus();
+    const pick = () => (el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>('input:not([type=checkbox]):not([disabled]),textarea,select') ?? focusable()[0] ?? el)?.focus();
+    pick();
+    // WebKit can move focus back to the clicked opener after this effect; re-apply once painted.
+    const raf = requestAnimationFrame(() => setTimeout(pick, 0));
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        closeRef.current();
       }
       if (e.key === 'Tab') {
         const f = focusable();
@@ -31,26 +37,27 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
     };
     el?.addEventListener('keydown', onKey);
     return () => {
+      cancelAnimationFrame(raf);
       el?.removeEventListener('keydown', onKey);
       prev?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex max-h-[90vh] flex-col rounded-lg border border-border bg-raised shadow-xl ${wide ? 'w-[min(1100px,95vw)]' : 'w-[min(640px,95vw)]'}`}
+        className={`flex max-h-[90vh] flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-[0_20px_60px_rgb(0_0_0/0.25)] outline-none ${wide ? 'w-[min(980px,95vw)]' : 'w-[min(660px,95vw)]'}`}
       >
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
-          <h2 id={titleId} className="text-base font-semibold">{title}</h2>
-          <button className="btn btn-ghost" aria-label="Close" onClick={onClose}>✕</button>
+        <div className="flex h-11 shrink-0 items-center justify-between px-4">
+          <h2 id={titleId} className="text-[1.05rem] font-semibold">{title}</h2>
+          <button className="icon-btn" aria-label="Close" onClick={onClose}>✕</button>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-4">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-border px-4 py-2">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-2.5">{footer}</div>}
       </div>
     </div>
   );
@@ -67,7 +74,7 @@ const envColors: Record<EnvironmentKind, string> = {
 
 export function EnvBadge({ env }: { env: EnvironmentKind }) {
   const { t } = useTranslation();
-  return <span className={`rounded border px-1.5 text-[0.7rem] uppercase tracking-wide ${envColors[env]}`}>{t(`env.${env}`)}</span>;
+  return <span className={`inline-flex h-[18px] items-center rounded-full border px-1.5 text-[0.68rem] font-semibold uppercase tracking-wide ${envColors[env]}`}>{t(`env.${env}`)}</span>;
 }
 
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
@@ -109,5 +116,5 @@ export function ErrorBox({ error }: { error: string | null | undefined }) {
 }
 
 export function Toolbar({ children }: { children: ReactNode }) {
-  return <div role="toolbar" className="flex flex-wrap items-center gap-1 border-b border-border bg-panel px-2 py-1">{children}</div>;
+  return <div role="toolbar" className="flex min-h-[38px] flex-wrap items-center gap-1.5 border-b border-border bg-panel px-2 py-1">{children}</div>;
 }
