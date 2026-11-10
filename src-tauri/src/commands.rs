@@ -376,6 +376,12 @@ pub async fn list_schemas(st: State<'_, AppState>, session_id: String) -> R<Vec<
 }
 
 #[tauri::command]
+pub async fn use_schema(st: State<'_, AppState>, session_id: String, schema: String) -> R<()> {
+    check_len(&schema, 128, "schema")?;
+    st.session(&session_id)?.conn.use_schema(&schema).await
+}
+
+#[tauri::command]
 pub async fn list_objects(st: State<'_, AppState>, session_id: String, schema: Option<String>) -> R<Vec<ObjectRef>> {
     st.session(&session_id)?.conn.list_objects(schema.as_deref()).await
 }

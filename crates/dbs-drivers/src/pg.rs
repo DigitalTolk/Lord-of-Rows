@@ -725,6 +725,13 @@ impl DatabaseConnection for PgConnection {
         r.result.ok_or_else(|| DbError::internal("no plan returned"))
     }
 
+    async fn use_schema(&self, schema: &str) -> DbResult<()> {
+        // Keep `public` as a fallback so extensions installed there still resolve.
+        let q = Dialect::Postgres.quote_ident(schema)?;
+        let sql = if schema == "public" { format!("SET search_path TO {q}") } else { format!("SET search_path TO {q}, public") };
+        self.client.batch_execute(&sql).await.map_err(map_pg_err)
+    }
+
     async fn set_read_only(&self, ro: bool) -> DbResult<()> {
         let s = if ro {
             "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY; SET default_transaction_read_only = on"

@@ -151,6 +151,13 @@ async fn postgres_end_to_end() {
     exec(&*c, "DROP SCHEMA IF EXISTS it CASCADE; CREATE SCHEMA it; CREATE TABLE it.people (id int PRIMARY KEY, name text)").await;
     crud_scenario(&*c, Some("it"), "people").await;
 
+    // Selecting a schema makes unqualified names resolve to it.
+    assert!(c.execute("SELECT count(*) FROM people", &ExecOptions::default(), CancellationToken::new()).await.is_err());
+    c.use_schema("it").await.unwrap();
+    let r = exec(&*c, "SELECT count(*) FROM people").await;
+    assert_eq!(first_rows(&r)[0][0], Value::Int(3));
+    c.use_schema("public").await.unwrap();
+
     // Type fidelity.
     let r = exec(
         &*c,
@@ -282,6 +289,8 @@ async fn mysql_end_to_end() {
     assert!(!c.server_info().await.unwrap().version.is_empty());
     exec(&*c, "DROP TABLE IF EXISTS people; CREATE TABLE people (id int PRIMARY KEY, name varchar(50) NULL)").await;
     crud_scenario(&*c, None, "people").await;
+    c.use_schema("dbs_test").await.unwrap();
+    assert!(c.use_schema("no_such_db").await.is_err());
 
     let r = exec(
         &*c,

@@ -111,6 +111,7 @@ export const useApp = create<State>((set, get) => ({
     await get().loadObjects(s.session_id, preferred);
     // If the default schema has no tables, switch to the first user schema that does.
     const hasTables = (sch: string | null) => (get().sessions[s.session_id]?.objects[sch ?? ''] ?? []).some((o) => o.kind === 'table' || o.kind === 'view');
+    if (preferred && hasTables(preferred)) await api.useSchema(s.session_id, preferred).catch(() => undefined);
     if (!hasTables(preferred)) {
       const system = new Set(['information_schema', 'pg_catalog', 'mysql', 'performance_schema', 'sys', 'crdb_internal', 'pg_extension']);
       for (const sch of schemas.filter((x) => x !== preferred && !system.has(x)).slice(0, 20)) {
@@ -153,6 +154,8 @@ export const useApp = create<State>((set, get) => ({
   setActiveSchema(sessionId, schema) {
     const s = get().sessions[sessionId];
     if (!s) return;
+    // The selected schema is also the default for unqualified names in SQL tabs.
+    api.useSchema(sessionId, schema).catch((e) => get().toast('error', errMsg(e)));
     set({ sessions: { ...get().sessions, [sessionId]: { ...s, activeSchema: schema } } });
     if (!s.objects[schema]) void get().loadObjects(sessionId, schema);
   },

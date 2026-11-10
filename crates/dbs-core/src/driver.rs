@@ -125,6 +125,13 @@ pub trait DatabaseConnection: Send + Sync {
         Err(DbError::unsupported("EXPLAIN"))
     }
 
+    /// Make `schema` the default for unqualified names in user SQL
+    /// (Postgres `search_path`, MySQL `USE`). No-op where not applicable.
+    async fn use_schema(&self, schema: &str) -> DbResult<()> {
+        let _ = schema;
+        Ok(())
+    }
+
     async fn set_read_only(&self, read_only: bool) -> DbResult<()> {
         let _ = read_only;
         Err(DbError::unsupported("read-only sessions"))

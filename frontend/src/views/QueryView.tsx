@@ -73,6 +73,7 @@ export function QueryView({ tab }: { tab: Tab }) {
         }
       }
       if (!sql.trim()) return;
+      ed.trigger('run', 'hideSuggestWidget', null);
       setError(null);
       setMessages([]);
       const queryId = crypto.randomUUID();

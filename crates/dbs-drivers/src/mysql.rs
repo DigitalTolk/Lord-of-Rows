@@ -590,6 +590,11 @@ impl DatabaseConnection for MySqlConnection {
         r.pop().and_then(|s| s.result).ok_or_else(|| DbError::internal("no plan returned"))
     }
 
+    async fn use_schema(&self, schema: &str) -> DbResult<()> {
+        let q = Dialect::MySql.quote_ident(schema)?;
+        self.conn.lock().await.query_drop(format!("USE {q}")).await.map_err(map_err)
+    }
+
     async fn set_read_only(&self, ro: bool) -> DbResult<()> {
         let s = if ro { "SET SESSION TRANSACTION READ ONLY" } else { "SET SESSION TRANSACTION READ WRITE" };
         self.conn.lock().await.query_drop(s).await.map_err(map_err)

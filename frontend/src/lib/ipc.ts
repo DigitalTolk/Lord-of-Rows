@@ -41,6 +41,7 @@ export const api = {
 
   listDatabases: (sessionId: string) => call<string[]>('list_databases', { sessionId }),
   listSchemas: (sessionId: string) => call<string[]>('list_schemas', { sessionId }),
+  useSchema: (sessionId: string, schema: string) => call<void>('use_schema', { sessionId, schema }),
   listObjects: (sessionId: string, schema: string | null) => call<T.ObjectRef[]>('list_objects', { sessionId, schema }),
   describeTable: (sessionId: string, target: T.TableTarget) => call<T.TableDescription>('describe_table', { sessionId, target }),
   objectDdl: (sessionId: string, object: T.ObjectRef) => call<string>('object_ddl', { sessionId, object }),

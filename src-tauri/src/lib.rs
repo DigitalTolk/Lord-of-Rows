@@ -80,6 +80,7 @@ pub fn run() {
             commands::list_databases,
             commands::list_schemas,
             commands::list_objects,
+            commands::use_schema,
             commands::describe_table,
             commands::object_ddl,
             commands::evaluate_sql,
