@@ -107,7 +107,7 @@ export function StructureView({ tab }: { tab: Tab }) {
         </div>
         {editable && (
           <>
-            <button className="btn ml-auto" onClick={() => setCols([...cols, { name: `column_${cols.length + 1}`, data_type: 'text', nullable: true, is_primary_key: false, is_identity: false, ordinal: cols.length + 1 }])}>＋ {t('structure.addColumn')}</button>
+            <button className="btn ml-auto" onClick={() => setCols([...cols, { name: `column_${cols.length + 1}`, data_type: 'text', nullable: true, is_primary_key: false, is_identity: false, ordinal: cols.length + 1 }])}>+ {t('structure.addColumn')}</button>
             <button className="btn" onClick={preview}>{t('structure.previewChanges')}</button>
             <button className="btn btn-primary" onClick={apply} disabled={!migration || migration.steps.length === 0}>{t('structure.apply')}</button>
           </>

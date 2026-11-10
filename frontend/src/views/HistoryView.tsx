@@ -24,7 +24,7 @@ export function HistoryView({ tab }: { tab: Tab }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <Toolbar>
-        <span className="font-semibold">{t('query.history')} & {t('query.snippets')}</span>
+        <span className="font-semibold">{`${t('query.history')} & ${t('query.snippets')}`}</span>
         <input className="input w-64" placeholder={t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />
       </Toolbar>
       <div className="grid min-h-0 flex-1 grid-cols-2">

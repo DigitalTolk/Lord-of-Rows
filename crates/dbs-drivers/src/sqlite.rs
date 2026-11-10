@@ -161,10 +161,9 @@ fn run_script(c: &Connection, sql: &str, opts: &ExecOptions) -> DbResult<Vec<Sta
         }
         let cols: Vec<ColumnMeta> = stmt
             .columns()
-            .iter()
             .map(|col| ColumnMeta { name: col.name().to_string(), type_name: col.decl_type().unwrap_or("").to_string(), nullable: None, table: None })
             .collect();
-        let decls: Vec<Option<String>> = stmt.columns().iter().map(|c| c.decl_type().map(String::from)).collect();
+        let decls: Vec<Option<String>> = stmt.columns().map(|c| c.decl_type().map(String::from)).collect();
         let mut rows = stmt.query([]).map_err(map_err)?;
         let mut data = Vec::new();
         let mut truncated = false;
@@ -195,10 +194,9 @@ fn query_rows(c: &Connection, sql: &str, params: &[Value], max: usize) -> DbResu
     let ncols = stmt.column_count();
     let cols: Vec<ColumnMeta> = stmt
         .columns()
-        .iter()
         .map(|col| ColumnMeta { name: col.name().into(), type_name: col.decl_type().unwrap_or("").into(), nullable: None, table: None })
         .collect();
-    let decls: Vec<Option<String>> = stmt.columns().iter().map(|c| c.decl_type().map(String::from)).collect();
+    let decls: Vec<Option<String>> = stmt.columns().map(|c| c.decl_type().map(String::from)).collect();
     let mut rows = stmt.query(rusqlite::params_from_iter(ps.iter())).map_err(map_err)?;
     let mut data = Vec::new();
     let mut truncated = false;

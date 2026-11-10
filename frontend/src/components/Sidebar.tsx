@@ -70,7 +70,7 @@ function ConnectionList() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex gap-1 p-2">
         <input className="input" placeholder={t('conn.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />
-        <button className="btn btn-primary" title={t('conn.new')} aria-label={t('conn.new')} onClick={() => useApp.setState({ connectionDialog: {} })}>＋</button>
+        <button className="btn btn-primary" title={t('conn.new')} aria-label={t('conn.new')} onClick={() => useApp.setState({ connectionDialog: {} })}>+</button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-1" role="tree" aria-label={t('conn.title')}>
         {connections.length === 0 && <p className="p-3 text-muted">{t('conn.empty')}</p>}

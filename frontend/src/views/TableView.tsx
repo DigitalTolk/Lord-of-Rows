@@ -207,7 +207,7 @@ export function TableView({ tab }: { tab: Tab }) {
         <button className="btn" onClick={() => load()} title="⌘/Ctrl+R">⟳ {t('common.refresh')}</button>
         {editable && (
           <>
-            <button className="btn" onClick={() => change(addRow(staged))}>＋ {t('grid.addRow')}</button>
+            <button className="btn" onClick={() => change(addRow(staged))}>+ {t('grid.addRow')}</button>
             <button className="btn" onClick={duplicateSelected} disabled={!selRows.length}>{t('grid.duplicateRow')}</button>
             <button className="btn" onClick={() => change(toggleDelete(staged, selRows.filter((r) => r < (rs?.rows.length ?? 0))))} disabled={!selRows.length || keyCols.length === 0}>🗑 {t('grid.deleteRows')}</button>
             <button className="btn" onClick={() => { const p = hist.current.undo(staged); if (p) setStaged(p); }} title="⌘/Ctrl+Z">↶</button>

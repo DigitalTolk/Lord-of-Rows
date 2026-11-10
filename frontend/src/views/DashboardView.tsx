@@ -93,10 +93,10 @@ export function DashboardView({ tab }: { tab: Tab }) {
         <select className="input w-56" aria-label="Dashboard" value={board?.id ?? ''} onChange={(e) => setBoard(boards.find((b) => b.id === e.target.value) ?? null)}>
           {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
-        <button className="btn" onClick={newBoard}>＋ New</button>
+        <button className="btn" onClick={newBoard}>+ New</button>
         {board && (
           <>
-            <button className="btn" onClick={addWidget}>＋ Widget</button>
+            <button className="btn" onClick={addWidget}>+ Widget</button>
             <button className="btn" onClick={refresh}>⟳</button>
             <label className="flex items-center gap-1">Auto-refresh
               <select className="input w-auto" value={board.refreshSecs} onChange={(e) => persist({ ...board, refreshSecs: Number(e.target.value) })}>

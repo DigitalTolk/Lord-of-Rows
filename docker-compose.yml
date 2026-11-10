@@ -24,6 +24,22 @@ services:
       redis: { condition: service_started }
     command: sleep infinity
 
+  # Preview the Linux build in a browser: http://localhost:6080/vnc.html?autoconnect=1&resize=scale
+  desktop:
+    build:
+      context: docker
+      dockerfile: Dockerfile.desktop
+    image: dbstudio-desktop:latest
+    volumes:
+      - cargo-target:/target:ro
+      - desktop-home:/home/app
+    ports: ["127.0.0.1:6080:6080"]
+    shm_size: "1gb"
+    depends_on:
+      postgres: { condition: service_healthy }
+      mysql: { condition: service_healthy }
+      redis: { condition: service_started }
+
   postgres:
     image: postgres:16
     environment:
@@ -57,3 +73,4 @@ volumes:
   cargo-registry:
   cargo-target:
   node-modules:
+  desktop-home:
