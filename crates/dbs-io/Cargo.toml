@@ -2,3 +2,13 @@
 name = "dbs-io"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbs-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+csv = "1"
+rust_xlsxwriter = { version = "0.102", features = ["constant_memory"] }
+flate2 = "1"
