@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { ColumnMeta, ExportFormat, StatementResult, Value } from '../lib/types';
@@ -19,7 +19,11 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
   const { t } = useTranslation();
   const toast = useApp((s) => s.toast);
   const withRows = results.filter((r) => r.result);
-  const [idx, setIdx] = useState(0);
+  // Show the last result set by default (what you see after "Run all"); reset on each new run.
+  const [idx, setIdx] = useState(Math.max(0, withRows.length - 1));
+  useEffect(() => {
+    setIdx(Math.max(0, results.filter((r) => r.result).length - 1));
+  }, [results]);
   const [mode, setMode] = useState<Mode>('grid');
   const [search, setSearch] = useState('');
   const [recordRow, setRecordRow] = useState(0);

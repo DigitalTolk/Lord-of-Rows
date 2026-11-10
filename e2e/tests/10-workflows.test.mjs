@@ -20,7 +20,7 @@ async function fail(name, fn) {
   }
 }
 
-async function newPgConnection(name, { env, readOnly } = {}) {
+async function newPgConnection(name, { env, readOnly, tls } = {}) {
   await clickText(b, 'Create a new connection');
   await clickSel(b, 'button[title="PostgreSQL"]');
   await fill(b, 'Name', name);
@@ -30,6 +30,12 @@ async function newPgConnection(name, { env, readOnly } = {}) {
   await fill(b, 'Database', 'dbs_test');
   if (env) await clickText(b, env, { exact: true, selector: '[role=radio]' });
   if (readOnly) await clickText(b, 'Read-only', { selector: 'label' });
+  if (tls) {
+    // Verified TLS against the test CA (certificate + hostname "postgres").
+    await fill(b, 'SSL / TLS', 'verify_full');
+    await clickText(b, 'Advanced', { exact: true });
+    await fill(b, 'CA cert', '/certs/ca.crt');
+  }
 }
 
 async function openLauncher() {
@@ -229,10 +235,20 @@ describe('editing data', () => {
 });
 
 describe('production safety', () => {
-  test('production connection shows a banner and requires typed confirmation for destructive SQL', () =>
-    fail('prod', async () => {
+  test('plaintext production connections are refused', () =>
+    fail('prod-plaintext', async () => {
       await openLauncher();
-      await newPgConnection('E2E Prod', { env: 'Production' });
+      await newPgConnection('E2E Prod Plain', { env: 'Production' });
+      await clickText(b, 'Connect', { exact: true });
+      await waitText(b, 'TLS cannot be disabled for a non-local production connection');
+      await clickSel(b, 'button[aria-label="Close"]');
+    }));
+
+  test('production connection over verified TLS: banner + typed confirmation for destructive SQL', () =>
+    fail('prod', async () => {
+      await newPgConnection('E2E Prod', { env: 'Production', tls: true });
+      await clickText(b, 'Test', { exact: true });
+      await waitText(b, 'Connected to PostgreSQL');
       await clickText(b, 'Connect', { exact: true });
       await waitText(b, 'PRODUCTION');
       await newQueryTab();
@@ -276,7 +292,7 @@ describe('multiple databases', () => {
   test('MySQL via URL', () =>
     fail('mysql', async () => {
       await openLauncher();
-      await connectUrl('mysql://dbs_test:dbs_test@mysql:3306/dbs_test');
+      await connectUrl('mysql://dbs_test:dbs_test@mysql:3306/dbs_test?ssl-mode=DISABLED');
       await until(async () => (await pageText(b)).includes('orders'), 'mysql tree');
       await newQueryTab();
       await runSql(b, 'select count(*) as n from orders');
@@ -286,7 +302,7 @@ describe('multiple databases', () => {
   test('SQLite via URL', () =>
     fail('sqlite', async () => {
       await openLauncher();
-      await connectUrl('sqlite:///home/app/demo/demo.sqlite');
+      await connectUrl(`sqlite://${process.env.E2E_SQLITE}`);
       await until(async () => (await pageText(b)).includes('customer_totals'), 'sqlite tree');
     }));
 

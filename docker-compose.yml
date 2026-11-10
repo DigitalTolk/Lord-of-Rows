@@ -13,6 +13,7 @@ services:
       - cargo-registry:/usr/local/cargo/registry
       - cargo-target:/target
       - node-modules:/work/frontend/node_modules
+      - ./tests/certs:/certs:ro
     environment:
       DBS_IT: "1"
       DBS_IT_PG_HOST: postgres
@@ -33,6 +34,7 @@ services:
     volumes:
       - cargo-target:/target:ro
       - desktop-home:/home/app
+      - ./tests/certs:/certs:ro
     ports: ["127.0.0.1:6080:6080"]
     shm_size: "1gb"
     depends_on:
@@ -42,6 +44,12 @@ services:
 
   postgres:
     image: postgres:16
+    # TLS enabled (optional, not required) with a test-only CA so TLS verification is testable.
+    command: >
+      bash -c "cp /certs/server.crt /certs/server.key /tmp/ && chown postgres /tmp/server.key && chmod 600 /tmp/server.key &&
+      exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/tmp/server.crt -c ssl_key_file=/tmp/server.key"
+    volumes:
+      - ./tests/certs:/certs:ro
     environment:
       POSTGRES_USER: dbs_test
       POSTGRES_PASSWORD: dbs_test

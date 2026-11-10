@@ -7,6 +7,13 @@ cd "$(dirname "$0")"
 [ -d node_modules ] || npm install --no-fund --silent
 export E2E_HOME=$(mktemp -d)
 export HOME=$E2E_HOME XDG_DATA_HOME=$E2E_HOME/.local/share
+# SQLite fixture used by the tests.
+export E2E_SQLITE=$E2E_HOME/demo.sqlite
+sqlite3 "$E2E_SQLITE" "CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE);
+CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES customers(id), total NUMERIC(12,2));
+INSERT INTO customers (name, email) VALUES ('Ada','ada@example.com'),('Grace','grace@example.com');
+INSERT INTO orders (customer_id, total) VALUES (1, 10.5),(2, 99.99);
+CREATE VIEW customer_totals AS SELECT c.name, sum(o.total) AS revenue FROM customers c JOIN orders o ON o.customer_id = c.id GROUP BY c.id;"
 export WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1
 rm -f /tmp/.X97-lock; Xvfb :97 -screen 0 1600x1000x24 >/dev/null 2>&1 & XVFB=$!
 export DISPLAY=:97

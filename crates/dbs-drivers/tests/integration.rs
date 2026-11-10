@@ -273,8 +273,16 @@ async fn postgres_end_to_end() {
     // TLS required against a server without TLS → Tls error, never silent plaintext.
     let mut tls = cfg(Engine::Postgres, Some(&host), Some("dbs_test"));
     tls.tls.mode = TlsMode::VerifyFull;
-    let e = driver_for(Engine::Postgres).unwrap().connect(&tls, pw()).await.err().expect("must fail without server TLS");
+    // Server cert is signed by the test CA, which is not in the system trust store: must be rejected.
+    let e = driver_for(Engine::Postgres).unwrap().connect(&tls, pw()).await.err().expect("untrusted cert must be rejected");
     assert!(matches!(e.kind, ErrorKind::Tls | ErrorKind::Connection), "{e:?}");
+    // With the CA configured, verified TLS (certificate + hostname) succeeds.
+    if std::path::Path::new("/certs/ca.crt").exists() {
+        tls.tls.ca_cert_path = Some("/certs/ca.crt".into());
+        let c2 = driver_for(Engine::Postgres).unwrap().connect(&tls, pw()).await.expect("verified TLS connect");
+        let r = exec(&*c2, "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()").await;
+        assert_eq!(first_rows(&r)[0][0], Value::Bool(true), "session must be encrypted");
+    }
 
     exec(&*c, "DROP SCHEMA it CASCADE").await;
 }

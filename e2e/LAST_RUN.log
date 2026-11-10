@@ -1,0 +1,50 @@
+✔ app launches and shows the connection launcher (704.676375ms)
+▶ connections
+  ✔ create a PostgreSQL connection with Test, then Save (2081.736918ms)
+  ✔ wrong password shows an authentication error and never echoes the password (30909.884306ms)
+  ✔ connect by double-clicking; opens on the schema that has tables (328.170041ms)
+✔ connections (33983.215058ms)
+▶ browsing and querying
+  ✔ open a table: grid, row count, paging (293.410001ms)
+  ✔ Structure view shows columns, indexes and DDL (817.312417ms)
+  ✔ SQL tab: unqualified names resolve to the selected schema (1159.624709ms)
+  ✔ switching schema in the sidebar changes name resolution (2131.137877ms)
+  ✔ multiple statements, multiple result sets, affected-row messages (827.861292ms)
+  ✔ syntax errors are reported with SQLSTATE (282.747708ms)
+  ✔ types: bigint, numeric, json, null vs empty string (292.461ms)
+  ✔ cancel a long-running query (1391.675959ms)
+  ✔ EXPLAIN shows a plan (553.2155ms)
+✔ browsing and querying (7751.211504ms)
+▶ editing data
+  ✔ edit a cell, review generated SQL, commit (1178.045667ms)
+  ✔ the edit is really in the database (799.739792ms)
+  ✔ stale edits are detected as conflicts and nothing is overwritten (3567.240376ms)
+✔ editing data (5546.177086ms)
+▶ production safety
+  ✔ plaintext production connections are refused (2407.129459ms)
+  ✔ production connection over verified TLS: banner + typed confirmation for destructive SQL (4200.538002ms)
+  ✔ cancelling the confirmation runs nothing (865.204292ms)
+  ✔ read-only connection blocks writes (3559.437169ms)
+✔ production safety (11035.016254ms)
+▶ multiple databases
+  ✔ MySQL via URL (2050.799751ms)
+  ✔ SQLite via URL (964.443417ms)
+  ✔ Redis via URL (2012.255792ms)
+  ✔ connection rail lists every open database and keeps tabs per database (284.291292ms)
+✔ multiple databases (5312.52942ms)
+▶ tools
+  ✔ command palette opens a table (540.28775ms)
+  ✔ ER diagram renders tables and relationships (276.421417ms)
+  ✔ monitor lists live sessions (270.262125ms)
+  ✔ audit log records activity and the hash chain verifies (556.1955ms)
+  ✔ settings: dark theme applies (15496.565507ms)
+✔ tools (17140.162132ms)
+✔ after restart: launcher shows saved connections, query tab re-attaches and runs (1670.881751ms)
+ℹ tests 30
+ℹ suites 6
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 89583.808541
