@@ -30,6 +30,8 @@ interface AccessStore {
   sheet: { draft?: RequestDraft } | null;
   /** How many Access views are on screen (fast polling while > 0). */
   visible: number;
+  /** Requests that just became ready (highlighted once). */
+  justReady: string[];
 
   loadProviders(): Promise<void>;
   selectProvider(id: string): Promise<void>;
@@ -63,6 +65,7 @@ export const useAccess = create<AccessStore>((set, get) => ({
   accessTab: 'mine',
   sheet: null,
   visible: 0,
+  justReady: [],
 
   async loadProviders() {
     try {
@@ -140,7 +143,12 @@ export const useAccess = create<AccessStore>((set, get) => ({
       if (get().providerId !== id) return null;
       set({ requests: list.requests, error: null });
       const ready = newlyReady(prev, list.requests, nowSec());
-      if (ready.length) readyListeners.forEach((f) => f(ready));
+      if (ready.length) {
+        readyListeners.forEach((f) => f(ready));
+        const ids = ready.map((r) => r.id);
+        set({ justReady: [...get().justReady, ...ids] });
+        setTimeout(() => set({ justReady: get().justReady.filter((x) => !ids.includes(x)) }), 4000);
+      }
       if (list.expired_connections.length) expiredListeners.forEach((f) => f(list.expired_connections));
       return list.requests;
     } catch (e) {

@@ -1626,6 +1626,33 @@
     "removeConfirm": "إزالة {{provider}}؟ سيتم تسجيل خروجك منه؛ وتبقى الاتصالات التي أنشأها تعمل حتى انتهاء وصولها.",
     "use": "استخدام",
     "typeDatabases": "أسماء قواعد البيانات، مفصولة بفواصل",
-    "addProviderOption": "+ إضافة مزوّد…"
+    "addProviderOption": "+ إضافة مزوّد…",
+    "segments": "حالة الطلبات",
+    "seg": {
+      "active": "النشطة",
+      "pending": "المعلّقة",
+      "history": "السجل"
+    },
+    "empty": {
+      "active": "لا يوجد وصول نشط",
+      "pending": "لا شيء بانتظار الموافقة",
+      "history": "لا توجد طلبات سابقة"
+    },
+    "searchRequests": "البحث في الطلبات",
+    "envFilter": "التصفية حسب البيئة",
+    "clearFilters": "مسح عوامل التصفية",
+    "noMatches": "لا توجد طلبات مطابقة",
+    "showMore_zero": "لا مزيد",
+    "showMore_one": "عرض طلب آخر",
+    "showMore_two": "عرض طلبين آخرين",
+    "showMore_few": "عرض {{count}} طلبات أخرى",
+    "showMore_many": "عرض {{count}} طلباً آخر",
+    "showMore_other": "عرض {{count}} طلب آخر",
+    "waitingCount_zero": "لا شيء بالانتظار",
+    "waitingCount_one": "طلب واحد بالانتظار",
+    "waitingCount_two": "طلبان بالانتظار",
+    "waitingCount_few": "{{count}} طلبات بالانتظار",
+    "waitingCount_many": "{{count}} طلباً بالانتظار",
+    "waitingCount_other": "{{count}} طلب بالانتظار"
   }
 }

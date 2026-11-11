@@ -483,6 +483,7 @@ export function ConnectionList({
   );
 }
 
+/** Environment filter chip (also used by the Access view). */
 const chipOn: Record<EnvironmentKind | 'all', string> = {
   all: 'bg-accent-solid text-on-solid border-accent-solid',
   local: 'bg-ok/15 text-ok border-ok/60',
@@ -493,7 +494,7 @@ const chipOn: Record<EnvironmentKind | 'all', string> = {
   custom: 'bg-panel text-fg border-border',
 };
 
-function Chip({ env, pressed, onClick, children }: { env?: EnvironmentKind; pressed: boolean; onClick: () => void; children: ReactNode }) {
+export function Chip({ env, pressed, onClick, children }: { env?: EnvironmentKind; pressed: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"

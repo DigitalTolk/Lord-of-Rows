@@ -1366,6 +1366,25 @@
     "removeConfirm": "{{provider}} entfernen? Du wirst abgemeldet; damit erstellte Verbindungen funktionieren bis zum Ende des Zugriffs.",
     "use": "Verwenden",
     "typeDatabases": "Datenbanknamen, durch Kommas getrennt",
-    "addProviderOption": "+ Anbieter hinzufügen …"
+    "addProviderOption": "+ Anbieter hinzufügen …",
+    "segments": "Antragsstatus",
+    "seg": {
+      "active": "Aktiv",
+      "pending": "Ausstehend",
+      "history": "Verlauf"
+    },
+    "empty": {
+      "active": "Kein aktiver Zugriff",
+      "pending": "Nichts wartet auf Genehmigung",
+      "history": "Keine früheren Anträge"
+    },
+    "searchRequests": "Anträge durchsuchen",
+    "envFilter": "Nach Umgebung filtern",
+    "clearFilters": "Filter zurücksetzen",
+    "noMatches": "Keine passenden Anträge",
+    "showMore_one": "{{count}} weiteren zeigen",
+    "showMore_other": "{{count}} weitere zeigen",
+    "waitingCount_one": "{{count}} wartet",
+    "waitingCount_other": "{{count}} warten"
   }
 }

@@ -1431,6 +1431,27 @@
     "removeConfirm": "¿Quitar {{provider}}? Se cerrará tu sesión; las conexiones que creó siguen funcionando hasta que termine su acceso.",
     "use": "Usar",
     "typeDatabases": "Nombres de bases de datos, separados por comas",
-    "addProviderOption": "+ Añadir proveedor…"
+    "addProviderOption": "+ Añadir proveedor…",
+    "segments": "Estado de las solicitudes",
+    "seg": {
+      "active": "Activas",
+      "pending": "Pendientes",
+      "history": "Historial"
+    },
+    "empty": {
+      "active": "Sin accesos activos",
+      "pending": "Nada pendiente de aprobación",
+      "history": "No hay solicitudes anteriores"
+    },
+    "searchRequests": "Buscar solicitudes",
+    "envFilter": "Filtrar por entorno",
+    "clearFilters": "Quitar filtros",
+    "noMatches": "Ninguna solicitud coincide",
+    "showMore_one": "Mostrar {{count}} más",
+    "showMore_many": "Mostrar {{count}} más",
+    "showMore_other": "Mostrar {{count}} más",
+    "waitingCount_one": "{{count}} en espera",
+    "waitingCount_many": "{{count}} en espera",
+    "waitingCount_other": "{{count}} en espera"
   }
 }

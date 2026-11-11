@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageLabel, draftFrom, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
+import { ageLabel, draftFrom, envsPresent, isFiltered, matchesFilter, segmentCounts, segmentRequests, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
 import type { AccessRequestView, AccessResource, ConnectionConfig, StoredConnection } from './types';
 
 const NOW = 1_800_000_000;
@@ -100,5 +100,38 @@ describe('access helpers', () => {
     expect(readyCount(rs, NOW)).toBe(1);
     expect(readyCount([req('x', { status: 'ready', connection_id: 'c1' })], NOW)).toBe(0);
     expect(readyCount([req('x', { status: 'ready', connection_id: 'c1', connection_expired: true })], NOW)).toBe(1);
+  });
+
+  it('segments: Active orders by what needs action, Pending and History newest first', () => {
+    const at = (m: number) => new Date(Date.UTC(2027, 0, 1, 0, m)).toISOString();
+    const rs = [
+      req('pend-old', { created_at: at(1) }),
+      req('pend-new', { created_at: at(5) }),
+      req('ready-late', { status: 'ready', expires_at: NOW + 7200, created_at: at(2) }),
+      req('ready-soon', { status: 'ready', expires_at: NOW + 60, created_at: at(0) }),
+      req('prov', { status: 'provisioning', created_at: at(3) }),
+      req('gone', { status: 'ready', expires_at: NOW - 1, created_at: at(9) }),
+      req('rej', { status: 'rejected', created_at: at(4) }),
+      req('cxl', { status: 'cancelled', created_at: at(8) }),
+      req('fail', { status: 'failed', created_at: at(6) }),
+    ];
+    const none = { query: '', envs: new Set<never>() };
+    const ids = (s: 'active' | 'pending' | 'history') => segmentRequests(rs, s, none, NOW).map((r) => r.id);
+    expect(ids('active')).toEqual(['ready-soon', 'ready-late', 'prov', 'pend-new', 'pend-old']);
+    expect(ids('pending')).toEqual(['pend-new', 'pend-old']);
+    expect(ids('history')).toEqual(['gone', 'cxl', 'fail', 'rej']);
+    expect(segmentCounts(rs, NOW)).toEqual({ active: 5, pending: 2, history: 4 });
+  });
+
+  it('filters by text over resource, environment, databases, reason and requester, and by environment', () => {
+    const r = req('a', { resource_name: 'billing', environment: 'production', environment_name: 'prod-eu', databases: ['ledger'], reason: 'INC-7' });
+    const f = (query: string, envs: string[] = []) => ({ query, envs: new Set(envs) as Set<never> });
+    for (const q of ['BILL', 'prod-eu', 'ledger', 'inc-7', 'dev@example.com']) expect(matchesFilter(r, f(q))).toBe(true);
+    expect(matchesFilter(r, f('orders'))).toBe(false);
+    expect(matchesFilter(r, f('', ['staging']))).toBe(false);
+    expect(matchesFilter(r, f('', ['production']))).toBe(true);
+    expect(isFiltered(f(' '))).toBe(false);
+    expect(isFiltered(f('', ['production']))).toBe(true);
+    expect(envsPresent([r, req('b', { environment: 'staging' }), req('c', { environment: 'staging' })])).toEqual(['staging', 'production']);
   });
 });

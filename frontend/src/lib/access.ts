@@ -127,3 +127,81 @@ export function sortRequests(rs: AccessRequestView[], nowSec: number): AccessReq
 /** Requests ready to connect that have no live saved connection yet (launcher badge). */
 export const readyCount = (rs: AccessRequestView[] | null, nowSec: number) =>
   (rs ?? []).filter((r) => requestPhase(r, nowSec) === 'ready' && (!r.connection_id || r.connection_expired)).length;
+
+// ---- request list filters (My requests: Active · Pending · History; Approvals: search + env)
+
+export type Segment = 'active' | 'pending' | 'history';
+export const SEGMENTS: Segment[] = ['active', 'pending', 'history'];
+
+export function segmentOf(p: AccessRequestStatus): Segment {
+  return isEnded(p) ? 'history' : 'active';
+}
+
+export interface ListFilter {
+  query: string;
+  envs: ReadonlySet<EnvironmentKind>;
+}
+
+export const isFiltered = (f: ListFilter) => f.query.trim() !== '' || f.envs.size > 0;
+
+/** Search over resource, environment, databases and reason (plus requester for approvals). */
+export function matchesFilter(r: AccessRequest, f: ListFilter): boolean {
+  if (f.envs.size && !f.envs.has(r.environment)) return false;
+  const q = f.query.trim().toLowerCase();
+  if (!q) return true;
+  return [r.resource_name, r.environment_name, r.reason, ...r.databases, r.requester.name, r.requester.email].some((v) => (v ?? '').toLowerCase().includes(q));
+}
+
+const newest = (a: AccessRequest, b: AccessRequest) => b.created_at.localeCompare(a.created_at);
+
+/**
+ * Requests of one segment, filtered and ordered by what needs action:
+ * Active = ready (soonest expiry first), then provisioning, then pending (newest first);
+ * Pending = awaiting approval, newest first; History = ended, newest first.
+ */
+export function segmentRequests<T extends AccessRequest>(rs: T[], segment: Segment, f: ListFilter, nowSec: number): T[] {
+  const phase = (r: T) => requestPhase(r, nowSec);
+  const inSeg = rs.filter((r) => (segment === 'pending' ? phase(r) === 'pending' : segmentOf(phase(r)) === segment) && matchesFilter(r, f));
+  if (segment !== 'active') return inSeg.sort(newest);
+  const rank = (r: T) => ({ ready: 0, provisioning: 1, pending: 2 } as Record<string, number>)[phase(r)] ?? 3;
+  return inSeg.sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? (a.expires_at ?? Infinity) - (b.expires_at ?? Infinity) : 0) || newest(a, b));
+}
+
+/** Live counts per segment (independent of search and environment filters). */
+export function segmentCounts(rs: AccessRequest[], nowSec: number): Record<Segment, number> {
+  const c: Record<Segment, number> = { active: 0, pending: 0, history: 0 };
+  for (const r of rs) {
+    const p = requestPhase(r, nowSec);
+    c[segmentOf(p)] += 1;
+    if (p === 'pending') c.pending += 1;
+  }
+  return c;
+}
+
+/** Environments present in the data, in the usual order (for the env chips). */
+export function envsPresent(rs: AccessRequest[]): EnvironmentKind[] {
+  const order: EnvironmentKind[] = ['local', 'development', 'testing', 'staging', 'production', 'custom'];
+  const have = new Set(rs.map((r) => r.environment));
+  return order.filter((e) => have.has(e));
+}
+
+/** Per-provider remembered segment (browser storage; falls back to Active). */
+export function savedSegment(providerId: string | null): Segment {
+  try {
+    const v = providerId ? localStorage.getItem(`lotr.accessSegment.${providerId}`) : null;
+    return SEGMENTS.includes(v as Segment) ? (v as Segment) : 'active';
+  } catch {
+    return 'active';
+  }
+}
+
+export function saveSegment(providerId: string | null, s: Segment) {
+  try {
+    if (providerId) localStorage.setItem(`lotr.accessSegment.${providerId}`, s);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/** History is paged in steps of this many cards. */
+export const HISTORY_PAGE = 20;

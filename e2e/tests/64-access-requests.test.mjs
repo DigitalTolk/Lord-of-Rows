@@ -137,7 +137,10 @@ describe('access requests (passhub provider)', () => {
   test('a revoked request ends its connection', () =>
     fail('revoke', async () => {
       ph.revoke(ph.mine().requestId);
-      await until(() => cardPhase('orders-db').then((p) => p === 'revoked'), 'revoked card', 20000);
+      // Ended requests move from Active to History.
+      await until(() => cardPhase('orders-db').then((p) => p === null), 'left Active', 20000);
+      await clickText(b, 'History', { selector: '[role=tab]' });
+      await until(() => cardPhase('orders-db').then((p) => p === 'revoked'), 'revoked card in History', 20000);
       await clickText(b, 'Connections', { selector: '[role=tab]' });
       await until(() => b.execute(() => !!document.querySelector('[role=option][data-expired]')), 'expired row');
       await waitText(b, 'Expired');

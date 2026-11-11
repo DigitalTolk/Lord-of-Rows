@@ -1366,6 +1366,25 @@
     "removeConfirm": "Remove {{provider}}? You are signed out of it; connections it created keep working until their access ends.",
     "use": "Use",
     "typeDatabases": "Database names, comma-separated",
-    "addProviderOption": "+ Add provider…"
+    "addProviderOption": "+ Add provider…",
+    "segments": "Request status",
+    "seg": {
+      "active": "Active",
+      "pending": "Pending",
+      "history": "History"
+    },
+    "empty": {
+      "active": "No active access",
+      "pending": "Nothing waiting for approval",
+      "history": "No past requests"
+    },
+    "searchRequests": "Search requests",
+    "envFilter": "Filter by environment",
+    "clearFilters": "Clear filters",
+    "noMatches": "No requests match",
+    "showMore_one": "Show {{count}} more",
+    "showMore_other": "Show {{count}} more",
+    "waitingCount_one": "{{count}} waiting",
+    "waitingCount_other": "{{count}} waiting"
   }
 }

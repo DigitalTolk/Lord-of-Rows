@@ -1,13 +1,14 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
-import { ageLabel, ageSeconds, draftFrom, durationLabel, isEnded, requestPhase, sortRequests, timeLeft } from '../lib/access';
+import { ageLabel, ageSeconds, draftFrom, durationLabel, envsPresent, HISTORY_PAGE, isEnded, isFiltered, matchesFilter, requestPhase, savedSegment, saveSegment, segmentCounts, segmentRequests, timeLeft, type ListFilter, type Segment } from '../lib/access';
 import { canApprove, currentProvider, useAccess } from '../lib/accessStore';
-import type { AccessLevel, AccessProviderKind, AccessRequest, AccessRequestStatus, AccessRequestView } from '../lib/types';
+import type { AccessLevel, AccessProviderKind, AccessRequest, AccessRequestStatus, AccessRequestView, EnvironmentKind } from '../lib/types';
 import { errMsg, useApp } from '../store';
 import { ask } from './ask';
 import { Icon } from './icons';
 import { RequestAccessSheet } from './RequestAccessSheet';
+import { FilterRow, SegmentTabs } from './RequestListControls';
 import { Dialog, EnvBadge, ErrorBox, Spinner } from './ui';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -293,10 +294,46 @@ function SignedIn() {
   );
 }
 
+/** Search text + environment chips shared by both lists. */
+function useListFilter() {
+  const [query, setQuery] = useState('');
+  const [envs, setEnvs] = useState<Set<EnvironmentKind>>(() => new Set());
+  const f: ListFilter = { query, envs };
+  const toggleEnv = (e: EnvironmentKind) =>
+    setEnvs((cur) => {
+      const n = new Set(cur);
+      if (n.has(e)) n.delete(e);
+      else n.add(e);
+      return n;
+    });
+  const clear = () => {
+    setQuery('');
+    setEnvs(new Set());
+  };
+  return { f, setQuery, toggleEnv, clear };
+}
+
+const SEGMENTS: Segment[] = ['active', 'pending', 'history'];
+
 function MyRequests() {
   const { t } = useTranslation();
   const requests = useAccess((s) => s.requests);
+  const providerId = useAccess((s) => s.providerId);
+  const justReady = useAccess((s) => s.justReady);
   const now = useNow();
+  const [segment, setSegment] = useState<Segment>(() => savedSegment(providerId));
+  const [limit, setLimit] = useState(HISTORY_PAGE);
+  const { f, setQuery, toggleEnv, clear } = useListFilter();
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setSegment(savedSegment(providerId));
+  }, [providerId]);
+  const choose = (s: Segment) => {
+    setSegment(s);
+    setLimit(HISTORY_PAGE);
+    saveSegment(providerId, s);
+  };
+
   if (requests === null) return <div className="py-6 text-center"><Spinner label={t('common.loading')} /></div>;
   if (requests.length === 0) {
     return (
@@ -308,10 +345,45 @@ function MyRequests() {
       </div>
     );
   }
+  const counts = segmentCounts(requests, now);
+  const shown = segmentRequests(requests, segment, f, now);
+  const page = segment === 'history' ? shown.slice(0, limit) : shown;
+  const filtered = isFiltered(f);
   return (
-    <ul className="flex flex-col gap-2" aria-label={t('access.myRequests')}>
-      {sortRequests(requests, now).map((r) => <RequestCard key={r.id} r={r} now={now} />)}
-    </ul>
+    <>
+      <FilterRow query={f.query} onQuery={setQuery} envs={f.envs} onToggleEnv={toggleEnv} available={envsPresent(requests)} onClear={clear} filtered={filtered} searchRef={searchRef}>
+        <SegmentTabs value={segment} counts={counts} onChange={choose} segments={SEGMENTS} />
+      </FilterRow>
+      {shown.length === 0 ? (
+        filtered ? (
+          <NoMatches onClear={clear} />
+        ) : (
+          <div className="flex flex-col items-center gap-2 px-6 py-8 text-center text-muted" data-empty={segment}>
+            <p>{t(`access.empty.${segment}`)}</p>
+            {segment === 'active' && <button className="btn btn-primary mt-1" onClick={() => useAccess.setState({ sheet: {} })}>{t('access.requestAccess')}</button>}
+          </div>
+        )
+      ) : (
+        <ul className="flex flex-col gap-2" aria-label={t(`access.seg.${segment}`)} data-segment-list={segment}>
+          {page.map((r) => <RequestCard key={r.id} r={r} now={now} highlight={justReady.includes(r.id)} />)}
+        </ul>
+      )}
+      {page.length < shown.length && (
+        <div className="pt-2 text-center">
+          <button className="btn h-7" onClick={() => setLimit((l) => l + HISTORY_PAGE)}>{t('access.showMore', { count: shown.length - page.length })}</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function NoMatches({ onClear }: { onClear: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-col items-center gap-2 px-6 py-8 text-center text-muted" data-empty="filtered">
+      <p>{t('access.noMatches')}</p>
+      <button className="btn h-7" onClick={onClear}>{t('access.clearFilters')}</button>
+    </div>
   );
 }
 
@@ -337,7 +409,7 @@ function AccessChip({ level }: { level?: AccessLevel | null }) {
   );
 }
 
-function RequestCard({ r, now }: { r: AccessRequestView; now: number }) {
+function RequestCard({ r, now, highlight }: { r: AccessRequestView; now: number; highlight?: boolean }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -374,7 +446,12 @@ function RequestCard({ r, now }: { r: AccessRequestView; now: number }) {
   };
 
   return (
-    <li className={`rounded-lg border border-border px-3 py-2 ${ended ? 'bg-panel/60 text-muted' : 'bg-bg'}`} data-phase={phase} aria-label={r.resource_name}>
+    <li
+      className={`rounded-lg border px-3 py-2 transition-shadow duration-700 ${ended ? 'border-border bg-panel/60 text-muted' : 'border-border bg-bg'} ${highlight ? 'border-ok/60 shadow-[0_0_0_3px_rgb(var(--ok)/0.25)]' : ''}`}
+      data-phase={phase}
+      data-highlight={highlight || undefined}
+      aria-label={r.resource_name}
+    >
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="truncate font-medium">{r.resource_name || r.resource_id}</span>
         {r.environment_name && <EnvBadge env={r.environment} />}
@@ -497,6 +574,8 @@ function Approvals() {
   const now = useNow();
   const [rejecting, setRejecting] = useState<AccessRequest | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const { f, setQuery, toggleEnv, clear } = useListFilter();
+  const searchRef = useRef<HTMLInputElement>(null);
   const who = (r: AccessRequest) => r.requester.name || r.requester.email || r.requester.id;
 
   const approve = async (r: AccessRequest) => {
@@ -523,10 +602,15 @@ function Approvals() {
       </div>
     );
   }
+  const shown = approvals.filter((r) => matchesFilter(r, f));
   return (
     <>
+      <FilterRow query={f.query} onQuery={setQuery} envs={f.envs} onToggleEnv={toggleEnv} available={envsPresent(approvals)} onClear={clear} filtered={isFiltered(f)} searchRef={searchRef}>
+        <span className="text-xs text-muted">{t('access.waitingCount', { count: approvals.length })}</span>
+      </FilterRow>
+      {shown.length === 0 && <NoMatches onClear={clear} />}
       <ul className="flex flex-col gap-2" aria-label={t('access.approvals')}>
-        {approvals.map((r) => {
+        {shown.map((r) => {
           const own = !!me && r.requester.id === me;
           const age = ageLabel(ageSeconds(r.created_at, now * 1000));
           const dbs = r.databases.join(', ');

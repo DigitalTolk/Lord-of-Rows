@@ -106,19 +106,21 @@ describe('AccessPanel', () => {
     ];
     await show();
     expect(screen.queryByRole('tab', { name: /Approvals/ })).toBeNull();
-    const list = screen.getByRole('list', { name: 'My requests' });
+    const list = screen.getByRole('list', { name: 'Active' });
     const items = within(list).getAllByRole('listitem');
-    expect(items[0].getAttribute('aria-label')).toBe('billing'); // ready first
+    expect(items.map((i) => i.getAttribute('aria-label'))).toEqual(['billing', 'orders']); // ready first, then pending
     expect(within(items[0]).getByText(/expires in 3 h 1[12] m/)).toBeTruthy();
     expect(screen.getByText('Waiting for Morgan')).toBeTruthy();
-    expect(screen.getByText(/Rejected by Morgan/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Request again' })).toBeTruthy();
+    expect(screen.queryByText(/Rejected by Morgan/)).toBeNull(); // ended requests live in History
     await act(async () => {
       fireEvent.click(within(items[0]).getByRole('button', { name: /Connect/ }));
     });
     expect(api.accessConnectCheck).toHaveBeenCalledWith('p1', 'r2');
     expect(api.accessConnect).toHaveBeenCalledWith('p1', 'r2');
     expect(openSession).toHaveBeenCalledWith('conn-1');
+    fireEvent.click(screen.getByRole('tab', { name: /History/ }));
+    expect(screen.getByText(/Rejected by Morgan/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Request again' })).toBeTruthy();
   });
 
   it('approvers get an inbox; rejecting needs a reason', async () => {
@@ -187,5 +189,109 @@ describe('AccessPanel', () => {
     fireEvent.click(links[1]);
     expect(screen.getByLabelText('Provider URL')).toBeTruthy();
     expect((screen.getByLabelText('Provider URL') as HTMLInputElement).value).toBe('');
+  });
+
+  describe('request filters', () => {
+    const signedIn = () => {
+      state.providers = [PROVIDER];
+      state.status = { signed_in: true, signing_in: false, user: { id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false } };
+    };
+    beforeEach(() => {
+      try {
+        localStorage.clear();
+      } catch {
+        /* no storage */
+      }
+    });
+
+    it('segments with live counts, Active by default, remembered per provider', async () => {
+      signedIn();
+      state.requests = [
+        req('p1', { resource_name: 'orders' }),
+        req('r1', { status: 'ready', resource_name: 'billing', expires_at: NOW + 7200 }),
+        req('r2', { status: 'ready', resource_name: 'events', expires_at: NOW + 600 }),
+        req('v1', { status: 'provisioning', resource_name: 'audit' }),
+        req('h1', { status: 'revoked', resource_name: 'old' }),
+        req('h2', { status: 'cancelled', resource_name: 'older' }),
+      ];
+      await show();
+      const tabs = screen.getAllByRole('tab').filter((t) => t.hasAttribute('data-segment'));
+      expect(tabs.map((t) => t.textContent)).toEqual(['Active4', 'Pending1', 'History2']);
+      expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+      const names = () => within(screen.getByRole('list', { name: /Active|Pending|History/ })).getAllByRole('listitem').map((i) => i.getAttribute('aria-label'));
+      expect(names()).toEqual(['events', 'billing', 'audit', 'orders']); // ready (soonest expiry first), provisioning, pending
+      // Arrow keys move between segments.
+      tabs[0].focus();
+      fireEvent.keyDown(tabs[0], { key: 'ArrowRight' });
+      expect(names()).toEqual(['orders']);
+      fireEvent.keyDown(screen.getByRole('tab', { name: /Pending/ }), { key: 'End' });
+      expect(names()).toEqual(['old', 'older']);
+      expect(screen.getByRole('tab', { name: /History/ }).getAttribute('aria-selected')).toBe('true');
+      expect(localStorage.getItem('lotr.accessSegment.p1')).toBe('history');
+      cleanup();
+      await show();
+      expect(screen.getByRole('tab', { name: /History/ }).getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('search and environment chips filter; clear filters; empty states', async () => {
+      signedIn();
+      state.requests = [
+        req('a', { status: 'ready', resource_name: 'billing', environment: 'production', environment_name: 'prod', expires_at: NOW + 60 }),
+        req('b', { status: 'ready', resource_name: 'orders', environment: 'staging', reason: 'ticket ABC-42', expires_at: NOW + 60 }),
+      ];
+      await show();
+      const search = screen.getByRole('searchbox', { name: 'Search requests' });
+      fireEvent.change(search, { target: { value: 'abc-42' } });
+      expect(within(screen.getByRole('list', { name: 'Active' })).getAllByRole('listitem').map((i) => i.getAttribute('aria-label'))).toEqual(['orders']);
+      fireEvent.change(search, { target: { value: '' } });
+      const chips = within(screen.getByRole('group', { name: 'Filter by environment' })).getAllByRole('button');
+      expect(chips).toHaveLength(2); // only environments present: staging, production
+      fireEvent.click(chips.find((c) => /prod/i.test(c.textContent ?? ''))!);
+      expect(within(screen.getByRole('list', { name: 'Active' })).getAllByRole('listitem').map((i) => i.getAttribute('aria-label'))).toEqual(['billing']);
+      fireEvent.change(search, { target: { value: 'nothing-like-this' } });
+      expect(screen.getByText('No requests match')).toBeTruthy();
+      fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+      expect(within(screen.getByRole('list', { name: 'Active' })).getAllByRole('listitem')).toHaveLength(2);
+      fireEvent.click(screen.getByRole('tab', { name: /Pending/ }));
+      expect(screen.getByText('Nothing waiting for approval')).toBeTruthy();
+      fireEvent.click(screen.getByRole('tab', { name: /History/ }));
+      expect(screen.getByText('No past requests')).toBeTruthy();
+    });
+
+    it('active empty offers a request; long history pages by 20; Mod+F focuses search', async () => {
+      signedIn();
+      state.requests = Array.from({ length: 25 }, (_, i) => req(`h${i}`, { status: 'expired', resource_name: `db${i}`, created_at: new Date(Date.now() - i * 60e3).toISOString() }));
+      await show();
+      expect(screen.getByText('No active access')).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: 'Request access' }).length).toBeGreaterThan(1);
+      fireEvent.click(screen.getByRole('tab', { name: /History/ }));
+      const list = () => within(screen.getByRole('list', { name: 'History' })).getAllByRole('listitem');
+      expect(list()).toHaveLength(20);
+      fireEvent.click(screen.getByRole('button', { name: 'Show 5 more' }));
+      expect(list()).toHaveLength(25);
+      const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+      fireEvent.keyDown(window, { key: 'f', ctrlKey: !mac, metaKey: mac });
+      expect(document.activeElement).toBe(screen.getByRole('searchbox', { name: 'Search requests' }));
+    });
+
+    it('a request that just became ready is highlighted', async () => {
+      signedIn();
+      state.requests = [req('x', { status: 'ready', resource_name: 'billing', expires_at: NOW + 600 })];
+      useAccess.setState({ justReady: ['x'] });
+      await show();
+      expect(screen.getByRole('listitem', { name: 'billing' }).getAttribute('data-highlight')).toBe('true');
+      useAccess.setState({ justReady: [] });
+    });
+
+    it('approvals: search by requester and environment', async () => {
+      state.providers = [PROVIDER];
+      state.status = { signed_in: true, signing_in: false, user: { id: 'm1', email: 'manager@example.com', name: 'Manager', role: 'manager', can_approve: true } };
+      state.approvals = [req('a1', { requester: { id: 'u2', name: 'Robin', email: 'robin@example.com' } }), req('a2', { requester: { id: 'u3', name: 'Sam', email: 'sam@example.com' }, resource_name: 'billing' })];
+      await show();
+      fireEvent.click(screen.getByRole('tab', { name: /Approvals/ }));
+      expect(screen.getByText('2 waiting')).toBeTruthy();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search requests' }), { target: { value: 'robin' } });
+      expect(within(screen.getByRole('list', { name: 'Approvals' })).getAllByRole('listitem')).toHaveLength(1);
+    });
   });
 });
