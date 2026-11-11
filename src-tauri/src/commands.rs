@@ -1184,6 +1184,9 @@ pub fn set_setting(st: State<'_, AppState>, key: String, value: serde_json::Valu
         return Err(DbError::invalid("unknown setting"));
     }
     check_len(&value.to_string(), 1024 * 1024, "setting")?;
+    if key.starts_with("updates.") {
+        crate::updater::validate_setting(&key, &value)?;
+    }
     if key.starts_with("safety.") {
         // Validate shape; refuse to weaken production below "confirm writes".
         if key == "safety.policy.production" {
@@ -1198,7 +1201,7 @@ pub fn set_setting(st: State<'_, AppState>, key: String, value: serde_json::Valu
         // Turning the assistant on/off or changing literal redaction is a privacy decision.
         let cat = if key == dbs_ai::KEY_ENABLED || key == dbs_ai::KEY_REDACT_LITERALS { Category::SecurityPolicyChanged } else { Category::SettingsChanged };
         audit(&st, cat, Outcome::Success, None, |e| e.detail = Some(format!("{key}={value}")));
-    } else if key.starts_with("privacy.") || key.starts_with("audit.") {
+    } else if key.starts_with("privacy.") || key.starts_with("audit.") || key.starts_with("updates.endpoint.") {
         audit(&st, Category::SecurityPolicyChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));
     } else {
         audit(&st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));

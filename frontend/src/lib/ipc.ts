@@ -117,4 +117,7 @@ export const api = {
   aiPreview: (req: T.AiPreviewRequest) => call<T.AiPreview>('ai_preview', { req }),
   aiSend: (p: T.AiPreview) => call<T.AiAnswer>('ai_send', { req: { token: p.token, task: p.task, system: p.system, user: p.user } }),
   aiTest: () => call<T.AiAnswer>('ai_test'),
+  checkUpdate: () => call<T.UpdateCheck>('check_update'),
+  installUpdate: (version: string) => call<{ version: string; restart_required: boolean }>('install_update', { version }),
+  restartAfterUpdate: () => call<void>('restart_after_update'),
 };
