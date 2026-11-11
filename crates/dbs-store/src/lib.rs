@@ -611,6 +611,7 @@ mod tests {
             connect_timeout_secs: 10,
             query_timeout_secs: None,
             init_sql: None,
+            key_separator: None,
             tunnel: None,
         }
     }

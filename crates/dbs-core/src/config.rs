@@ -228,6 +228,10 @@ pub struct ConnectionConfig {
     /// Statements run once after connect. Subject to the same safety policy as user SQL.
     #[serde(default)]
     pub init_sql: Option<String>,
+    /// Key-value engines: separator that groups keys into namespaces in the
+    /// sidebar tree (default `:`). Display only; never sent to the server.
+    #[serde(default)]
+    pub key_separator: Option<String>,
     /// Runtime only (never saved): local SSH-tunnel endpoint. Drivers that can
     /// separate "address to dial" from "hostname to verify" (Postgres) dial this
     /// while still verifying TLS against `host`.
@@ -262,6 +266,11 @@ impl ConnectionConfig {
             }
         }
         self.validate_color()?;
+        if let Some(sep) = &self.key_separator {
+            if sep.is_empty() || sep.chars().count() > 8 || sep.chars().any(|c| c.is_control()) {
+                return Err(DbError::invalid("key separator must be 1-8 printable characters"));
+            }
+        }
         if let Some(h) = &self.host {
             if h.chars().any(|c| c.is_whitespace() || c.is_control() || c == '/' || c == '@') {
                 return Err(DbError::invalid("host contains invalid characters"));
@@ -383,6 +392,7 @@ mod tests {
             connect_timeout_secs: 10,
             query_timeout_secs: None,
             init_sql: None,
+            key_separator: None,
             tunnel: None,
         }
     }

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use dbs_audit::{AuditEntry, AuditFilter, Category, NewEvent, Outcome, VerifyReport};
 use dbs_core::*;
-use dbs_safety::{Classified, Decision, Evaluation, Risk};
+use dbs_safety::{Decision, Evaluation, Risk};
 use dbs_secrets::{SecretKind, SecretStore};
 use dbs_store::{ConnectionGroup, Document, HistoryEntry, Snippet, StoredConnection};
 use serde::{Deserialize, Serialize};
@@ -366,6 +366,7 @@ pub fn parse_connection_url(url: String) -> R<ParsedUrl> {
         connect_timeout_secs: 10,
         query_timeout_secs: None,
         init_sql: None,
+        key_separator: None,
         tunnel: None,
     };
     if engine == Engine::Sqlite {
@@ -587,44 +588,11 @@ pub async fn object_ddl(st: State<'_, AppState>, session_id: String, object: Obj
 
 // ---------------------------------------------------------------- query
 
-fn redis_risk(class: &str) -> Risk {
-    match class {
-        "read" => Risk::Read,
-        "write" => Risk::Write,
-        "destructive" => Risk::Destructive,
-        "admin" => Risk::Admin,
-        _ => Risk::Unknown,
-    }
-}
-
 fn evaluate_for(st: &AppState, s: &Session, sql: &str) -> Evaluation {
     let policy = st.policy_for(&s.config);
     let id = s.config.id.to_string();
     if s.config.engine == Engine::Redis {
-        let mut pos = 0;
-        let statements = sql
-            .lines()
-            .enumerate()
-            .filter_map(|(i, l)| {
-                let start = pos;
-                pos += l.len() + 1;
-                let t = l.trim();
-                if t.is_empty() || t.starts_with('#') {
-                    return None;
-                }
-                let cmd = dbs_drivers::redis::tokenize_command(t).ok()?.into_iter().next()?;
-                Some(Classified {
-                    index: i,
-                    verb: cmd.to_ascii_uppercase(),
-                    risk: redis_risk(dbs_drivers::redis::classify_redis_command(&cmd)),
-                    flags: vec![],
-                    start,
-                    end: start + l.len(),
-                    excerpt: t.chars().take(200).collect(),
-                })
-            })
-            .collect();
-        return dbs_safety::evaluate_classified(statements, sql, &policy, &st.guard, &id, &s.config.name);
+        return dbs_safety::evaluate_classified(dbs_safety::classify_redis_script(sql), sql, &policy, &st.guard, &id, &s.config.name);
     }
     dbs_safety::evaluate(sql, s.conn.dialect(), &policy, &st.guard, &id, &s.config.name)
 }
@@ -1079,6 +1047,103 @@ pub async fn apply_changes(
         e.rows_affected = r.as_ref().ok().map(|r| r.rows_affected);
         e.error_kind = r.as_ref().err().map(|e| e.kind);
         e.detail = r.as_ref().ok().filter(|r| !r.conflicts.is_empty()).map(|r| format!("{} conflict(s); rolled back", r.conflicts.len()));
+    });
+    r
+}
+
+// ---------------------------------------------------------------- key-value browsing
+
+fn kv(s: &Session) -> R<&dyn KeyValueBrowser> {
+    s.conn.key_value().ok_or_else(|| DbError::unsupported("key browsing"))
+}
+
+#[tauri::command]
+pub async fn kv_keyspaces(st: State<'_, AppState>, session_id: String) -> R<Vec<KeyspaceInfo>> {
+    let s = st.session(&session_id)?;
+    kv(&s)?.keyspaces().await
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn kv_scan_keys(st: State<'_, AppState>, session_id: String, db: String, pattern: String, from: u64, limit: u64, restart: bool) -> R<KeyPage> {
+    check_len(&db, 32, "database")?;
+    check_len(&pattern, 4096, "pattern")?;
+    let s = st.session(&session_id)?;
+    kv(&s)?.scan_keys(&db, &pattern, from, limit, restart).await
+}
+
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+pub async fn kv_namespace(st: State<'_, AppState>, session_id: String, db: String, prefix: String, separator: String, cursor: u64, limit: u64) -> R<TreeBatch> {
+    check_len(&db, 32, "database")?;
+    check_len(&prefix, 4096, "prefix")?;
+    let s = st.session(&session_id)?;
+    kv(&s)?.namespace_children(&db, &prefix, &separator, cursor, limit).await
+}
+
+#[tauri::command]
+pub async fn kv_read_value(st: State<'_, AppState>, session_id: String, db: String, key: String, request: ValueRequest) -> R<ValuePage> {
+    check_len(&db, 32, "database")?;
+    check_len(&request.cursor, 256, "cursor")?;
+    let s = st.session(&session_id)?;
+    kv(&s)?.read_value(&db, &key, &request).await
+}
+
+#[derive(Serialize)]
+pub struct KvPreview {
+    statements: Vec<String>,
+    decision: Decision,
+}
+
+fn kv_text(s: &Session, db: &str, edits: &[KvEdit]) -> R<(Vec<String>, String)> {
+    check_len(db, 32, "database")?;
+    if edits.len() > 10_000 {
+        return Err(DbError::invalid("too many staged changes"));
+    }
+    let lines = kv(s)?.edit_commands(db, edits)?;
+    let text = lines.join("\n");
+    Ok((lines, text))
+}
+
+/// The exact commands staged key edits will run, and the safety decision for them
+/// (classified like a query-tab script: read-only refuses, production confirms,
+/// destructive commands need the typed confirmation where the policy says so).
+#[tauri::command]
+pub fn kv_preview_edits(st: State<'_, AppState>, session_id: String, db: String, edits: Vec<KvEdit>) -> R<KvPreview> {
+    let s = st.session(&session_id)?;
+    let (statements, text) = kv_text(&s, &db, &edits)?;
+    Ok(KvPreview { statements, decision: evaluate_for(&st, &s, &text).decision })
+}
+
+#[tauri::command]
+pub async fn kv_apply_edits(
+    st: State<'_, AppState>,
+    session_id: String,
+    db: String,
+    edits: Vec<KvEdit>,
+    confirm_token: Option<String>,
+    typed_confirmation: Option<String>,
+) -> R<ApplyReport> {
+    let s = st.session(&session_id)?;
+    kv_apply(&st, &s, &db, &edits, confirm_token.as_deref(), typed_confirmation.as_deref()).await
+}
+
+/// Policy gate + apply + audit for staged key edits (shared with tests).
+pub(crate) async fn kv_apply(st: &AppState, s: &Session, db: &str, edits: &[KvEdit], token: Option<&str>, typed: Option<&str>) -> R<ApplyReport> {
+    let (_, text) = kv_text(s, db, edits)?;
+    let eval = evaluate_for(st, s, &text);
+    if let Err(msg) = dbs_safety::authorize(&eval, &st.guard, &s.config.id.to_string(), &text, token, typed) {
+        let kind = if matches!(eval.decision, Decision::Block { .. }) { ErrorKind::PolicyBlocked } else { ErrorKind::ConfirmationRequired };
+        return Err(DbError::new(kind, msg));
+    }
+    let t = Instant::now();
+    let r = kv(s)?.apply_edits(db, edits).await;
+    audit(st, Category::DataEdited, if r.as_ref().is_ok_and(|r| r.committed) { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+        e.object = Some(db.to_string());
+        e.duration_ms = Some(t.elapsed().as_millis() as u64);
+        e.rows_affected = r.as_ref().ok().map(|r| r.rows_affected);
+        e.error_kind = r.as_ref().err().map(|e| e.kind);
+        e.detail = r.as_ref().ok().filter(|r| !r.conflicts.is_empty()).map(|r| format!("{} conflict(s)", r.conflicts.len()));
     });
     r
 }

@@ -152,6 +152,7 @@ mod tests {
             connect_timeout_secs: 5,
             query_timeout_secs: None,
             init_sql: None,
+            key_separator: None,
             tunnel: None,
         };
         let conn = dbs_drivers::driver_for(Engine::Sqlite).unwrap().connect(&config, ConnectSecrets::default()).await.expect("sqlite connect");

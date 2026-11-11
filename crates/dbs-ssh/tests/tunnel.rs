@@ -53,6 +53,7 @@ async fn pg_through(port: u16) -> Vec<StatementResult> {
         connect_timeout_secs: 10,
         query_timeout_secs: None,
         init_sql: None,
+        key_separator: None,
         tunnel: None,
     };
     let c = dbs_drivers::driver_for(Engine::Postgres).unwrap().connect(&cfg, ConnectSecrets { password: Some("dbs_test".into()) }).await.unwrap();
@@ -188,6 +189,7 @@ async fn pg_tls_verified_through_tunnel() {
         connect_timeout_secs: 10,
         query_timeout_secs: None,
         init_sql: None,
+        key_separator: None,
         tunnel: Some(("127.0.0.1".into(), t.local_port)),
     };
     let conn =

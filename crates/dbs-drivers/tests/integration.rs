@@ -39,6 +39,7 @@ fn cfg(engine: Engine, host: Option<&str>, db: Option<&str>) -> ConnectionConfig
         connect_timeout_secs: 10,
         query_timeout_secs: None,
         init_sql: None,
+        key_separator: None,
         tunnel: None,
     }
 }
@@ -486,21 +487,33 @@ async fn sqlite_end_to_end() {
     assert_eq!(b.count_rows(&TableTarget { schema: None, table: "people".into() }, &[]).await.unwrap(), 3);
 }
 
+/// Redis test server: `DBS_IT_REDIS_HOST` (default localhost) and optional `DBS_IT_REDIS_PORT`
+/// (e.g. the host-mapped port of the compose service when running outside the container).
+fn redis_cfg(db: &str) -> ConnectionConfig {
+    let host = std::env::var("DBS_IT_REDIS_HOST").unwrap_or("localhost".into());
+    let mut c = cfg(Engine::Redis, Some(&host), Some(db));
+    c.port = std::env::var("DBS_IT_REDIS_PORT").ok().and_then(|p| p.parse().ok());
+    c.username = None;
+    c
+}
+
 #[tokio::test]
 async fn redis_end_to_end() {
     if !it_enabled() {
         return;
     }
-    let host = std::env::var("DBS_IT_REDIS_HOST").unwrap_or("localhost".into());
-    let mut conf = cfg(Engine::Redis, Some(&host), Some("0"));
-    conf.username = None;
+    let mut conf = redis_cfg("0");
     let c = driver_for(Engine::Redis).unwrap().connect(&conf, ConnectSecrets::default()).await.unwrap();
     assert!(!c.server_info().await.unwrap().version.is_empty());
     exec(&*c, "DEL it:list it:str\nRPUSH it:list a b c\nSET it:str \"hello world\"").await;
     let r = exec(&*c, "GET it:str").await;
     assert_eq!(first_rows(&r)[0][0], Value::Text("hello world".into()));
-    let keys = c.list_objects(Some("it:*")).await.unwrap();
-    assert_eq!(keys.len(), 2);
+    // Keys are browsed with bounded SCAN pages, not listed as objects.
+    assert!(c.list_objects(None).await.unwrap().is_empty());
+    let page = c.key_value().unwrap().scan_keys("db0", "it:*", 0, 100, true).await.unwrap();
+    let mut names: Vec<_> = page.keys.iter().map(|k| k.key.as_str()).collect();
+    names.sort();
+    assert_eq!(names, vec!["it:list", "it:str"]);
     let rs = c.fetch_table(&TableTarget { schema: None, table: "it:list".into() }, &PageRequest { limit: 10, ..Default::default() }).await.unwrap();
     assert_eq!(rs.rows.len(), 3);
     assert_eq!(c.count_rows(&TableTarget { schema: None, table: "it:list".into() }, &[]).await.unwrap(), 3);
@@ -509,7 +522,304 @@ async fn redis_end_to_end() {
     let ro = driver_for(Engine::Redis).unwrap().connect(&conf, ConnectSecrets::default()).await.unwrap();
     let e = ro.execute("SET it:str x", &ExecOptions::default(), CancellationToken::new()).await.unwrap_err();
     assert_eq!(e.kind, ErrorKind::PolicyBlocked);
+    // Selecting a database is a session command, allowed on a read-only connection.
+    exec(&*ro, "SELECT 1\nGET it:none").await;
     exec(&*c, "DEL it:list it:str").await;
+}
+
+const KB: &str = "itkb:";
+const KB_BULK: usize = 10_000;
+
+async fn redis_raw(db: i64) -> redis::aio::MultiplexedConnection {
+    let host = std::env::var("DBS_IT_REDIS_HOST").unwrap_or("localhost".into());
+    let port = std::env::var("DBS_IT_REDIS_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(6379);
+    redis::Client::open(format!("redis://{host}:{port}/{db}")).unwrap().get_multiplexed_async_connection().await.unwrap()
+}
+
+/// Remove every `itkb:*` key with SCAN + UNLINK.
+async fn redis_clean(c: &mut redis::aio::MultiplexedConnection) {
+    let mut cursor = 0u64;
+    loop {
+        let (next, keys): (u64, Vec<String>) =
+            redis::cmd("SCAN").arg(cursor).arg("MATCH").arg(format!("{KB}*")).arg("COUNT").arg(1000).query_async(c).await.unwrap();
+        if !keys.is_empty() {
+            let _: () = redis::cmd("UNLINK").arg(&keys).query_async(c).await.unwrap();
+        }
+        cursor = next;
+        if cursor == 0 {
+            break;
+        }
+    }
+}
+
+/// db0: 10k bulk strings + one key of every type + nested namespaces; db1: two keys.
+async fn redis_seed() {
+    let mut c0 = redis_raw(0).await;
+    redis_clean(&mut c0).await;
+    for chunk in (0..KB_BULK).collect::<Vec<_>>().chunks(1000) {
+        let mut p = redis::pipe();
+        for i in chunk {
+            p.cmd("SET").arg(format!("{KB}bulk:{i:05}")).arg(i).ignore();
+        }
+        let _: () = p.query_async(&mut c0).await.unwrap();
+    }
+    let mut p = redis::pipe();
+    p.cmd("SET").arg(format!("{KB}str")).arg(r#"{"a":1,"b":[true,null]}"#).arg("EX").arg(1000).ignore();
+    p.cmd("SET").arg(format!("{KB}long")).arg("x".repeat(1000)).ignore();
+    for i in 0..300 {
+        p.cmd("HSET").arg(format!("{KB}hash")).arg(format!("f{i}")).arg(format!("v{i}")).ignore();
+        p.cmd("SADD").arg(format!("{KB}set")).arg(format!("m{i}")).ignore();
+        p.cmd("ZADD").arg(format!("{KB}zset")).arg(i).arg(format!("z{i}")).ignore();
+    }
+    for i in 0..500 {
+        p.cmd("RPUSH").arg(format!("{KB}list")).arg(format!("item{i}")).ignore();
+    }
+    for i in 0..250 {
+        p.cmd("XADD").arg(format!("{KB}stream")).arg("*").arg("n").arg(i).ignore();
+    }
+    for k in ["ns:a:b:1", "ns:a:c", "ns:x", "glob*key"] {
+        p.cmd("SET").arg(format!("{KB}{k}")).arg("1").ignore();
+    }
+    let _: () = p.query_async(&mut c0).await.unwrap();
+    let mut c1 = redis_raw(1).await;
+    redis_clean(&mut c1).await;
+    let _: () = redis::pipe()
+        .cmd("SET")
+        .arg(format!("{KB}db1:one"))
+        .arg("1")
+        .ignore()
+        .cmd("HSET")
+        .arg(format!("{KB}db1:h"))
+        .arg("f")
+        .arg("v")
+        .ignore()
+        .query_async(&mut c1)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn redis_key_browser() {
+    if !it_enabled() {
+        return;
+    }
+    redis_seed().await;
+    let conf = redis_cfg("0");
+    let c = driver_for(Engine::Redis).unwrap().connect(&conf, ConnectSecrets::default()).await.unwrap();
+    let kv = c.key_value().expect("key browser");
+    assert!(c.capabilities().schemas);
+    assert_eq!(c.server_info().await.unwrap().current_database.as_deref(), Some("db0"));
+
+    // Databases as schemas, with key counts from INFO keyspace.
+    let schemas = c.list_schemas(None).await.unwrap();
+    assert!(schemas.contains(&"db0".to_string()) && schemas.contains(&"db1".to_string()), "{schemas:?}");
+    let ks = kv.keyspaces().await.unwrap();
+    let db0 = ks.iter().find(|k| k.name == "db0").unwrap();
+    assert!(db0.current && db0.keys >= KB_BULK as u64, "{db0:?}");
+    assert!(ks.iter().find(|k| k.name == "db1").unwrap().keys >= 2);
+
+    // Paging the 10k bulk keys with SCAN: every key exactly once, pages bounded.
+    let pat = format!("{KB}bulk:*");
+    let mut from = 0;
+    let mut seen = std::collections::HashSet::new();
+    let mut starts = vec![];
+    let mut first = true;
+    loop {
+        let page = kv.scan_keys("db0", &pat, from, 500, first).await.unwrap();
+        first = false;
+        assert!(page.keys.len() <= 500);
+        assert!(page.total.is_none(), "no exact total for a pattern");
+        starts.push((from, page.keys.iter().map(|k| k.key.clone()).collect::<Vec<_>>()));
+        for k in &page.keys {
+            assert_eq!(k.kind, "string");
+            assert!(seen.insert(k.key.clone()), "duplicate {}", k.key);
+        }
+        from = page.next;
+        if page.done {
+            break;
+        }
+    }
+    assert_eq!(seen.len(), KB_BULK);
+    assert!(starts.len() >= 20, "{} pages", starts.len());
+    // Re-reading an earlier page (cursor cache) returns the same keys.
+    let (at, keys) = &starts[3];
+    let again = kv.scan_keys("db0", &pat, *at, 500, false).await.unwrap();
+    assert_eq!(&again.keys.iter().map(|k| k.key.clone()).collect::<Vec<_>>(), keys);
+
+    // Match-all pages carry the DBSIZE total.
+    let all = kv.scan_keys("db0", "*", 0, 100, true).await.unwrap();
+    assert!(all.total.unwrap() >= KB_BULK as u64);
+    assert!(all.keys.len() <= 100);
+
+    // MATCH narrows server-side; typed rows with TTL, size, length and preview.
+    let typed = kv.scan_keys("db0", &format!("{KB}[a-z]*"), 0, 1000, true).await.unwrap();
+    let mut rows = typed.keys.clone();
+    let mut f = typed.next;
+    let mut done = typed.done;
+    while !done {
+        let p = kv.scan_keys("db0", &format!("{KB}[a-z]*"), f, 1000, false).await.unwrap();
+        rows.extend(p.keys);
+        f = p.next;
+        done = p.done;
+    }
+    let row = |k: &str| rows.iter().find(|r| r.key == format!("{KB}{k}")).unwrap_or_else(|| panic!("{k}"));
+    assert_eq!((row("hash").kind.as_str(), row("hash").length), ("hash", Some(300)));
+    assert_eq!((row("list").kind.as_str(), row("list").length), ("list", Some(500)));
+    assert_eq!((row("set").kind.as_str(), row("set").length), ("set", Some(300)));
+    assert_eq!((row("zset").kind.as_str(), row("zset").length), ("zset", Some(300)));
+    assert_eq!((row("stream").kind.as_str(), row("stream").length), ("stream", Some(250)));
+    let s = row("str");
+    assert!(s.ttl > 0 && s.ttl <= 1000, "{s:?}");
+    assert_eq!(s.preview.as_deref(), Some(r#"{"a":1,"b":[true,null]}"#));
+    assert!(s.size.is_some_and(|n| n > 0));
+    let long = row("long");
+    assert_eq!(long.preview.as_ref().unwrap().len(), 200);
+    assert!(long.preview_truncated);
+    assert_eq!(row("hash").ttl, -1);
+    let ns_only = kv.scan_keys("db0", &format!("{KB}ns:*"), 0, 100, true).await.unwrap();
+    assert_eq!(ns_only.keys.len(), 3);
+    assert!(ns_only.done);
+
+    // Namespace tree: bounded batches with "load more", grouped by the separator.
+    let mut cursor = 0;
+    let mut namespaces = std::collections::BTreeMap::<String, u64>::new();
+    let mut leaves = std::collections::BTreeSet::new();
+    let mut batches = 0;
+    loop {
+        let b = kv.namespace_children("db0", KB, ":", cursor, 2000).await.unwrap();
+        batches += 1;
+        assert!(b.scanned <= 2000 + 1000, "batch scanned {}", b.scanned);
+        for n in b.namespaces {
+            *namespaces.entry(n.prefix).or_default() += n.count;
+        }
+        leaves.extend(b.keys);
+        cursor = b.cursor;
+        if b.done {
+            break;
+        }
+    }
+    assert!(batches > 1, "10k keys need several batches");
+    assert_eq!(namespaces.get(&format!("{KB}bulk:")), Some(&(KB_BULK as u64)));
+    assert_eq!(namespaces.get(&format!("{KB}ns:")), Some(&3));
+    assert!(leaves.contains(&format!("{KB}hash")) && leaves.contains(&format!("{KB}glob*key")));
+    let ns = kv.namespace_children("db0", &format!("{KB}ns:"), ":", 0, 2000).await.unwrap();
+    assert!(ns.done);
+    assert_eq!(ns.namespaces.iter().map(|n| (n.label.as_str(), n.count)).collect::<Vec<_>>(), vec![("a", 2)]);
+    assert_eq!(ns.keys, vec![format!("{KB}ns:x")]);
+    // Glob characters in a prefix match literally.
+    let lit = kv.namespace_children("db0", &format!("{KB}glob*"), ":", 0, 100).await.unwrap();
+    assert_eq!(lit.keys, vec![format!("{KB}glob*key")]);
+
+    // Value detail by type, paged.
+    let page_all = |key: &'static str, count: u32| {
+        let kv = c.key_value().unwrap();
+        async move {
+            let mut rows = vec![];
+            let mut cur = String::new();
+            let mut kind = String::new();
+            loop {
+                let p = kv.read_value("db0", &format!("{KB}{key}"), &ValueRequest { cursor: cur.clone(), count }).await.unwrap();
+                // HSCAN/SSCAN COUNT is a hint (small encodings come back whole); offset pages are exact.
+                assert!(matches!(key, "hash" | "set") || p.rows.len() <= count as usize, "{key} page of {}", p.rows.len());
+                kind = p.kind.clone();
+                rows.extend(p.rows);
+                match p.next {
+                    Some(n) => cur = n,
+                    None => break,
+                }
+            }
+            (kind, rows)
+        }
+    };
+    let (k, r) = page_all("hash", 50).await;
+    assert_eq!(k, "hash");
+    assert_eq!(r.iter().map(|x| x[0].to_plain().unwrap_or_default()).collect::<std::collections::HashSet<_>>().len(), 300);
+    let (_, r) = page_all("list", 200).await;
+    assert_eq!(r.len(), 500);
+    assert_eq!(r[499], vec![Value::Int(499), Value::Text("item499".into())]);
+    let (_, r) = page_all("set", 100).await;
+    assert_eq!(r.iter().map(|x| x[0].to_plain().unwrap_or_default()).collect::<std::collections::HashSet<_>>().len(), 300);
+    let (_, r) = page_all("zset", 120).await;
+    assert_eq!(r.len(), 300);
+    assert_eq!(r[0], vec![Value::Text("z0".into()), Value::Float(0.0)]);
+    let (_, r) = page_all("stream", 100).await;
+    assert_eq!(r.len(), 250);
+    assert!(matches!(&r[249][1], Value::Json(j) if j["n"] == "249"));
+    let s = kv.read_value("db0", &format!("{KB}str"), &ValueRequest::default()).await.unwrap();
+    assert_eq!(s.text.as_deref(), Some(r#"{"a":1,"b":[true,null]}"#));
+    assert!(s.next.is_none() && s.ttl > 0);
+    assert_eq!(kv.read_value("db0", &format!("{KB}missing"), &ValueRequest::default()).await.unwrap_err().kind, ErrorKind::NotFound);
+
+    // Switching database (use_schema) affects the query tab; browse calls name their database.
+    c.use_schema("db1").await.unwrap();
+    let r = exec(&*c, &format!("GET {KB}db1:one")).await;
+    assert_eq!(first_rows(&r)[0][0], Value::Text("1".into()));
+    let db1 = kv.scan_keys("db1", &format!("{KB}*"), 0, 100, true).await.unwrap();
+    assert_eq!(db1.keys.len(), 2);
+    assert!(kv.keyspaces().await.unwrap().iter().any(|k| k.name == "db1" && k.current));
+    // Still db1 for the query tab after browsing db0.
+    kv.scan_keys("db0", "*", 0, 10, true).await.unwrap();
+    let r = exec(&*c, &format!("EXISTS {KB}db1:one")).await;
+    assert_eq!(first_rows(&r)[0][0], Value::Int(1));
+
+    // Staged edits in db1: one transaction.
+    let edits = vec![
+        KvEdit::SetString { key: format!("{KB}db1:new"), value: "fresh".into() },
+        KvEdit::HashSet { key: format!("{KB}db1:h"), field: "g".into(), value: "w".into() },
+        KvEdit::HashDelete { key: format!("{KB}db1:h"), field: "f".into() },
+        KvEdit::Expire { key: format!("{KB}db1:new"), seconds: 500 },
+        KvEdit::Rename { key: format!("{KB}db1:one"), to: format!("{KB}db1:renamed") },
+        KvEdit::ListPush { key: format!("{KB}db1:l"), value: "a".into() },
+        KvEdit::SetAdd { key: format!("{KB}db1:s"), member: "m".into() },
+        KvEdit::ZsetAdd { key: format!("{KB}db1:z"), member: "m".into(), score: 2.5 },
+    ];
+    let lines = kv.edit_commands("db1", &edits).unwrap();
+    assert_eq!(lines[0], "SELECT 1");
+    assert_eq!(lines.len(), edits.len() + 1);
+    let rep = kv.apply_edits("db1", &edits).await.unwrap();
+    assert!(rep.committed && rep.conflicts.is_empty() && rep.applied == edits.len(), "{rep:?}");
+    let h = kv.read_value("db1", &format!("{KB}db1:h"), &ValueRequest::default()).await.unwrap();
+    assert_eq!(h.rows, vec![vec![Value::Text("g".into()), Value::Text("w".into())]]);
+    let n = kv.read_value("db1", &format!("{KB}db1:new"), &ValueRequest::default()).await.unwrap();
+    assert_eq!(n.text.as_deref(), Some("fresh"));
+    assert!(n.ttl > 0 && n.ttl <= 500);
+    // Rename onto an existing key is a conflict, nothing applied.
+    let rep = kv.apply_edits("db1", &[KvEdit::Rename { key: format!("{KB}db1:renamed"), to: format!("{KB}db1:new") }]).await.unwrap();
+    assert!(!rep.committed && rep.conflicts == vec![0]);
+    let rep = kv
+        .apply_edits("db1", &[KvEdit::Expire { key: format!("{KB}db1:new"), seconds: -1 }, KvEdit::Delete { key: format!("{KB}db1:renamed") }])
+        .await
+        .unwrap();
+    assert!(rep.committed);
+    assert_eq!(kv.read_value("db1", &format!("{KB}db1:new"), &ValueRequest::default()).await.unwrap().ttl, -1);
+    assert!(kv.read_value("db1", &format!("{KB}db1:renamed"), &ValueRequest::default()).await.is_err());
+
+    // Safety: a read-only connection refuses edits in the driver, and the policy blocks
+    // the generated commands before they reach it.
+    let mut ro_conf = redis_cfg("0");
+    ro_conf.read_only = true;
+    let ro = driver_for(Engine::Redis).unwrap().connect(&ro_conf, ConnectSecrets::default()).await.unwrap();
+    let del = [KvEdit::Delete { key: format!("{KB}hash") }];
+    assert_eq!(ro.key_value().unwrap().apply_edits("db0", &del).await.unwrap_err().kind, ErrorKind::PolicyBlocked);
+    let text = ro.key_value().unwrap().edit_commands("db0", &del).unwrap().join("\n");
+    let g = dbs_safety::ConfirmationGuard::new([1; 32]);
+    let ev = dbs_safety::evaluate_classified(dbs_safety::classify_redis_script(&text), &text, &dbs_safety::SafetyPolicy::read_only(), &g, "c", "n");
+    assert!(matches!(ev.decision, dbs_safety::Decision::Block { .. }));
+    let prod = dbs_safety::evaluate_classified(
+        dbs_safety::classify_redis_script(&text),
+        &text,
+        &dbs_safety::SafetyPolicy::for_environment(EnvironmentKind::Production),
+        &g,
+        "c",
+        "Prod",
+    );
+    assert!(matches!(prod.decision, dbs_safety::Decision::Confirm { typed_phrase: Some(_), .. }));
+    // Read-only browsing still works.
+    assert!(!ro.key_value().unwrap().scan_keys("db0", &format!("{KB}ns:*"), 0, 10, true).await.unwrap().keys.is_empty());
+    assert!(redis::cmd("EXISTS").arg(format!("{KB}hash")).query_async::<bool>(&mut redis_raw(0).await).await.unwrap(), "read-only connection deleted nothing");
+
+    redis_clean(&mut redis_raw(0).await).await;
+    redis_clean(&mut redis_raw(1).await).await;
 }
 
 /// Accounts using the deprecated-but-common `sha256_password` plugin (MySQL 5.7/8.x).
@@ -611,10 +921,8 @@ async fn redis_ssl_modes() {
     }
     // The test Redis has no TLS: DISABLED works, PREFERRED falls back to plain TCP,
     // REQUIRED fails (never silently plaintext).
-    let host = std::env::var("DBS_IT_REDIS_HOST").unwrap_or("localhost".into());
     let with = |mode: TlsMode| {
-        let mut c = cfg(Engine::Redis, Some(&host), Some("0"));
-        c.username = None;
+        let mut c = redis_cfg("0");
         c.connect_timeout_secs = 5;
         c.tls.mode = mode;
         c

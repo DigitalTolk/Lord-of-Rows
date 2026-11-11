@@ -169,6 +169,11 @@ pub trait DatabaseConnection: Send + Sync {
     async fn cancel_running(&self) -> DbResult<()> {
         Err(DbError::unsupported("query cancellation"))
     }
+
+    /// Key browsing (logical databases, key grid, namespace tree) for key-value engines.
+    fn key_value(&self) -> Option<&dyn KeyValueBrowser> {
+        None
+    }
 }
 
 /// Factory: one per engine family.
