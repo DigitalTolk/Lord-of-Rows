@@ -341,6 +341,9 @@
     }
   },
   "monitor": {
+    "load": "Laden",
+    "heavyHint": "Liest die Metadaten aller Tabellen; das kann auf großen Servern dauern und läuft daher nur auf Anfrage.",
+    "allDatabases": "Alle Datenbanken",
     "title": "Monitor",
     "sessions": "Sitzungen",
     "refreshEvery": "Aktualisieren alle",

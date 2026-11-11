@@ -64,7 +64,7 @@ export const api = {
 
   evaluateSql: (sessionId: string, sql: string) => call<T.Evaluation>('evaluate_sql', { sessionId, sql }),
   splitSql: (engine: T.Engine, sql: string) => call<[number, number][]>('split_sql', { engine, sql }),
-  runSql: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }) =>
+  runSql: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null; skip_history?: boolean; timeout_ms?: number | null }) =>
     call<{ results: T.StatementResult[]; duration_ms: number }>('run_sql', { req }).then((r) => ({ ...r, results: r.results.map((s) => ({ ...s, result: hydrate(s.result) })) })),
   /** Streaming run: same safety gate as runSql; rows arrive via `onMessage` (see lib/stream.ts). */
   runSqlStream: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }, onMessage: (m: StreamMsg) => void) =>

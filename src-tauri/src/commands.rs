@@ -651,6 +651,12 @@ pub struct RunSql {
     confirm_token: Option<String>,
     typed_confirmation: Option<String>,
     max_rows: Option<usize>,
+    /// Background/tool queries (e.g. the Monitor): audited as usual, but not added to query history.
+    #[serde(default)]
+    skip_history: bool,
+    /// Per-request timeout; the shorter of this and the connection's query timeout applies.
+    #[serde(default)]
+    timeout_ms: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -696,13 +702,16 @@ fn authorize_run(st: &AppState, req: &RunSql) -> R<AuthorizedRun> {
     }
     let opts = ExecOptions {
         max_rows: req.max_rows.unwrap_or_else(|| st.max_rows()).clamp(1, 1_000_000),
-        timeout_ms: s.config.query_timeout_secs.map(|t| t as u64 * 1000),
+        timeout_ms: match (s.config.query_timeout_secs.map(|t| t as u64 * 1000), req.timeout_ms.map(|t| t.clamp(100, 3_600_000))) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        },
     };
     Ok(AuthorizedRun { session: s, kinds, max_risk, opts })
 }
 
 /// Audit + history entry for an executed run (success or failure).
-fn record_run(st: &AppState, run: &AuthorizedRun, sql: &str, dur: u64, affected: u64, err: Option<&DbError>) {
+fn record_run(st: &AppState, run: &AuthorizedRun, sql: &str, dur: u64, affected: u64, err: Option<&DbError>, history: bool) {
     let s = &run.session;
     let kinds = &run.kinds;
     let cat = match run.max_risk {
@@ -721,6 +730,9 @@ fn record_run(st: &AppState, run: &AuthorizedRun, sql: &str, dur: u64, affected:
         e.query_text = Some(sql.to_string());
         e.error_kind = err.map(|e| e.kind);
     });
+    if !history {
+        return;
+    }
     let _ = st.store.add_history(
         &HistoryEntry {
             id: 0,
@@ -746,7 +758,7 @@ pub async fn run_sql(st: State<'_, AppState>, req: RunSql) -> R<RunResult> {
     st.running.lock().unwrap().remove(&req.query_id);
     let dur = t.elapsed().as_millis() as u64;
     let affected: u64 = res.as_ref().map(|r| r.iter().filter_map(|s| s.rows_affected).sum()).unwrap_or(0);
-    record_run(&st, &run, &req.sql, dur, affected, res.as_ref().err());
+    record_run(&st, &run, &req.sql, dur, affected, res.as_ref().err(), !req.skip_history);
     Ok(RunResult { results: res?, duration_ms: dur })
 }
 
@@ -905,7 +917,7 @@ pub async fn run_sql_stream(st: State<'_, AppState>, req: RunSql, on_event: taur
     let dur = t.elapsed().as_millis() as u64;
     let affected = fwd.as_ref().map_or(0, |s| s.affected);
     let err = stream_outcome(res, &fwd);
-    record_run(&st, &run, &req.sql, dur, affected, err.as_ref());
+    record_run(&st, &run, &req.sql, dur, affected, err.as_ref(), !req.skip_history);
     let cancelled = err.as_ref().is_some_and(|e| e.kind == ErrorKind::Cancelled);
     if let Some(e) = &err {
         let _ = on_event.send(StreamMsg::End(StreamEnd::Error { error: e.clone() }));
@@ -1788,6 +1800,8 @@ mod tests {
             confirm_token: None,
             typed_confirmation: None,
             max_rows: None,
+            skip_history: false,
+            timeout_ms: None,
         }
     }
 
@@ -1807,7 +1821,7 @@ mod tests {
         .await;
         let affected = fwd.as_ref().map_or(0, |s| s.affected);
         let err = stream_outcome(res, &fwd);
-        record_run(st, &run, &r.sql, 1, affected, err.as_ref());
+        record_run(st, &run, &r.sql, 1, affected, err.as_ref(), true);
         Ok((msgs, err))
     }
 

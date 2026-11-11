@@ -341,6 +341,9 @@
     }
   },
   "monitor": {
+    "load": "Load",
+    "heavyHint": "Reads table metadata for every table; this can take a while on large servers, so it only runs when you ask.",
+    "allDatabases": "All databases",
     "title": "Monitor",
     "sessions": "Sessions",
     "refreshEvery": "Refresh every",

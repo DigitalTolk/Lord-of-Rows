@@ -354,6 +354,9 @@
     }
   },
   "monitor": {
+    "load": "Cargar",
+    "heavyHint": "Lee los metadatos de todas las tablas; puede tardar en servidores grandes, así que solo se ejecuta cuando lo pides.",
+    "allDatabases": "Todas las bases de datos",
     "title": "Monitor",
     "sessions": "Sesiones",
     "refreshEvery": "Actualizar cada",

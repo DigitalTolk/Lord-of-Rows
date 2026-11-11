@@ -692,12 +692,25 @@ impl DatabaseConnection for MySqlConnection {
     }
 
     async fn list_sessions(&self) -> DbResult<Vec<SessionInfo>> {
-        let rows = self
+        // MySQL 8.0.22+: performance_schema.processlist reads the thread list without the
+        // global mutex that information_schema.PROCESSLIST takes (deprecated there). MariaDB and
+        // older MySQL (or performance_schema off) fall back to information_schema.
+        let ps = self
             .text_rows(
-                "SELECT ID, USER, DB, HOST, COMMAND, LEFT(INFO, 2000), TIME * 1000, STATE FROM information_schema.PROCESSLIST ORDER BY TIME DESC",
+                "SELECT ID, USER, DB, HOST, COMMAND, LEFT(INFO, 2000), TIME * 1000, STATE FROM performance_schema.processlist ORDER BY TIME DESC",
                 vec![],
             )
-            .await?;
+            .await;
+        let rows = match ps {
+            Ok(r) if !r.is_empty() => r,
+            _ => {
+                self.text_rows(
+                    "SELECT ID, USER, DB, HOST, COMMAND, LEFT(INFO, 2000), TIME * 1000, STATE FROM information_schema.PROCESSLIST ORDER BY TIME DESC",
+                    vec![],
+                )
+                .await?
+            }
+        };
         Ok(rows
             .into_iter()
             .map(|r| SessionInfo {
