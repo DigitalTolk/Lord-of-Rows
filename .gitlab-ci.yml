@@ -1,0 +1,84 @@
+# Lord of the Rows: signed + notarized macOS build on the company macOS runner.
+# Modelled on dtolk/support/vibe-staff (pipelines/electron.yml).
+#
+# CI/CD variables (Settings -> CI/CD -> Variables, masked + protected; can be inherited from the group):
+#   MACOS_CERTIFICATE_P12_BASE64   base64 of the Developer ID Application .p12
+#   MACOS_CERTIFICATE_PASSWORD     password of that .p12
+#   APPLE_ID                       Apple ID used for notarization
+#   APPLE_APP_SPECIFIC_PASSWORD    app-specific password of that Apple ID
+#   APPLE_TEAM_ID                  H8S8C5U3W2
+#   TAURI_SIGNING_PRIVATE_KEY      (optional) updater signing key; without it no updater artifacts are produced
+#
+# Runs on version tags (vX.Y.Z) and can be started manually from the pipeline page.
+
+stages:
+  - build
+
+macos:build:signed:
+  stage: build
+  tags:
+    - macos
+  variables:
+    GIT_STRATEGY: clone
+    GIT_CONFIG_COUNT: 1
+    GIT_CONFIG_KEY_0: credential.helper
+    GIT_CONFIG_VALUE_0: ""
+    KEYCHAIN_NAME: lotr-build.keychain
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+$/ && $MACOS_CERTIFICATE_P12_BASE64
+      when: on_success
+    - if: $MACOS_CERTIFICATE_P12_BASE64
+      when: manual
+    - when: never
+  timeout: 90m
+  before_script:
+    - export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    - '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install 20 && nvm use 20 || true'
+    - node -v
+    # Rust toolchain in the runner user's home (no sudo needed).
+    - 'command -v rustup >/dev/null || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal'
+    - export PATH="$HOME/.cargo/bin:$PATH"
+    - rustup target add aarch64-apple-darwin x86_64-apple-darwin
+    # Temporary keychain holding only the Developer ID identity.
+    - KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+    - security delete-keychain "$KEYCHAIN_NAME" 2>/dev/null || true
+    - security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+    - security list-keychains -d user -s "$KEYCHAIN_NAME" $(security list-keychains -d user | tr -d '"')
+    - security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+    - security set-keychain-settings -lut 3600 "$KEYCHAIN_NAME"
+    - echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > certificate.p12
+    - security import certificate.p12 -k "$KEYCHAIN_NAME" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+    - rm -f certificate.p12
+    - curl -sSfO https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+    - security import DeveloperIDG2CA.cer -k "$KEYCHAIN_NAME" -T /usr/bin/codesign || true
+    - security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME" >/dev/null
+    - export APPLE_SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_NAME" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+    - test -n "$APPLE_SIGNING_IDENTITY" || { echo "No Developer ID Application identity in the imported certificate"; exit 1; }
+  script:
+    - cd frontend && npm ci --no-fund && npx vite build && cd ..
+    # Tauri notarizes when APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are set, then staples the ticket.
+    - export APPLE_PASSWORD="$APPLE_APP_SPECIFIC_PASSWORD"
+    - 'if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then CFG="{\"build\":{\"beforeBuildCommand\":\"\"}}"; else CFG="{\"build\":{\"beforeBuildCommand\":\"\"},\"bundle\":{\"createUpdaterArtifacts\":false}}"; fi'
+    - ./frontend/node_modules/.bin/tauri build --target universal-apple-darwin --bundles app --config "$CFG"
+    - APP="target/universal-apple-darwin/release/bundle/macos/Lord of the Rows.app"
+    - codesign --verify --deep --strict "$APP"
+    - spctl -a -vv -t exec "$APP"
+    # DMG (built with hdiutil: the bundler's DMG script is flaky on headless runners), signed, notarized, stapled.
+    - VERSION="${CI_COMMIT_TAG:-dev-$CI_COMMIT_SHORT_SHA}"
+    - mkdir -p dist-dmg && rm -rf dist-dmg/* && ditto "$APP" "dist-dmg/Lord of the Rows.app" && ln -s /Applications dist-dmg/Applications
+    - DMG="LordOfTheRows-${VERSION}-universal.dmg"
+    - hdiutil create -volname "Lord of the Rows" -srcfolder dist-dmg -ov -format UDZO "$DMG"
+    - codesign -s "$APPLE_SIGNING_IDENTITY" "$DMG"
+    - xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+    - xcrun stapler staple "$DMG"
+    - spctl -a -vv -t install "$DMG"
+  after_script:
+    - security delete-keychain lotr-build.keychain 2>/dev/null || true
+    - rm -f certificate.p12
+  artifacts:
+    name: "lord-of-the-rows-$CI_COMMIT_REF_SLUG"
+    paths:
+      - LordOfTheRows-*.dmg
+    expire_in: 90 days
