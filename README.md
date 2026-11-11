@@ -13,13 +13,13 @@ are not done yet; see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOC
 ## Install (macOS)
 
 ```
-brew tap digitaltolk/tap git@github.com:DigitalTolk/homebrew-tap.git   # once; the tap is private (DigitalTolk GitHub access needed)
-brew install --cask digitaltolk/tap/lord-of-the-rows
+brew trust DigitalTolk/tools
+brew install --cask DigitalTolk/tools/lord-of-the-rows
 ```
 
 Or download the DMG from [Releases](https://github.com/DigitalTolk/Lord-of-Rows/releases). Builds are universal
 (Apple Silicon + Intel, macOS 11+), signed with DigitalTolk's Developer ID and notarized by Apple.
-Update with `brew upgrade --cask lord-of-the-rows`.
+Update with `brew update && brew upgrade --cask DigitalTolk/tools/lord-of-the-rows`.
 
 ## What works today
 
