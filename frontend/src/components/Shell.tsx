@@ -12,6 +12,7 @@ import { ThemeToggle } from './ThemeToggle';
 import { PendingChangesBar } from './PendingChangesBar';
 import { StatusPill } from './StatusPill';
 import { useTableWs } from '../lib/tableWorkspace';
+import { DETAIL_SHORTCUT, setDetailPanel } from '../lib/detailPanel';
 import { openDatabasePicker } from './OpenDatabaseDialog';
 
 const KIND_ICON: Record<TabKind, IconName> = { query: 'sql', table: 'table', structure: 'structure', diff: 'copy', audit: 'shield', monitor: 'pulse', er: 'diagram', settings: 'gear', import: 'download', backup: 'db', history: 'history', dashboard: 'chart' };
@@ -76,8 +77,29 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         <button className="icon-btn" title={t('audit.title')} aria-label={t('audit.title')} onClick={() => openTab({ kind: 'audit', title: t('audit.title') })}><Icon name="shield" /></button>
         <ThemeToggle />
         <button className="icon-btn" title={t('settings.title')} aria-label={t('settings.title')} onClick={() => openTab({ kind: 'settings', title: t('settings.title') })}><Icon name="gear" /></button>
+        <DetailPanelButton />
       </div>
     </header>
+  );
+}
+
+/** Toolbar toggle for the active table tab's row detail panel (same action as the bottom-bar button and ⌘⇧D). */
+function DetailPanelButton() {
+  const { t } = useTranslation();
+  const tableTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTab && x.kind === 'table')?.id);
+  const open = useTableWs((w) => (tableTab ? !!w.tabs[tableTab]?.detailOpen : false));
+  const label = t('tableWs.toggleDetailPanel');
+  return (
+    <button
+      className={`icon-btn ${open ? 'bg-accent/15 text-accent' : ''}`}
+      aria-label={label}
+      title={`${label} (${displayCombo(DETAIL_SHORTCUT)})`}
+      aria-pressed={open}
+      disabled={!tableTab}
+      onClick={() => tableTab && setDetailPanel(tableTab)}
+    >
+      <Icon name="panelRight" />
+    </button>
   );
 }
 

@@ -1063,6 +1063,7 @@
     "noHistory": "Kein Abfrageverlauf für diese Verbindung.",
     "schemasRail": "Datenbanken",
     "resizeDetail": "Größe der Zeilendetails ändern",
+    "toggleDetailPanel": "Zeilendetails ein-/ausblenden",
     "sidebarSections": "Seitenleiste",
     "rowsSelectedShort_one": "{{formatted}} Zeile ausgewählt",
     "rowsSelectedShort_other": "{{formatted}} Zeilen ausgewählt"

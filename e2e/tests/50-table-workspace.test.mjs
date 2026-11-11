@@ -47,6 +47,7 @@ async function setFilterField(label, n, value) {
   await sleep(150);
 }
 
+const detailVisible = () => b.execute(() => !!document.querySelector('[role=tabpanel]:not([hidden]) aside[aria-label="Row details"]'));
 const status = () => b.execute(() => document.querySelector('[role=tabpanel]:not([hidden]) [aria-live=polite]')?.innerText ?? '');
 const waitStatus = (re, what) => until(async () => re.test(await resultsText(b)), what, 20000);
 
@@ -102,6 +103,8 @@ describe('table workspace', () => {
       await waitStatus(/0 of ~?500 rows selected/, 'row status');
       await selectRowWithText('user1@example.com');
       await waitStatus(/1 of ~?500 rows selected/, 'one selected');
+      // Default preference 'auto': selecting a row opens the row detail panel.
+      await until(detailVisible, 'detail panel opened by row click');
     }));
 
   test('status pill shows engine, TLS state, connection, schema and table', () =>
@@ -166,7 +169,7 @@ describe('table workspace', () => {
 
   test('row detail panel edits stage like grid edits; top toolbar previews, discards and commits', () =>
     fail('detail', async () => {
-      await clickSel(b, '[role=tabpanel]:not([hidden]) button[aria-label="Row details"]');
+      // The panel is already open (auto mode): selecting a row shows it.
       await selectRowWithText('user3@example.com');
       await until(() => b.execute(() => !!document.querySelector('aside[aria-label="Row details"] [data-field="email"]')), 'detail fields');
       const label = await b.execute(() => document.querySelector('aside[aria-label="Row details"] [data-field="id"]')?.innerText ?? '');
@@ -191,7 +194,27 @@ describe('table workspace', () => {
       await waitText(b, '1 pending change');
       await clickSel(b, 'button[aria-label="Commit pending changes"]');
       await waitText(b, 'Committed 1 row');
-      await clickSel(b, '[role=tabpanel]:not([hidden]) button[aria-label="Row details"]');
+    }));
+
+  test('closing the detail panel keeps it closed on row clicks; Ctrl/Cmd+Shift+D reopens it', () =>
+    fail('detail-pref', async () => {
+      await selectRowWithText('user4@example.com');
+      await until(detailVisible, 'panel visible after row click');
+      // Close with the panel's × button: the preference switches to 'closed'.
+      await clickSel(b, '[role=tabpanel]:not([hidden]) aside[aria-label="Row details"] button[aria-label="Close"]');
+      await until(async () => !(await detailVisible()), 'panel closed');
+      await selectRowWithText('user5@example.com');
+      await sleep(300);
+      assert.equal(await detailVisible(), false, 'panel stays closed after another row click');
+      const pressed = await b.execute(() => document.querySelector('header button[aria-label="Toggle row details"]')?.getAttribute('aria-pressed'));
+      assert.equal(pressed, 'false');
+      // Explicit open via the shortcut (Ctrl on Linux) switches back to 'auto'.
+      await b.execute(() => {
+        const cell = document.querySelector('[role=tabpanel]:not([hidden]) [role=gridcell]');
+        cell?.dispatchEvent(new KeyboardEvent('keydown', { key: 'D', code: 'KeyD', ctrlKey: true, metaKey: navigator.platform.startsWith('Mac'), shiftKey: true, bubbles: true, cancelable: true }));
+      });
+      await until(detailVisible, 'panel reopened by shortcut');
+      await until(() => b.execute(() => document.querySelector('header button[aria-label="Toggle row details"]')?.getAttribute('aria-pressed') === 'true'), 'toolbar button pressed');
     }));
 
   test('bottom bar Index view lists the table indexes', () =>
