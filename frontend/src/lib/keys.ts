@@ -1,7 +1,9 @@
 // Keyboard shortcuts. "Mod" = ⌘ on macOS, Ctrl elsewhere.
 export const DEFAULT_KEYS = {
-  palette: 'Mod+K',
+  // Mod+K opens the database picker; the palette moved to Mod+Shift+P.
+  palette: 'Mod+Shift+P',
   quickOpen: 'Mod+P',
+  openDatabase: 'Mod+K',
   newQuery: 'Mod+T',
   closeTab: 'Mod+W',
   reopenTab: 'Mod+Shift+T',

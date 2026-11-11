@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { ObjectKind, ObjectRef } from '../lib/types';
 import { generateSql, qualify } from '../lib/sqlgen';
+import { useTableWs } from '../lib/tableWorkspace';
 import { errMsg, useApp } from '../store';
 import { Icon, type IconName } from './icons';
 import { isContextMenuKey, menuAnchor, MenuPopup } from './ui';
@@ -15,6 +16,9 @@ const KIND_ICON: Partial<Record<ObjectKind, IconName>> = {
 const KIND_COLOR: Partial<Record<ObjectKind, string>> = { table: 'text-accent', view: 'text-purple', materialized_view: 'text-purple', function: 'text-warn', procedure: 'text-warn', trigger: 'text-danger', key: 'text-ok' };
 const KIND_ORDER: ObjectKind[] = ['table', 'view', 'materialized_view', 'function', 'procedure', 'trigger', 'sequence', 'enum', 'index', 'event', 'extension', 'key', 'collection'];
 const MAX_ITEMS = 5000;
+
+/** Lookup key for a table by schema + name (pending-changes highlight). */
+const pendingKey = (schema: string | null | undefined, table: string) => `${schema ?? ''}\u0000${table}`;
 
 /** One visible row of the tree, in display order (used for arrow-key navigation). */
 type Node = { key: string; kind: ObjectKind; o?: ObjectRef };
@@ -31,6 +35,18 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
   const treeRef = useRef<HTMLDivElement>(null);
   const objs = useMemo(() => s.objects[s.activeSchema ?? ''] ?? [], [s.objects, s.activeSchema]);
   const activeTarget = tabs.find((x) => x.id === activeTab)?.target;
+  // Tables whose open tab has staged, uncommitted changes (amber row).
+  const wsTabs = useTableWs((w) => w.tabs);
+  const pendingByTable = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const tb of tabs) {
+      const n = wsTabs[tb.id]?.pending ?? 0;
+      if (tb.kind !== 'table' || tb.sessionId !== sessionId || !tb.target || n <= 0) continue;
+      const k = pendingKey(tb.target.schema, tb.target.table);
+      m.set(k, (m.get(k) ?? 0) + n);
+    }
+    return m;
+  }, [tabs, wsTabs, sessionId]);
   const byKind = useMemo(() => {
     const ql = q.toLowerCase();
     const m = new Map<ObjectKind, ObjectRef[]>();
@@ -164,19 +180,23 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
                     {list.slice(0, MAX_ITEMS).map((o) => {
                       const active = activeTarget?.table === o.name && activeTarget?.schema === o.schema;
                       const key = `o:${kind}:${o.name}`;
+                      const pending = pendingByTable.get(pendingKey(o.schema, o.name)) ?? 0;
+                      const pendingText = pending ? t('tree.pendingChanges', { count: pending }) : undefined;
                       return (
                         <div
                           key={key}
                           role="treeitem"
                           aria-level={2}
                           aria-selected={active}
+                          aria-description={pendingText}
+                          data-pending={pending || undefined}
                           data-key={key}
                           tabIndex={current === key ? 0 : -1}
-                          className={`mx-1.5 flex h-[24px] cursor-default items-center gap-2 rounded-md px-2 ${active ? 'row-selected' : 'hover:bg-hover'}`}
+                          className={`mx-1.5 flex h-[24px] cursor-default items-center gap-2 rounded-md px-2 ${active ? 'row-selected' : pending ? 'bg-warn/35 text-fg hover:bg-warn/45' : 'hover:bg-hover'} ${active && pending ? 'pending-selected ring-2 ring-inset ring-warn' : ''}`}
                           onFocus={(e) => { e.stopPropagation(); setFocusKey(key); }}
                           onClick={() => { setFocusKey(key); open(o); }}
                           onContextMenu={(e) => { e.preventDefault(); setFocusKey(key); setCtx({ o, x: e.clientX, y: e.clientY }); }}
-                          title={o.name}
+                          title={pendingText ? `${o.name} — ${pendingText}` : o.name}
                         >
                           <Icon name={KIND_ICON[o.kind] ?? 'list'} size={14} className={active ? '' : KIND_COLOR[o.kind] ?? 'text-muted'} />
                           <span className="truncate" dir="auto">{o.name}</span>

@@ -101,6 +101,7 @@ pub fn run() {
             commands::list_schemas,
             commands::list_objects,
             commands::use_schema,
+            commands::create_database_sql,
             commands::describe_table,
             commands::object_ddl,
             commands::evaluate_sql,

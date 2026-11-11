@@ -126,7 +126,10 @@
       "extension": "Extensiones",
       "key": "Claves",
       "collection": "Colecciones"
-    }
+    },
+    "pendingChanges_one": "{{count}} cambio pendiente",
+    "pendingChanges_many": "{{count}} cambios pendientes",
+    "pendingChanges_other": "{{count}} cambios pendientes"
   },
   "query": {
     "newTab": "Nueva consulta",
@@ -763,7 +766,8 @@
     "focusMode": "Modo concentración",
     "newWindow": "Nueva ventana",
     "closeWindow": "Cerrar ventana",
-    "splitEditor": "Dividir editor"
+    "splitEditor": "Dividir editor",
+    "openDatabase": "Abrir base de datos"
   },
   "ssh": {
     "trustTitle": "¿Confiar en este host SSH?",
@@ -1094,5 +1098,24 @@
     "rowsSelectedShort_one": "{{formatted}} fila seleccionada",
     "rowsSelectedShort_many": "{{formatted}} filas seleccionadas",
     "rowsSelectedShort_other": "{{formatted}} filas seleccionadas"
+  },
+  "openDb": {
+    "title": "Abrir base de datos",
+    "search": "Buscar base de datos…",
+    "results": "Bases de datos disponibles",
+    "databases": "Bases de datos",
+    "schemasIn": "Esquemas en {{db}}",
+    "system": "Sistema",
+    "otherDatabases": "Otras bases de datos en este servidor",
+    "current": "actual",
+    "noMatches": "Ninguna base de datos coincide",
+    "none": "Esta conexión no tiene bases de datos para abrir",
+    "new": "Nueva…",
+    "open": "Abrir",
+    "newDatabase": "Nueva base de datos",
+    "newSchema": "Nuevo esquema",
+    "newHint": "Nombre (se entrecomilla automáticamente; revisará la sentencia antes de ejecutarla)",
+    "created": "{{name}} creada",
+    "paletteLabel": "Abrir base de datos…"
   }
 }

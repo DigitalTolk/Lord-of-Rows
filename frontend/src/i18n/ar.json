@@ -129,7 +129,13 @@
       "extension": "الامتدادات",
       "key": "المفاتيح",
       "collection": "المجموعات"
-    }
+    },
+    "pendingChanges_zero": "لا تغييرات معلّقة",
+    "pendingChanges_one": "تغيير معلّق واحد",
+    "pendingChanges_two": "تغييران معلّقان",
+    "pendingChanges_few": "{{count}} تغييرات معلّقة",
+    "pendingChanges_many": "{{count}} تغييرًا معلّقًا",
+    "pendingChanges_other": "{{count}} تغيير معلّق"
   },
   "query": {
     "newTab": "استعلام جديد",
@@ -829,7 +835,8 @@
     "focusMode": "وضع التركيز",
     "newWindow": "نافذة جديدة",
     "closeWindow": "إغلاق النافذة",
-    "splitEditor": "تقسيم المحرر"
+    "splitEditor": "تقسيم المحرر",
+    "openDatabase": "فتح قاعدة بيانات"
   },
   "ssh": {
     "trustTitle": "هل تثق بمضيف SSH هذا؟",
@@ -1187,5 +1194,24 @@
     "rowsSelectedShort_few": "{{formatted}} صفوف محددة",
     "rowsSelectedShort_many": "{{formatted}} صفًا محددًا",
     "rowsSelectedShort_other": "{{formatted}} صف محدد"
+  },
+  "openDb": {
+    "title": "فتح قاعدة بيانات",
+    "search": "ابحث عن قاعدة بيانات…",
+    "results": "قواعد البيانات المتاحة",
+    "databases": "قواعد البيانات",
+    "schemasIn": "المخططات في {{db}}",
+    "system": "النظام",
+    "otherDatabases": "قواعد بيانات أخرى على هذا الخادم",
+    "current": "الحالية",
+    "noMatches": "لا توجد قواعد بيانات مطابقة",
+    "none": "لا توجد قواعد بيانات لفتحها في هذا الاتصال",
+    "new": "جديد…",
+    "open": "فتح",
+    "newDatabase": "قاعدة بيانات جديدة",
+    "newSchema": "مخطط جديد",
+    "newHint": "الاسم (يُقتبس تلقائيًا؛ ستراجع العبارة قبل تنفيذها)",
+    "created": "تم إنشاء {{name}}",
+    "paletteLabel": "فتح قاعدة بيانات…"
   }
 }

@@ -78,7 +78,8 @@ shortcuts.
 
 | Keys | Action |
 |---|---|
-| Mod+K / Mod+P | Command palette (type, Up/Down, Enter; Escape closes) |
+| Mod+Shift+P / Mod+P | Command palette (type, Up/Down, Enter; Escape closes) |
+| Mod+K | Open database picker (type to filter, Up/Down, Enter or double-click opens; Escape closes) |
 | Mod+T | New SQL query tab |
 | Mod+W | Close tab |
 | Mod+Shift+T | Reopen closed tab |

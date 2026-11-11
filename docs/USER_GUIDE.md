@@ -47,5 +47,5 @@
 - **Command palette:** `Ctrl/⌘+K` — open tables, connections, tools.
 
 ## Shortcuts
-`⌘/Ctrl+K` palette · `⌘/Ctrl+T` new query · `⌘/Ctrl+W` close tab · `⌘/Ctrl+Shift+T` reopen · `⌘/Ctrl+Enter` run ·
+`⌘/Ctrl+K` open database · `⌘/Ctrl+P` (or `⌘/Ctrl+Shift+P`) palette · `⌘/Ctrl+T` new query · `⌘/Ctrl+W` close tab · `⌘/Ctrl+Shift+T` reopen · `⌘/Ctrl+Enter` run ·
 `⌘/Ctrl+Shift+Enter` run all · `⌘/Ctrl+.` cancel · `⌘/Ctrl+S` review changes · `⌘/Ctrl+Z` undo edit · `⌘/Ctrl+B` sidebar

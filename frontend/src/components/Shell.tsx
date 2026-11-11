@@ -11,6 +11,8 @@ import { ask } from './ask';
 import { ThemeToggle } from './ThemeToggle';
 import { PendingChangesBar } from './PendingChangesBar';
 import { StatusPill } from './StatusPill';
+import { useTableWs } from '../lib/tableWorkspace';
+import { openDatabasePicker } from './OpenDatabaseDialog';
 
 const KIND_ICON: Record<TabKind, IconName> = { query: 'sql', table: 'table', structure: 'structure', diff: 'copy', audit: 'shield', monitor: 'pulse', er: 'diagram', settings: 'gear', import: 'download', backup: 'db', history: 'history', dashboard: 'chart' };
 
@@ -30,10 +32,11 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   return (
     <header className="relative flex h-[42px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
       <button className="icon-btn" aria-label={t('shell.toggleSidebar')} title={t('shell.toggleSidebar')} onClick={onToggleSidebar}><Icon name="sidebar" /></button>
-      <button className="icon-btn" aria-label={t('conn.title')} title={t('conn.title')} onClick={() => useApp.setState({ launcher: true })}><Icon name="db" /></button>
+      <button className="icon-btn" aria-label={t('conn.title')} title={t('conn.title')} onClick={() => useApp.setState({ launcher: true })}><Icon name="power" /></button>
       <button className="icon-btn" aria-label={t('windows.new')} title={`${t('windows.new')} (${displayCombo(DEFAULT_KEYS.newWindow)})`} onClick={() => void useApp.getState().openWindow()}><Icon name="window" /></button>
       <span className="mx-1 h-5 border-s border-border" aria-hidden />
       <button className="icon-btn" title={`${t('query.newTab')} (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label={t('query.newTab')} disabled={!s} onClick={() => openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' })}><Icon name="sql" /></button>
+      <button className="icon-btn" title={`${t('openDb.title')} (${displayCombo(DEFAULT_KEYS.openDatabase)})`} aria-label={t('openDb.title')} aria-haspopup="dialog" disabled={!s} onClick={() => openDatabasePicker()}><Icon name="db" /></button>
       <button className="icon-btn" title={t('common.refresh')} aria-label={t('common.refresh')} disabled={!s} onClick={() => s && loadObjects(s.session_id, s.activeSchema)}><Icon name="refresh" /></button>
       <button className="icon-btn" title={t('io.importTitle')} aria-label={t('io.importTitle')} disabled={!s} onClick={tool('import', t('io.importTitle'))}><Icon name="download" /></button>
       <button className="icon-btn" title={t('backup.title')} aria-label={t('backup.title')} disabled={!s} onClick={tool('backup', t('backup.title'))}><Icon name="upload" /></button>
@@ -84,6 +87,7 @@ export function TabBar() {
   const tabs = allTabs.filter((x) => !x.sessionId || x.sessionId === activeSession);
   const drag = useRef<string | null>(null);
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const wsTabs = useTableWs((w) => w.tabs);
   // Roving tabindex: the active tab (or the first one) is the single Tab stop of the strip.
   const focusable = tabs.some((x) => x.id === activeTab) ? activeTab : tabs[0]?.id;
 
@@ -114,6 +118,8 @@ export function TabBar() {
           const s = tab.sessionId ? sessions[tab.sessionId] : undefined;
           const prod = s?.config.environment === 'production';
           const selected = tab.id === activeTab;
+          const pending = tab.kind === 'table' ? wsTabs[tab.id]?.pending ?? 0 : 0;
+          const pendingText = pending ? t('tree.pendingChanges', { count: pending }) : undefined;
           return (
             <div
               key={tab.id}
@@ -121,6 +127,7 @@ export function TabBar() {
               role="tab"
               aria-selected={selected}
               aria-controls={panelDomId(tab.id)}
+              aria-description={pendingText}
               tabIndex={tab.id === focusable ? 0 : -1}
               draggable
               onDragStart={() => (drag.current = tab.id)}
@@ -135,6 +142,7 @@ export function TabBar() {
               {selected && <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: prod ? 'rgb(var(--danger))' : s?.config.color ?? 'rgb(var(--accent))' }} />}
               <Icon name={KIND_ICON[tab.kind]} size={13} className="shrink-0" />
               <span className="flex-1 truncate" dir="auto">{tab.title}</span>
+              {pending > 0 && <span data-testid="tab-pending" className="h-2 w-2 shrink-0 rounded-full bg-warn" title={pendingText} aria-hidden />}
               {tab.pinned ? <span role="img" aria-label={t('shell.pinned')} className="text-[0.7rem]">●</span> : (
                 // Mouse affordance only: any focusable control inside role=tab fails axe nested-interactive
                 // (even with tabIndex -1). Keyboard users close with Delete on the tab or the tab menu.
@@ -244,6 +252,7 @@ export function CommandPalette() {
     ];
     if (s) {
       list.push(
+        { id: 'open-db', label: t('openDb.paletteLabel'), hint: displayCombo(DEFAULT_KEYS.openDatabase), run: () => openDatabasePicker() },
         { id: 'er', label: `${t('er.title')} — ${s.config.name}`, run: tool('er', `ER ${s.activeSchema ?? ''}`) },
         { id: 'monitor', label: `${t('monitor.title')} — ${s.config.name}`, run: tool('monitor', t('monitor.title')) },
         { id: 'import', label: `${t('io.importTitle')} — ${s.config.name}`, run: tool('import', t('io.importTitle')) },

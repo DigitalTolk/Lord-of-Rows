@@ -482,8 +482,18 @@ pub async fn open_session(
     connection_id: Uuid,
     password: Option<String>,
     trust_host_key: Option<String>,
+    database: Option<String>,
 ) -> R<SessionOpened> {
-    let cfg = st.store.get_connection(connection_id)?;
+    let mut cfg = st.store.get_connection(connection_id)?;
+    // "Other databases on this server" (Postgres family only): same saved connection,
+    // another database. Never for file-based engines, where `database` is a path.
+    if let Some(db) = database {
+        check_len(&db, 128, "database")?;
+        if Dialect::from(cfg.engine) != Dialect::Postgres || db.is_empty() || db.contains('\0') {
+            return Err(DbError::invalid("opening another database is only supported for PostgreSQL connections"));
+        }
+        cfg.database = Some(db);
+    }
     let secrets = resolve_secrets(&st, &cfg, password)?;
     let ssh_secrets = resolve_ssh_secrets(&st, &cfg, None, None)?;
     let t = Instant::now();
@@ -549,6 +559,15 @@ pub async fn list_schemas(st: State<'_, AppState>, session_id: String) -> R<Vec<
 pub async fn use_schema(st: State<'_, AppState>, session_id: String, schema: String) -> R<()> {
     check_len(&schema, 128, "schema")?;
     st.session(&session_id)?.conn.use_schema(&schema).await
+}
+
+/// SQL for the "Open database" picker's New… button: `CREATE DATABASE` (MySQL family) or
+/// `CREATE SCHEMA` (Postgres family), quoted in Rust. Only generates the text; running it
+/// goes through `evaluate_sql` + `run_migration` like any other reviewed DDL.
+#[tauri::command]
+pub fn create_database_sql(st: State<'_, AppState>, session_id: String, name: String) -> R<String> {
+    check_len(&name, 1024, "name")?;
+    st.session(&session_id)?.conn.dialect().create_database_sql(&name)
 }
 
 #[tauri::command]
