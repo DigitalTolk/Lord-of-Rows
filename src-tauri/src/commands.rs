@@ -862,6 +862,42 @@ pub async fn export_table(
     Ok(ExportReport { rows, path: g.path.to_string_lossy().into_owned() })
 }
 
+/// Export rows the UI already holds (the current grid page) to a file chosen in
+/// a native save dialog. Same writer and options as `export_table`.
+#[tauri::command]
+pub fn export_rows(
+    st: State<'_, AppState>,
+    session_id: String,
+    target: TableTarget,
+    columns: Vec<ColumnMeta>,
+    rows: Vec<Vec<Value>>,
+    grant: String,
+    options: dbs_io::ExportOptions,
+) -> R<ExportReport> {
+    if rows.len() > 1_000_000 {
+        return Err(DbError::invalid("too many rows to export"));
+    }
+    let s = st.session(&session_id)?;
+    let g = st.grant(&grant, GrantMode::Write)?;
+    let mut opts = options;
+    if opts.table.is_none() {
+        opts.table = Some(target.clone());
+    }
+    if opts.dialect.is_none() {
+        opts.dialect = Some(s.conn.dialect());
+    }
+    let mut ex = dbs_io::Exporter::begin(open_writer(&g, false)?, &columns, opts)?;
+    for chunk in rows.chunks(5000) {
+        ex.write_rows(chunk)?;
+    }
+    let n = ex.finish()?;
+    audit(&st, Category::Export, Outcome::Success, Some(&s.config), |e| {
+        e.object = Some(target.table.clone());
+        e.rows_affected = Some(n);
+    });
+    Ok(ExportReport { rows: n, path: g.path.to_string_lossy().into_owned() })
+}
+
 #[tauri::command]
 pub async fn export_query(
     st: State<'_, AppState>,

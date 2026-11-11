@@ -47,6 +47,22 @@
     "committed": "Committed {{n}} row(s)", "setNull": "Set NULL", "copyAs": "Copy as", "filterAdd": "Add filter", "filterValue": "value",
     "pageSize": "Rows per page", "hideColumn": "Hide column", "showAll": "Show all columns", "searchResults": "Search results…", "editCell": "Edit value"
   },
+  "gridMenu": {
+    "menuLabel": "Cell actions", "headerMenuLabel": "Column actions",
+    "quickLook": "Quick Look Editor", "setValue": "Set Value", "setEmpty": "Empty string", "defaultHint": "new rows only",
+    "setNow": "Current date/time", "openFk": "Open Referenced Row in {{table}}", "fkLink": "Open the referenced row in {{table}}",
+    "paste": "Paste", "pasteSelected": "Paste to Selected Cells", "addRow": "Add Row", "duplicate": "Duplicate",
+    "copyRows": "Copy Rows", "copyRowsAs": "Copy Rows As", "copyCells": "Copy Selected Cells", "copyCellsAs": "Copy Selected Cells As",
+    "copyColumn": "Copy All Column Values", "pageOnly": "loaded page only: {{n}} rows", "quickFilter": "Quick Filter",
+    "import": "Import CSV / JSON into This Table…", "exportPage": "Export Current Page", "delete": "Delete Row", "deleteN": "Delete {{n}} Rows",
+    "freeze": "Freeze up to here", "unfreeze": "Unfreeze columns",
+    "fmtCsv": "CSV", "fmtCsvHeader": "CSV with header", "fmtTsv": "TSV", "fmtTsvHeader": "TSV with header", "fmtJson": "JSON",
+    "fmtSqlInsert": "SQL INSERT statements", "fmtSqlUpdate": "SQL UPDATE statements (by primary key)", "fmtMarkdown": "Markdown table",
+    "needsKey": "needs a primary key", "copied": "Copied {{n}} row(s)", "copiedValues": "Copied {{n}} value(s)",
+    "pasteSkipped": "{{n}} pasted value(s) were skipped: read-only, deleted, or not valid for the column type",
+    "pasteClipped": "Some pasted cells fell outside the grid and were ignored", "clipboardUnavailable": "Could not read the clipboard",
+    "discardTitle": "Discard pending changes?", "discardMessage": "Reloading drops {{n}} pending change(s) that have not been committed."
+  },
   "structure": { "columns": "Columns", "indexes": "Indexes", "foreignKeys": "Foreign keys", "constraints": "Constraints", "ddl": "DDL",
     "addColumn": "Add column", "previewChanges": "Preview SQL", "apply": "Apply changes", "type": "Type", "nullable": "Nullable", "default": "Default",
     "pk": "PK", "comment": "Comment", "tableName": "Table name", "newTable": "New table", "warnings": "Warnings", "reversible": "Reversible", "irreversible": "Not reversible" },

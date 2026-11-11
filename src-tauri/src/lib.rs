@@ -104,6 +104,7 @@ pub fn run() {
             commands::pick_file,
             commands::export_table,
             commands::export_query,
+            commands::export_rows,
             commands::import_preview,
             commands::import_run,
             commands::schema_snapshot,

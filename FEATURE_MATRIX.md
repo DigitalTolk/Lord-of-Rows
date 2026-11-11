@@ -47,6 +47,10 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Multiple result sets, messages, notices, SQLSTATE errors | TESTED | E2E |
 | Virtualized grid, PK-ordered paging, sort, filters | TESTED (paging); sort/filter IMPLEMENTED_UNVERIFIED (backend UT) | E2E, UT `page_query_is_parameterised` |
 | Staged edits, SQL review, commit, optimistic-concurrency conflicts | TESTED | E2E edit/commit/conflict, IT `crud_scenario` |
+| Grid context menu (Quick Look, Set Value ▸, Refresh, Paste / Paste to Selected, Add Row, Duplicate, Copy Rows / Cells (As ▸ CSV/TSV/JSON/SQL INSERT/SQL UPDATE/Markdown), Copy All Column Values, Quick Filter ▸, Import, Export Current Page ▸, Delete) + shortcuts | IMPLEMENTED_UNVERIFIED in the app; formatting/paste/selection logic TESTED (UT) | UT `copyFormats` / `gridOps` / `gridSelection` / `DataGrid` (jsdom); E2E `45-grid-context-menu` written, not yet run |
+| Grid cell-range selection (click, Shift+click, Cmd/Ctrl+click toggle, drag, row-number select) | IMPLEMENTED_UNVERIFIED (selection model UT) | UT `gridSelection` |
+| Foreign-key "→" link to the referenced row (filtered table tab) | IMPLEMENTED_UNVERIFIED | UT `DataGrid` (callback only) |
+| Export current page (`export_rows` command) | IMPLEMENTED_UNVERIFIED; Rust not compiled in this change's verification | native save dialog not drivable by WebDriver |
 | Structure view + designer (DDL preview, reversibility) | TESTED (view), designer UT | E2E Structure/DDL, UT `dbs-schema` |
 | Schema diff & migrations | IMPLEMENTED_UNVERIFIED in UI; engine TESTED | UT `dbs-schema` (7) |
 | ER diagram | TESTED | E2E |
