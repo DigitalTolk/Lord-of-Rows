@@ -231,8 +231,9 @@ describe('AccessPanel', () => {
         req('r1', { status: 'ready', resource_name: 'billing', expires_at: NOW + 7200 }),
         req('r2', { status: 'ready', resource_name: 'events', expires_at: NOW + 600 }),
         req('v1', { status: 'provisioning', resource_name: 'audit' }),
-        req('h1', { status: 'revoked', resource_name: 'old' }),
-        req('h2', { status: 'cancelled', resource_name: 'older' }),
+        // Fixed times: History is newest first, and `new Date()` defaults can tie or flip by a millisecond.
+        req('h1', { status: 'revoked', resource_name: 'old', created_at: '2026-01-02T00:00:00.000Z' }),
+        req('h2', { status: 'cancelled', resource_name: 'older', created_at: '2026-01-01T00:00:00.000Z' }),
       ];
       await show();
       const tabs = screen.getAllByRole('tab').filter((t) => t.hasAttribute('data-segment'));
