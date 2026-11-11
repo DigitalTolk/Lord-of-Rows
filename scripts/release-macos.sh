@@ -87,6 +87,7 @@ elif [ -z "${SKIP_NOTARIZE:-}" ]; then
 fi
 
 echo "==> Creating DMG"
+mkdir -p "$OUT_DIR"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 ditto "$APP" "$STAGE/Lord of the Rows.app"
