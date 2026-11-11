@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Merged into the app's Info.plist by Tauri. Required so macOS asks the user
+       for Local Network access (databases on 192.168.x.x / 10.x / .local hosts)
+       instead of failing with "No route to host". -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>DB Studio connects to database servers on your local network.</string>
+</dict>
+</plist>

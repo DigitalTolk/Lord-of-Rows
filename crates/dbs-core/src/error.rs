@@ -37,7 +37,7 @@ pub struct DbError {
 
 impl DbError {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: redact_secrets(&message.into()), code: None, hint: None }
+        Self { kind, message: explain_network(&dedupe_prefix(&redact_secrets(&message.into()))), code: None, hint: None }
     }
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
@@ -59,6 +59,41 @@ impl DbError {
 }
 
 pub type DbResult<T> = Result<T, DbError>;
+
+/// "Input/output error: Input/output error: X" → "Input/output error: X".
+fn dedupe_prefix(msg: &str) -> String {
+    let mut out = msg.to_string();
+    while let Some((head, rest)) = out.split_once(": ") {
+        if rest.starts_with(&format!("{head}: ")) {
+            out = rest.to_string();
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+/// Append plain-language advice for common network failures.
+fn explain_network(msg: &str) -> String {
+    let l = msg.to_ascii_lowercase();
+    let advice = if l.contains("no route to host") || l.contains("os error 65") {
+        if cfg!(target_os = "macos") {
+            Some("The server could not be reached. If it is on your local network or VPN (e.g. 192.168.x.x / 10.x), macOS may be blocking DB Studio: open System Settings → Privacy & Security → Local Network and enable DB Studio, then try again.")
+        } else {
+            Some("The server could not be reached: check the host, VPN and firewall.")
+        }
+    } else if l.contains("connection refused") || l.contains("os error 61") || l.contains("os error 111") {
+        Some("The host is reachable but nothing accepted the connection on that port: check the port and that the database is running.")
+    } else if l.contains("nodename nor servname") || l.contains("name or service not known") || l.contains("failed to lookup address") {
+        Some("The host name could not be resolved: check the spelling, DNS or VPN.")
+    } else {
+        None
+    };
+    match advice {
+        Some(a) if !msg.contains(a) => format!("{msg}\n{a}"),
+        _ => msg.to_string(),
+    }
+}
 
 /// Best-effort redaction of credential-looking fragments in error text.
 /// Drivers sometimes echo connection strings; this strips `password=...`,
@@ -128,6 +163,17 @@ mod tests {
     fn leaves_plain_text_alone() {
         assert_eq!(redact_secrets("syntax error near 'FROM'"), "syntax error near 'FROM'");
         assert_eq!(redact_secrets("ünïcödé ok"), "ünïcödé ok");
+    }
+
+    #[test]
+    fn network_errors_are_explained_and_deduped() {
+        let e = DbError::new(ErrorKind::Connection, "Input/output error: Input/output error: No route to host (os error 65)");
+        assert!(e.message.starts_with("Input/output error: No route to host (os error 65)"), "{}", e.message);
+        assert!(e.message.contains("could not be reached"));
+        let e = DbError::new(ErrorKind::Connection, "Connection refused (os error 61)");
+        assert!(e.message.contains("check the port"));
+        let e = DbError::new(ErrorKind::Syntax, "syntax error at or near \"x\"");
+        assert_eq!(e.message, "syntax error at or near \"x\"");
     }
 
     #[test]
