@@ -220,7 +220,43 @@ export function TableView({ tab }: { tab: Tab }) {
   }, [tab.id, pending]);
 
   // Grid context menu (copy, set value, quick filter, FK links, ...); filters go through the tab's workspace store.
-  const gridActions = useTableGridActions({ tab, session: s, target, desc, rs, staged, change, count: count?.n ?? null, editable, reload: () => void load() });
+  // Explicit refresh (toolbar button, Cmd/Ctrl+R, grid menu): re-count, reload in place
+  // (scroll, sort, filters and page are kept) and flash the grid when the new rows land.
+  const [flash, setFlash] = useState(0);
+  const reloadNow = async () => {
+    countKey.current = null;
+    await load();
+    setFlash((n) => n + 1);
+  };
+  const gridActions = useTableGridActions({ tab, session: s, target, desc, rs, staged, change, count: count?.n ?? null, editable, reload: () => void reloadNow() });
+  const refresh = () => gridActions.onRefresh?.();
+  useEffect(() => {
+    useTableWs.getState().patch(tab.id, { loading });
+  }, [tab.id, loading]);
+  useEffect(() => {
+    if (!flash) return;
+    const h = setTimeout(() => setFlash(0), 450);
+    return () => clearTimeout(h);
+  }, [flash]);
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  // Top-bar refresh asks through the workspace store.
+  const refreshSeq = useTableWs((w) => w.tabs[tab.id]?.refreshSeq ?? 0);
+  useEffect(() => {
+    if (refreshSeq) refreshRef.current();
+  }, [refreshSeq]);
+  // Cmd/Ctrl+R refreshes the active table tab (and never reloads the webview).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (useApp.getState().activeTab !== tab.id) return;
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        refreshRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tab.id]);
 
   const exportAll = async (format: ExportFormat) => {
     if (!s) return;
@@ -323,7 +359,7 @@ export function TableView({ tab }: { tab: Tab }) {
   return (
     <div className="flex h-full min-h-0 flex-col" onKeyDown={onKeyDown}>
       <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border bg-panel px-2">
-        <button className="icon-btn" title={`${t('common.refresh')} (⌘/Ctrl+R)`} aria-label={t('common.refresh')} onClick={() => { countKey.current = null; void load(); }}><Icon name="refresh" size={15} /></button>
+        <button className="icon-btn" title={`${t('common.refresh')} (⌘/Ctrl+R)`} aria-label={t('common.refresh')} aria-busy={loading} onClick={refresh}><Icon name="refresh" size={15} className={loading ? 'animate-spin' : ''} /></button>
         {editable && (
           <>
             <span className="mx-1 h-4 border-s border-border" aria-hidden />
@@ -363,7 +399,7 @@ export function TableView({ tab }: { tab: Tab }) {
         <div className="p-4"><Spinner label={t('common.loading')} /></div>
       ) : rs ? (
         <div className="flex min-h-0 flex-1">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className={`flex min-h-0 min-w-0 flex-1 flex-col transition-opacity duration-150 ${loading ? 'opacity-50' : ''} ${flash ? 'grid-refresh-flash' : ''}`} aria-busy={loading}>
             <DataGrid
               columns={columns}
               rows={rs.rows}

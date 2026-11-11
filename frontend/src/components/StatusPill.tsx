@@ -48,7 +48,7 @@ export function pillWarning(s: Pick<OpenSession, 'server' | 'config'>, t: (k: st
  * Connection status pill for the top bar:
  * `LOCAL | MySQL 8.4.7 : TLSv1.3 : name : database : table`, on the connection's colour.
  */
-export function StatusPill({ s, table, onClick, expanded }: { s: OpenSession; table?: string | null; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; expanded: boolean }) {
+export function StatusPill({ s, table, onClick, expanded, refreshing }: { s: OpenSession; table?: string | null; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; expanded: boolean; refreshing?: boolean }) {
   const { t } = useTranslation();
   const env = t(`env.${s.config.environment}`).toUpperCase();
   const db = s.server.current_database ?? s.config.database ?? null;
@@ -65,14 +65,16 @@ export function StatusPill({ s, table, onClick, expanded }: { s: OpenSession; ta
       aria-haspopup="menu"
       aria-expanded={expanded}
       title={[...parts, warn].filter(Boolean).join(' : ')}
-      className={`flex h-7 max-w-[46vw] items-center gap-1.5 rounded-md border px-2.5 text-[0.88rem] shadow-sm hover:brightness-95 ${cls}`}
+      className={`relative flex h-7 max-w-[46vw] items-center gap-1.5 overflow-hidden rounded-md border px-2.5 text-[0.88rem] shadow-sm hover:brightness-95 ${cls}`}
+      aria-busy={refreshing}
       style={style}
       data-testid="status-pill"
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'} ring-1 ring-black/10`} role="img" aria-label={s.healthy ? t('status.healthyDot') : t('status.lostDot')} />
       <span className="shrink-0 font-semibold tracking-wide">{env}</span>
       <span className="shrink-0 opacity-60" aria-hidden>|</span>
-      <span className="truncate" dir="auto">{parts.join(' : ')}</span>
+      <span className="truncate" dir="auto" aria-live="polite">{refreshing ? t('status.refreshing') : parts.join(' : ')}</span>
+      {refreshing && <span className="pill-shimmer pointer-events-none absolute inset-0" aria-hidden />}
       {s.config.read_only && <Icon name="lock" size={13} className="shrink-0" />}
       {warn && <Icon name="warning" size={14} className={`shrink-0 ${color || prod ? '' : 'text-warn'}`} aria-hidden={false} aria-label={warn} role="img" />}
     </button>

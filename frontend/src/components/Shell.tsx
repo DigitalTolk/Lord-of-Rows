@@ -30,6 +30,21 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const activeTable = useApp((st) => st.tabs.find((x) => x.id === st.activeTab && x.kind === 'table' && x.sessionId === st.activeSession)?.target?.table);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const tool = (kind: TabKind, title: string) => () => openTab({ kind, title, sessionId: s?.session_id });
+  // Refresh = reload the object tree and the active table's rows: the pill
+  // shows "Refreshing…" with a shimmer and the button spins until both are done.
+  const activeTableTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTab && x.kind === 'table')?.id);
+  const tableLoading = useTableWs((w) => (activeTableTab ? !!w.tabs[activeTableTab]?.loading : false));
+  const [treeLoading, setTreeLoading] = useState(false);
+  const refreshing = treeLoading || tableLoading;
+  const refreshAll = () => {
+    if (!s) return;
+    if (activeTableTab) {
+      const cur = useTableWs.getState().tabs[activeTableTab]?.refreshSeq ?? 0;
+      useTableWs.getState().patch(activeTableTab, { refreshSeq: cur + 1 });
+    }
+    setTreeLoading(true);
+    void loadObjects(s.session_id, s.activeSchema).finally(() => setTreeLoading(false));
+  };
   return (
     <header className="relative flex h-[42px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
       <button className="icon-btn" aria-label={t('shell.toggleSidebar')} title={t('shell.toggleSidebar')} onClick={onToggleSidebar}><Icon name="sidebar" /></button>
@@ -38,7 +53,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       <span className="mx-1 h-5 border-s border-border" aria-hidden />
       <button className="icon-btn" title={`${t('query.newTab')} (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label={t('query.newTab')} disabled={!s} onClick={() => openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' })}><Icon name="sql" /></button>
       <button className="icon-btn" title={`${t('openDb.title')} (${displayCombo(DEFAULT_KEYS.openDatabase)})`} aria-label={t('openDb.title')} aria-haspopup="dialog" disabled={!s} onClick={() => openDatabasePicker()}><Icon name="db" /></button>
-      <button className="icon-btn" title={t('common.refresh')} aria-label={t('common.refresh')} disabled={!s} onClick={() => s && loadObjects(s.session_id, s.activeSchema)}><Icon name="refresh" /></button>
+      <button className="icon-btn" title={t('common.refresh')} aria-label={t('common.refresh')} aria-busy={refreshing} disabled={!s || refreshing} onClick={refreshAll}><Icon name="refresh" className={refreshing ? 'animate-spin' : ''} /></button>
       <button className="icon-btn" title={t('io.importTitle')} aria-label={t('io.importTitle')} disabled={!s} onClick={tool('import', t('io.importTitle'))}><Icon name="download" /></button>
       <button className="icon-btn" title={t('backup.title')} aria-label={t('backup.title')} disabled={!s} onClick={tool('backup', t('backup.title'))}><Icon name="upload" /></button>
       <span className="mx-1 h-5 border-s border-border" aria-hidden />
@@ -47,7 +62,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       {/* Connection pill */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         {s ? (
-          <StatusPill s={s} table={activeTable} expanded={!!menu} onClick={(e) => setMenu(menu ? null : menuAnchor(e.currentTarget))} />
+          <StatusPill s={s} table={activeTable} refreshing={refreshing} expanded={!!menu} onClick={(e) => setMenu(menu ? null : menuAnchor(e.currentTarget))} />
         ) : (
           <span className="text-muted">{t('status.disconnected')}</span>
         )}
@@ -162,7 +177,11 @@ export function TabBar() {
               className={`group relative flex min-w-[120px] max-w-[220px] cursor-default items-center gap-1.5 border-e border-border px-3 text-[0.92rem] ${selected ? 'bg-bg text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}
             >
               {selected && <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: prod ? 'rgb(var(--danger))' : s?.config.color ?? 'rgb(var(--accent))' }} />}
-              <Icon name={KIND_ICON[tab.kind]} size={13} className="shrink-0" />
+              {tab.kind === 'table' && wsTabs[tab.id]?.loading ? (
+                <Icon name="refresh" size={13} className="shrink-0 animate-spin text-accent" />
+              ) : (
+                <Icon name={KIND_ICON[tab.kind]} size={13} className="shrink-0" />
+              )}
               <span className="flex-1 truncate" dir="auto">{tab.title}</span>
               {pending > 0 && <span data-testid="tab-pending" className="h-2 w-2 shrink-0 rounded-full bg-warn" title={pendingText} aria-hidden />}
               {tab.pinned ? <span role="img" aria-label={t('shell.pinned')} className="text-[0.7rem]">●</span> : (

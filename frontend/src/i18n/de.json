@@ -606,6 +606,7 @@
     "toggleFullscreen": "Vollbild umschalten"
   },
   "status": {
+    "refreshing": "Wird aktualisiert…",
     "connected": "Verbunden",
     "disconnected": "Nicht verbunden",
     "lost": "Verbindung verloren",

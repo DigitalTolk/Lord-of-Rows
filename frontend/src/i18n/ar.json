@@ -686,6 +686,7 @@
     "toggleFullscreen": "تبديل ملء الشاشة"
   },
   "status": {
+    "refreshing": "جارٍ التحديث…",
     "connected": "متصل",
     "disconnected": "غير متصل",
     "lost": "انقطع الاتصال",

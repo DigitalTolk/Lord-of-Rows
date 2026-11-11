@@ -606,6 +606,7 @@
     "toggleFullscreen": "Toggle fullscreen"
   },
   "status": {
+    "refreshing": "Refreshing…",
     "connected": "Connected",
     "disconnected": "Not connected",
     "lost": "Connection lost",

@@ -35,6 +35,10 @@ export interface TableTabState {
   /** Row to focus in the filter bar after a structural change. */
   focusRow?: string;
   pending: number;
+  /** A (re)load of the table data is in flight: the tab shows a spinning refresh icon. */
+  loading?: boolean;
+  /** Bumped by the top-bar refresh to ask the table view to reload (it owns the data). */
+  refreshSeq?: number;
   actions?: PendingActions;
 }
 

@@ -626,6 +626,7 @@
     "toggleFullscreen": "Alternar pantalla completa"
   },
   "status": {
+    "refreshing": "Actualizando…",
     "connected": "Conectado",
     "disconnected": "Sin conexión",
     "lost": "Conexión perdida",
