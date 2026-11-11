@@ -25,6 +25,7 @@ dbs-ssh.workspace = true
 dbs-ai.workspace = true
 dbs-plugins.workspace = true
 dbs-import.workspace = true
+dbs-access.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8"
 tokio.workspace = true
@@ -47,5 +48,6 @@ semver = "1"
 custom-protocol = ["tauri/custom-protocol"]
 
 [dev-dependencies]
+dbs-access = { workspace = true, features = ["test-util"] }
 base64 = "0.23"
 minisign-verify = "0.3"

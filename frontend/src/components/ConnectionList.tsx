@@ -11,9 +11,11 @@ import { ContextMenu, type MenuItem } from './ContextMenu';
 import { EngineBadge } from './EngineBadge';
 import { Icon } from './icons';
 import { EnvBadge, Spinner } from './ui';
+import { ManagedChip } from './ManagedChip';
+import { managedState } from '../lib/access';
 
 /** Actions the launcher (Welcome) performs on a connection. */
-export type ConnAction = 'connect' | 'edit' | 'duplicate' | 'favorite' | 'delete';
+export type ConnAction = 'connect' | 'edit' | 'duplicate' | 'favorite' | 'delete' | 'requestAgain';
 
 const DND_TYPE = 'application/x-dbs-connection';
 /** Our own group palette (works on light and dark backgrounds). */
@@ -176,8 +178,11 @@ export function ConnectionList({
     const c = m.c;
     const cur = c.config.group?.trim() || null;
     const allGroups = [...new Set([...groups.map((g) => g.name), ...groupNames])];
+    const expired = managedState(c.config, Math.floor(Date.now() / 1000))?.expired;
     return [
-      { key: 'connect', label: t('common.connect'), onSelect: () => onAction('connect', c) },
+      expired
+        ? { key: 'requestAgain', label: t('access.requestAgain'), onSelect: () => onAction('requestAgain', c) }
+        : { key: 'connect', label: t('common.connect'), onSelect: () => onAction('connect', c) },
       { key: 'edit', label: t('common.edit'), onSelect: () => onAction('edit', c) },
       { key: 'duplicate', label: t('common.duplicate'), onSelect: () => onAction('duplicate', c) },
       { key: 'favorite', label: c.config.favorite ? t('connList.removeFavorite') : t('connList.addFavorite'), onSelect: () => onAction('favorite', c) },
@@ -302,6 +307,7 @@ export function ConnectionList({
     const key = `c:${cfg.id}`;
     const prod = cfg.environment === 'production';
     const sub = connectionSubtitle(cfg);
+    const expired = !!managedState(cfg, Math.floor(Date.now() / 1000))?.expired;
     return (
       <div
         key={cfg.id}
@@ -310,6 +316,7 @@ export function ConnectionList({
         tabIndex={activeKey === key ? 0 : -1}
         data-nav={key}
         data-env={cfg.environment}
+        data-expired={expired || undefined}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(DND_TYPE, cfg.id);
@@ -336,17 +343,18 @@ export function ConnectionList({
         } ${active ? 'row-selected' : prod ? 'bg-danger/5 hover:bg-danger/10' : 'hover:bg-hover'}`}
       >
         <div className="relative shrink-0">
-          <EngineBadge engine={cfg.engine} size={34} />
+          <EngineBadge engine={cfg.engine} size={34} dim={expired} />
           {cfg.color && <span className="absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg" style={{ background: cfg.color }} />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate font-medium" title={cfg.name}>{cfg.name}</span>
+            <span className={`truncate font-medium ${expired && !active ? 'text-muted' : ''}`} title={cfg.name}>{cfg.name}</span>
             <span className={`shrink-0 ${active && cfg.environment !== 'production' ? 'rounded-full bg-bg' : ''}`}>
               <EnvBadge env={cfg.environment} />
             </span>
             {cfg.favorite && <Icon name="star" size={12} className={`shrink-0 ${active ? '' : 'text-warn'}`} aria-label={t('connList.favorite')} role="img" aria-hidden={false} />}
             {cfg.read_only && <Icon name="lock" size={12} className="shrink-0" aria-label={t('connList.readOnly')} role="img" aria-hidden={false} />}
+            {cfg.managed_by && <ManagedChip cfg={cfg} onSolid={active} />}
           </div>
           <div className={`truncate text-[0.85rem] ${active ? 'text-on-solid' : 'text-muted'}`} title={connectionSubtitleTitle(cfg) || undefined}>
             {sub || ' '}

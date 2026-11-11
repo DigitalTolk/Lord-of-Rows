@@ -99,8 +99,12 @@ pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<Connec
     if cfg.id.is_nil() {
         cfg.id = Uuid::new_v4();
     }
+    // Access-provider management is owned by the backend: a new or duplicated connection is
+    // never managed, and an edit can't change (or un-expire) what was stored.
+    let stored = st.store.get_connection(cfg.id).ok();
+    cfg.managed_by = stored.as_ref().and_then(|c| c.managed_by.clone());
     cfg.validate()?;
-    let existed = st.store.get_connection(cfg.id).is_ok();
+    let existed = stored.is_some();
     st.store.save_connection(&cfg)?;
     if let Some(pw) = req.password {
         check_len(&pw, 4096, "password")?;
@@ -276,6 +280,7 @@ pub async fn test_connection(
     trust_host_key: Option<String>,
 ) -> R<TestResult> {
     config.validate()?;
+    crate::access::guard(&st, &config)?;
     let secrets = resolve_secrets(&st, &config, password)?;
     let ssh_secrets = resolve_ssh_secrets(&st, &config, ssh_password, ssh_passphrase)?;
     let t = Instant::now();
@@ -315,6 +320,7 @@ pub fn import_connections(st: State<'_, AppState>, json: String) -> R<usize> {
     for mut c in list {
         c.id = Uuid::new_v4(); // never collide with / overwrite existing entries
         c.init_sql = None; // imported init SQL could be malicious; user must re-add it
+        c.managed_by = None; // granted access belongs to the machine that requested it
         if c.validate().is_ok() {
             st.store.save_connection(&c)?;
             audit(&st, Category::ConnectionCreated, Outcome::Success, Some(&c), |e| e.detail = Some("imported".into()));
@@ -378,6 +384,7 @@ pub async fn open_session(
     database: Option<String>,
 ) -> R<SessionOpened> {
     let mut cfg = st.store.get_connection(connection_id)?;
+    crate::access::guard(&st, &cfg)?;
     // "Other databases on this server" (Postgres family only): same saved connection,
     // another database. Never for file-based engines, where `database` is a path.
     if let Some(db) = database {
@@ -1730,6 +1737,7 @@ pub(crate) mod tests {
             known_hosts: std::path::PathBuf::from("/nonexistent/known_hosts"),
             plugins: crate::plugins::PluginHost::new(std::env::temp_dir().join(format!("lotr-plugins-{}", Uuid::new_v4()))).unwrap(),
             import_preview: Default::default(),
+            access: Default::default(),
         }
     }
 

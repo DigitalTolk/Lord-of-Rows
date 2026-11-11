@@ -612,6 +612,7 @@ mod tests {
             query_timeout_secs: None,
             init_sql: None,
             key_separator: None,
+            managed_by: None,
             tunnel: None,
         }
     }

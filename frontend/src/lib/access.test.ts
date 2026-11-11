@@ -1,0 +1,104 @@
+import { describe, expect, it } from 'vitest';
+import { ageLabel, draftFrom, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
+import type { AccessRequestView, AccessResource, ConnectionConfig, StoredConnection } from './types';
+
+const NOW = 1_800_000_000;
+
+const req = (id: string, extra: Partial<AccessRequestView> = {}): AccessRequestView => ({
+  id,
+  resource_id: 'res-1',
+  resource_name: 'orders',
+  environment_name: 'staging',
+  environment: 'staging',
+  engine: 'postgres',
+  access: 'read_only',
+  reason: 'ticket',
+  databases: ['shop'],
+  create_database: false,
+  status: 'pending',
+  requester: { id: 'u1', name: 'Dev', email: 'dev@example.com' },
+  log: [],
+  created_at: '2027-01-15T08:00:00Z',
+  connection_expired: false,
+  ...extra,
+});
+
+const conn = (id: string, managed: ConnectionConfig['managed_by']): StoredConnection => ({
+  sort: 0,
+  config: { id, name: id, engine: 'postgres', tls: { mode: 'required' }, environment: 'staging', read_only: false, tags: [], favorite: false, connect_timeout_secs: 10, managed_by: managed },
+});
+const managed = (expires_at: number | null, expired = false) => ({ provider_id: 'p1', provider_kind: 'passhub', request_id: 'r1', expires_at, expired });
+
+describe('access helpers', () => {
+  it('shows a ready request past its expiry as expired', () => {
+    expect(requestPhase({ status: 'ready', expires_at: NOW + 1 }, NOW)).toBe('ready');
+    expect(requestPhase({ status: 'ready', expires_at: NOW }, NOW)).toBe('expired');
+    expect(requestPhase({ status: 'ready', expires_at: null }, NOW)).toBe('ready');
+    expect(requestPhase({ status: 'cancelled' }, NOW)).toBe('cancelled');
+    expect(isEnded('cancelled') && isEnded('failed') && !isEnded('pending')).toBe(true);
+  });
+
+  it('polls fast when visible or in flight and backs off on errors', () => {
+    expect(pollDelay({ visible: true, inFlight: false, errors: 0 })).toBe(5000);
+    expect(pollDelay({ visible: false, inFlight: true, errors: 0 })).toBe(5000);
+    expect(pollDelay({ visible: false, inFlight: false, errors: 0 })).toBe(60000);
+    expect(pollDelay({ visible: true, inFlight: false, errors: 2 })).toBe(20000);
+    expect(pollDelay({ visible: false, inFlight: false, errors: 9 })).toBe(300000);
+  });
+
+  it('formats time left', () => {
+    expect(timeLeft(null, NOW)).toBeNull();
+    const l = timeLeft(NOW + 3 * 3600 + 12 * 60, NOW)!;
+    expect(durationLabel(l)).toEqual({ key: 'access.durHm', vars: { h: 3, m: 12 } });
+    expect(durationLabel(timeLeft(NOW + 2 * 86400 + 4 * 3600, NOW)!)).toEqual({ key: 'access.durDh', vars: { d: 2, h: 4 } });
+    expect(durationLabel(timeLeft(NOW + 20, NOW)!)).toEqual({ key: 'access.durM', vars: { m: 1 } });
+    expect(ageLabel(30).key).toBe('access.ageM');
+    expect(ageLabel(7200)).toEqual({ key: 'access.ageH', vars: { count: 2 } });
+    expect(ageLabel(3 * 86400).vars.count).toBe(3);
+  });
+
+  it('detects requests that just became ready', () => {
+    const before = [req('a'), req('b', { status: 'provisioning' }), req('c', { status: 'ready' })];
+    const after = [req('a'), req('b', { status: 'ready' }), req('c', { status: 'ready' }), req('d', { status: 'ready' })];
+    expect(newlyReady(null, after, NOW)).toEqual([]);
+    expect(newlyReady(before, after, NOW).map((r) => r.id)).toEqual(['b']);
+  });
+
+  it('managed connections: countdown, expiry and 15-minute warnings', () => {
+    expect(managedState(conn('x', null).config, NOW)).toBeNull();
+    expect(managedState(conn('x', managed(NOW - 1)).config, NOW)?.expired).toBe(true);
+    expect(managedState(conn('x', managed(NOW + 600, true)).config, NOW)?.expired).toBe(true);
+    expect(managedState(conn('x', managed(NOW + 600)).config, NOW)?.left?.secs).toBe(600);
+    const list = [conn('soon', managed(NOW + 600)), conn('later', managed(NOW + 7200)), conn('gone', managed(NOW - 5)), conn('plain', null)];
+    expect(expiringSoon(list, NOW, new Set()).map((c) => c.id)).toEqual(['soon']);
+    expect(expiringSoon(list, NOW, new Set(['soon']))).toEqual([]);
+  });
+
+  it('groups resources by environment, production last, with search', () => {
+    const r = (id: string, env: string, kind: AccessResource['environment'], host = 'db.example.com'): AccessResource => ({ id, name: id, environment_name: env, environment: kind, engine: 'postgres', host, access_levels: ['read_only'] });
+    const all = [r('billing', 'prod', 'production'), r('orders', 'staging', 'staging'), r('events', 'dev', 'development', 'events.internal.example.com')];
+    expect(groupResources(all, '').map((g) => g.environment)).toEqual(['dev', 'staging', 'prod']);
+    expect(groupResources(all, 'EVENTS.internal').flatMap((g) => g.resources.map((x) => x.id))).toEqual(['events']);
+    expect(groupResources(all, 'prod').map((g) => g.environment)).toEqual(['prod']);
+  });
+
+  it('drafts and validation for (re)requests', () => {
+    const d = draftFrom(req('a', { access: 'read_write', databases: ['shop', 'audit'] }));
+    expect(d).toEqual({ resourceId: 'res-1', access: 'read_write', databases: ['shop', 'audit'], reason: 'ticket' });
+    expect(draftFrom(req('b', { create_database: true })).databases).toEqual([]);
+    expect(draftProblem({ ...d, resourceId: '' }, null)).toBe('resource');
+    expect(draftProblem({ ...d, databases: [] }, null)).toBe('databases');
+    expect(draftProblem({ ...d, databases: [] }, 'bad name')).toBe('newDatabase');
+    expect(draftProblem({ ...d, databases: [] }, 'new_db')).toBeNull();
+    expect(draftProblem({ ...d, reason: '  ' }, null)).toBe('reason');
+    expect(draftProblem(d, null)).toBeNull();
+  });
+
+  it('sorts ready first and counts what needs a connect', () => {
+    const rs = [req('old', { status: 'expired', created_at: '2027-01-01T00:00:00Z' }), req('new', { created_at: '2027-01-02T00:00:00Z' }), req('go', { status: 'ready', created_at: '2026-12-01T00:00:00Z' })];
+    expect(sortRequests(rs, NOW).map((r) => r.id)).toEqual(['go', 'new', 'old']);
+    expect(readyCount(rs, NOW)).toBe(1);
+    expect(readyCount([req('x', { status: 'ready', connection_id: 'c1' })], NOW)).toBe(0);
+    expect(readyCount([req('x', { status: 'ready', connection_id: 'c1', connection_expired: true })], NOW)).toBe(1);
+  });
+});

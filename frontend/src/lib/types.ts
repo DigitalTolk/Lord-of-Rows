@@ -51,6 +51,20 @@ export interface ConnectionConfig {
   init_sql?: string | null;
   /** Key-value engines: namespace separator for the sidebar key tree (default `:`). */
   key_separator?: string | null;
+  /** Set by the backend for connections created from an access request (read-only to the UI). */
+  managed_by?: ManagedBy | null;
+}
+
+/** Origin + lifetime of a connection made from an access request (dbs-core `ManagedBy`). */
+export interface ManagedBy {
+  provider_id: string;
+  provider_kind: string;
+  request_id: string;
+  credential_ref?: string | null;
+  /** Unix seconds. */
+  expires_at?: number | null;
+  /** Access ended: the password was wiped and connecting is refused. */
+  expired: boolean;
 }
 
 export interface StoredConnection {
@@ -325,3 +339,55 @@ export type KvEdit =
   | { op: 'set_remove'; key: string; member: string }
   | { op: 'zset_add'; key: string; member: string; score: number }
   | { op: 'zset_remove'; key: string; member: string };
+
+// ---- access providers (dbs-access)
+
+export interface AccessProviderKind { kind: string; label: string; default_name: string }
+export interface AccessCapabilities { approvals: boolean; create_database: boolean; cancel: boolean; targets: boolean }
+export interface AccessProviderInfo { id: string; kind: string; name: string; base_url: string; capabilities: AccessCapabilities; has_session: boolean }
+export interface AccessUser { id: string; email: string; name: string; role: string; can_approve: boolean; /** e.g. 'no_approver' */ request_blocked?: string | null }
+export interface AccessStatus { signed_in: boolean; user?: AccessUser | null; signing_in: boolean; error?: DbError | null }
+export type AccessLevel = 'read_only' | 'read_write';
+export type AccessRequestStatus = 'pending' | 'provisioning' | 'ready' | 'failed' | 'rejected' | 'expired' | 'revoked' | 'cancelled';
+export interface AccessPerson { id: string; name: string; email: string }
+export interface AccessLogEntry { ts: string; level: string; msg: string }
+export interface AccessRequest {
+  id: string;
+  resource_id: string;
+  resource_name: string;
+  environment_name: string;
+  environment: EnvironmentKind;
+  engine?: Engine | null;
+  access?: AccessLevel | null;
+  reason: string;
+  databases: string[];
+  create_database: boolean;
+  status: AccessRequestStatus;
+  /** Failure / rejection reason. */
+  status_detail?: string | null;
+  requester: AccessPerson;
+  /** Who decides (pending) or decided. */
+  approver?: AccessPerson | null;
+  log: AccessLogEntry[];
+  created_at: string;
+  /** Unix seconds. */
+  expires_at?: number | null;
+  lifetime_hours?: number | null;
+}
+/** A request of mine plus the saved connection made from it. */
+export interface AccessRequestView extends AccessRequest { connection_id?: string | null; connection_expired: boolean }
+export interface AccessRequestList { requests: AccessRequestView[]; expired_connections: string[] }
+export interface AccessResource {
+  id: string;
+  name: string;
+  environment_name: string;
+  environment: EnvironmentKind;
+  engine: Engine;
+  host?: string | null;
+  port?: number | null;
+  access_levels: AccessLevel[];
+}
+export interface AccessTargets { targets: string[]; error?: string | null }
+export interface AccessRequestInput { resource_id: string; access: AccessLevel; reason: string; databases: string[]; create_database: boolean }
+export interface AccessConnectCheck { reusable: boolean; connection_id?: string | null; reveals_remaining?: number | null }
+export interface AccessConnectOutcome { connection_id: string; reused: boolean; reveals_remaining?: number | null; password_in_memory: boolean }

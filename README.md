@@ -37,6 +37,7 @@ No admin rights on your Mac? Install into your own Applications folder:
 - ER diagram, monitoring, dashboards, command palette, themes
 - Production safe mode enforced in Rust; tamper-evident audit log; passwords in the OS keychain
 - Optional AI assistant (off by default; prompt preview + explicit send; see [docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md))
+- Access requests through an access-management provider (passhub first): time-limited database access, approvals, one-click connect (see below)
 
 ## Screenshots
 
@@ -83,6 +84,26 @@ All screenshots are taken from the real app (Linux build, driven over WebDriver 
 
 ![Table workspace, light theme](docs/screenshots/table-workspace-light.png)
 
+## Access requests
+
+If your organisation hands out database access through an access-management service, the
+launcher's **Access** tab (and Settings → Access) connects to it:
+
+1. **Add a provider**: its type (currently passhub), a display name and its URL
+   (`https://…`; plain `http://` only for a server on this computer).
+2. **Sign in**: the browser opens the provider's single sign-on; the provider redirects back to a
+   one-shot listener on `127.0.0.1` (PKCE). The session token is kept in the OS keychain only.
+3. **Request access**: pick a database (grouped by environment), read-only or read & write, the
+   databases, and a reason. Your manager approves it in the provider (or in the app's
+   **Approvals** tab, if you are an approver).
+4. **Connect** once it is ready: the app fetches the password once, stores it in the keychain like
+   any saved connection and opens it. The connection is marked with a key and the time left;
+   you are warned 15 minutes before the access ends. When it ends (or is revoked) the password is
+   wiped and the connection shows "Expired — request again".
+
+Connections go directly to the database host (e.g. over your VPN); no tunnel is created.
+New providers implement the `AccessProvider` trait in `crates/dbs-access/src/providers/`.
+
 ## Layout
 
 ```
@@ -96,6 +117,7 @@ crates/dbs-ssh       SSH tunnels
 crates/dbs-io        import/export
 crates/dbs-schema    schema diff, migrations, designer DDL
 crates/dbs-ai        optional AI assistant: prompt builders, redaction, provider clients
+crates/dbs-access    access providers (trait, passhub client, browser sign-in, connect/expiry rules)
 src-tauri/           desktop shell + IPC commands
 frontend/            React UI
 e2e/                 WebDriver end-to-end tests (real app + real databases)

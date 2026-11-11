@@ -8,6 +8,7 @@ import { CommandPalette, panelDomId, StatusBar, TabBar, tabDomId, TopBar } from 
 import { Welcome } from './components/Welcome';
 import { OpenDatabaseHost, useDbPicker } from './components/OpenDatabaseDialog';
 import { ImportConnectionsHost } from './components/ImportConnectionsDialog';
+import { AccessWatcher } from './components/AccessWatcher';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
@@ -274,6 +275,7 @@ export default function App() {
       {st.paletteOpen && <CommandPalette />}
       <OpenDatabaseHost />
       <ImportConnectionsHost />
+      <AccessWatcher />
       {pending && <SafetyDialog pending={pending} />}
       <AskHost />
       {/* Live region stays mounted so screen readers announce toasts added later. */}

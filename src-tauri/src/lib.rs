@@ -2,6 +2,7 @@
 //! Every command validates its arguments; safety policy and audit logging are
 //! enforced here, in Rust, not in the webview.
 
+mod access;
 mod ai;
 mod backup;
 mod commands;
@@ -64,6 +65,7 @@ pub fn run() {
                 known_hosts: dir.join("known_hosts"),
                 plugins: plugins::PluginHost::new(dir.join("plugins"))?,
                 import_preview: Mutex::new(None),
+                access: Default::default(),
             });
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
@@ -105,6 +107,27 @@ pub fn run() {
             import::import_connections_detect,
             import::import_connections_preview,
             import::import_connections_apply,
+            access::access_provider_kinds,
+            access::access_providers_list,
+            access::access_providers_add,
+            access::access_providers_update,
+            access::access_providers_remove,
+            access::access_status,
+            access::access_sign_in,
+            access::access_cancel_sign_in,
+            access::access_sign_out,
+            access::access_list_resources,
+            access::access_resource_targets,
+            access::access_create_request,
+            access::access_list_requests,
+            access::access_get_request,
+            access::access_cancel_request,
+            access::access_list_approvals,
+            access::access_approve,
+            access::access_reject,
+            access::access_connect_check,
+            access::access_connect,
+            access::access_sweep,
             commands::open_session,
             commands::close_session,
             commands::ping_session,
