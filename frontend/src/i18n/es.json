@@ -709,6 +709,8 @@
     "toggleSidebar": "Mostrar u ocultar la barra lateral",
     "queryTab": "Consulta",
     "openAnother": "Abrir otra conexión…",
+    "openAnotherConnection": "Abrir otra conexión",
+    "newSqlQuery": "Nueva consulta SQL",
     "disconnectName": "Desconectar {{name}}",
     "search": "Buscar…",
     "dashboards": "Paneles",

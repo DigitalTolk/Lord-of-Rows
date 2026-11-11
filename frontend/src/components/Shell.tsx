@@ -144,7 +144,7 @@ export function TabBar() {
           );
         })}
       </div>
-      <button className="flex w-9 shrink-0 items-center justify-center text-muted hover:bg-hover hover:text-fg" title={`${t('query.newTab')} (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label={t('query.newTab')} disabled={!activeSession} onClick={() => openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: activeSession, sql: '' })}>
+      <button className="flex w-9 shrink-0 items-center justify-center text-muted hover:bg-hover hover:text-fg" title={`${t('shell.newSqlQuery')} (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label={t('shell.newSqlQuery')} disabled={!activeSession} onClick={() => openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: activeSession, sql: '' })}>
         <Icon name="plus" size={15} />
       </button>
       {menu && (
@@ -228,7 +228,7 @@ export function CommandPalette() {
 
   const cmds: Cmd[] = useMemo(() => {
     const list: Cmd[] = [
-      { id: 'new-query', label: t('query.newTab'), hint: displayCombo(DEFAULT_KEYS.newQuery), run: () => st.openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' }) },
+      { id: 'new-query', label: t('shell.newSqlQuery'), hint: displayCombo(DEFAULT_KEYS.newQuery), run: () => st.openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' }) },
       { id: 'new-conn', label: t('conn.new'), hint: displayCombo(DEFAULT_KEYS.newConnection), run: () => useApp.setState({ connectionDialog: {} }) },
       { id: 'new-window', label: t('windows.new'), hint: displayCombo(DEFAULT_KEYS.newWindow), run: () => void st.openWindow() },
       { id: 'close-window', label: t('windows.close'), hint: displayCombo(DEFAULT_KEYS.closeWindow), run: () => void st.closeWindow() },

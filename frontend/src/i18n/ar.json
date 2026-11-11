@@ -775,6 +775,8 @@
     "toggleSidebar": "إظهار/إخفاء الشريط الجانبي",
     "queryTab": "استعلام",
     "openAnother": "فتح اتصال آخر…",
+    "openAnotherConnection": "فتح اتصال آخر",
+    "newSqlQuery": "استعلام SQL جديد",
     "disconnectName": "قطع الاتصال بـ {{name}}",
     "search": "بحث…",
     "dashboards": "لوحات المعلومات",

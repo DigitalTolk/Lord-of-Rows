@@ -687,6 +687,8 @@
     "toggleSidebar": "Toggle sidebar",
     "queryTab": "Query",
     "openAnother": "Open another connection…",
+    "openAnotherConnection": "Open another connection",
+    "newSqlQuery": "New SQL query",
     "disconnectName": "Disconnect {{name}}",
     "search": "Search…",
     "dashboards": "Dashboards",

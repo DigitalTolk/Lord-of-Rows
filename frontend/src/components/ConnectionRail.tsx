@@ -64,7 +64,7 @@ export function ConnectionRail() {
           </button>
         );
       })}
-      <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted hover:border-accent hover:text-accent" title={t('shell.openAnother')} aria-label={t('shell.openAnother')} onClick={() => useApp.setState({ launcher: true })}>
+      <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted hover:border-accent hover:text-accent" title={t('shell.openAnotherConnection')} aria-label={t('shell.openAnotherConnection')} onClick={() => useApp.setState({ launcher: true })}>
         <Icon name="plus" />
       </button>
       {activeS && <SchemaRail s={activeS} />}
