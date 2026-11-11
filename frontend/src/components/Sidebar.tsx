@@ -6,6 +6,7 @@ import { generateSql, qualify } from '../lib/sqlgen';
 import { errMsg, useApp } from '../store';
 import { Icon, type IconName } from './icons';
 import { isContextMenuKey, menuAnchor, MenuPopup } from './ui';
+import { HistoryList, SavedQueriesList, SidebarTabs, type SidebarSection } from './SidebarLists';
 
 const KIND_ICON: Partial<Record<ObjectKind, IconName>> = {
   table: 'table', view: 'view', materialized_view: 'view', function: 'func', procedure: 'func', trigger: 'bolt', sequence: 'list', enum: 'list',
@@ -23,6 +24,7 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
   const { sessions, setActiveSchema, loadObjects, openTab, toast, tabs, activeTab } = useApp();
   const s = sessions[sessionId];
   const [q, setQ] = useState('');
+  const [section, setSection] = useState<SidebarSection>('items');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [ctx, setCtx] = useState<{ o: ObjectRef; x: number; y: number } | null>(null);
   const [focusKey, setFocusKey] = useState<string | null>(null);
@@ -119,7 +121,8 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
   return (
     <aside className="flex h-full min-h-0 flex-col bg-panel" aria-label={t('tree.label')}>
       <div className="space-y-1.5 p-2">
-        {s.schemas.length > 0 && (
+        <SidebarTabs value={section} onChange={setSection} />
+        {section === 'items' && s.schemas.length > 0 && (
           <div className="flex gap-1">
             <select className="input h-7 flex-1 font-medium" aria-label={t('tree.schemas')} value={s.activeSchema ?? ''} onChange={(e) => setActiveSchema(sessionId, e.target.value)}>
               {s.schemas.map((x) => <option key={x}>{x}</option>)}
@@ -129,11 +132,13 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
         )}
         <div className="relative">
           <Icon name="search" size={13} className="absolute start-2 top-1/2 -translate-y-1/2 text-muted" />
-          <input className="input h-7 ps-7" type="search" placeholder={t('tree.filter')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('tree.filter')} />
+          <input className="input h-7 ps-7" type="search" placeholder={section === 'items' ? t('tree.filter') : t('common.search')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={section === 'items' ? t('tree.filter') : t('common.search')} />
         </div>
       </div>
-      {byKind.length === 0 && <p className="px-3 py-6 text-center text-muted">{t('tree.empty')}</p>}
-      {byKind.length > 0 && (
+      {section === 'queries' && <div className="min-h-0 flex-1 overflow-auto"><SavedQueriesList sessionId={sessionId} q={q} /></div>}
+      {section === 'history' && <div className="min-h-0 flex-1 overflow-auto"><HistoryList sessionId={sessionId} q={q} /></div>}
+      {section === 'items' && byKind.length === 0 && <p className="px-3 py-6 text-center text-muted">{t('tree.empty')}</p>}
+      {section === 'items' && byKind.length > 0 && (
         <div ref={treeRef} className="min-h-0 flex-1 overflow-auto pb-2" role="tree" aria-label={t('tree.objects')} onKeyDown={onTreeKey}>
           {byKind.map(([kind, list]) => {
             const gk = `k:${kind}`;

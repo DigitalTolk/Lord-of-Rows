@@ -85,12 +85,14 @@ async fn crud_scenario(c: &dyn DatabaseConnection, schema: Option<&str>, table: 
     assert_eq!(rs.rows[2][name_idx], Value::Null);
 
     // Server-side filter + count.
-    let f = vec![FilterCondition { column: "name".into(), op: FilterOp::StartsWith, value: Some(Value::Text("ali".into())), values: vec![] }];
+    let f =
+        vec![FilterCondition { column: "name".into(), op: FilterOp::StartsWith, value: Some(Value::Text("ali".into())), values: vec![], ..Default::default() }];
     assert_eq!(c.count_rows(&t, &f).await.unwrap(), 1);
-    let f2 = vec![FilterCondition { column: "name".into(), op: FilterOp::IsNull, value: None, values: vec![] }];
+    let f2 = vec![FilterCondition { column: "name".into(), op: FilterOp::IsNull, value: None, values: vec![], ..Default::default() }];
     assert_eq!(c.count_rows(&t, &f2).await.unwrap(), 1);
     // LIKE wildcards in user input are literal.
-    let f3 = vec![FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("%".into())), values: vec![] }];
+    let f3 =
+        vec![FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("%".into())), values: vec![], ..Default::default() }];
     assert_eq!(c.count_rows(&t, &f3).await.unwrap(), 0);
 
     // Update with optimistic concurrency: succeeds when original matches.
@@ -636,7 +638,7 @@ fn dyn_cfg() -> (ConnectionConfig, ConnectSecrets) {
 }
 
 fn eq_filter(col: &str, v: Value) -> FilterCondition {
-    FilterCondition { column: col.into(), op: FilterOp::Eq, value: Some(v), values: vec![] }
+    FilterCondition { column: col.into(), op: FilterOp::Eq, value: Some(v), values: vec![], ..Default::default() }
 }
 
 fn cell<'a>(rs: &'a ResultSet, row: usize, col: &str) -> &'a Value {
@@ -783,18 +785,44 @@ async fn dynamo_end_to_end() {
     assert_eq!(count(vec![]).await, 26);
     assert_eq!(count(vec![eq_filter("pk", Value::Text("p1".into()))]).await, 8);
     assert_eq!(
-        count(vec![FilterCondition { column: "name".into(), op: FilterOp::StartsWith, value: Some(Value::Text("item1".into())), values: vec![] }]).await,
+        count(vec![FilterCondition {
+            column: "name".into(),
+            op: FilterOp::StartsWith,
+            value: Some(Value::Text("item1".into())),
+            values: vec![],
+            ..Default::default()
+        }])
+        .await,
         11
     );
-    assert_eq!(count(vec![FilterCondition { column: "sk".into(), op: FilterOp::Ge, value: Some(Value::Int(20)), values: vec![] }]).await, 5);
     assert_eq!(
-        count(vec![FilterCondition { column: "pk".into(), op: FilterOp::In, value: None, values: vec![Value::Text("p0".into()), Value::Text("p2".into())] }])
-            .await,
+        count(vec![FilterCondition { column: "sk".into(), op: FilterOp::Ge, value: Some(Value::Int(20)), values: vec![], ..Default::default() }]).await,
+        5
+    );
+    assert_eq!(
+        count(vec![FilterCondition {
+            column: "pk".into(),
+            op: FilterOp::In,
+            value: None,
+            values: vec![Value::Text("p0".into()), Value::Text("p2".into())],
+            ..Default::default()
+        }])
+        .await,
         17
     );
-    assert_eq!(count(vec![FilterCondition { column: "s".into(), op: FilterOp::IsNotNull, value: None, values: vec![] }]).await, 1);
-    assert_eq!(count(vec![FilterCondition { column: "nul".into(), op: FilterOp::IsNull, value: None, values: vec![] }]).await, 26);
-    assert_eq!(count(vec![FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("m2".into())), values: vec![] }]).await, 6);
+    assert_eq!(count(vec![FilterCondition { column: "s".into(), op: FilterOp::IsNotNull, value: None, values: vec![], ..Default::default() }]).await, 1);
+    assert_eq!(count(vec![FilterCondition { column: "nul".into(), op: FilterOp::IsNull, value: None, values: vec![], ..Default::default() }]).await, 26);
+    assert_eq!(
+        count(vec![FilterCondition {
+            column: "name".into(),
+            op: FilterOp::Contains,
+            value: Some(Value::Text("m2".into())),
+            values: vec![],
+            ..Default::default()
+        }])
+        .await,
+        6
+    );
     let filtered =
         c.fetch_table(&t, &PageRequest { limit: 3, offset: 3, filters: vec![eq_filter("pk", Value::Text("p1".into()))], ..Default::default() }).await.unwrap();
     assert_eq!(filtered.rows.len(), 3);

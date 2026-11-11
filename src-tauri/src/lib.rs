@@ -112,6 +112,8 @@ pub fn run() {
             commands::explain_sql,
             commands::fetch_table,
             commands::count_rows,
+            commands::table_select_sql,
+            commands::validate_filter_sql,
             commands::preview_changes,
             commands::apply_changes,
             commands::copy_rows,

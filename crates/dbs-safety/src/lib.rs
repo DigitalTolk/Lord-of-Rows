@@ -14,9 +14,11 @@
 //! with confidence is reported as `Unknown` and treated as a write.
 
 pub mod classify;
+pub mod filter_expr;
 pub mod lexer;
 pub mod policy;
 
 pub use classify::*;
+pub use filter_expr::*;
 pub use lexer::*;
 pub use policy::*;

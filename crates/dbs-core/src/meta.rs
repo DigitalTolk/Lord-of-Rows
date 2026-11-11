@@ -124,6 +124,10 @@ pub struct ServerInfo {
     pub version: String,
     pub current_database: Option<String>,
     pub current_user: Option<String>,
+    /// Negotiated TLS protocol of the session ("TLSv1.3"), `Some("")` when the
+    /// session is not encrypted, `None` when the driver cannot tell.
+    #[serde(default)]
+    pub tls_version: Option<String>,
 }
 
 /// One row-level change staged in the grid. Applied with parameterised SQL.

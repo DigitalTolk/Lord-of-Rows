@@ -93,7 +93,8 @@ shortcuts.
 
 | Where | Keys |
 |---|---|
-| Launcher connection list | Up/Down/Home/End move, Enter connects, Shift+F10 or the Menu key opens the context menu (edit, duplicate, favourite, delete) |
+| Launcher connection list | Up/Down/Home/End move through groups and connections, Left/Right collapse/expand a group or jump to its header (mirrored in Arabic), Enter connects (or toggles a group), Shift+F10 or the Menu key opens the context menu (edit, duplicate, favourite, move to group, delete; group: rename, colour, reorder, delete) |
+| Schema rail (below the connection rail) | Tab in, Up/Down between opened databases/schemas, Enter/Space switches, Shift+F10 removes one |
 | Connection rail | Tab or Up/Down between connections, Enter/Space switches, Shift+F10 opens the menu (new query, disconnect) |
 | Sidebar object tree | Up/Down move, Right expands a group or enters it, Left collapses or goes to the parent (mirrored in Arabic), Home/End, Enter opens the object, Shift+F10 opens the object menu (generate SQL, DDL, copy name, drop...) |
 | Sidebar width | Tab to the splitter, Left/Right resize (Shift for bigger steps) |
@@ -126,7 +127,8 @@ shortcuts.
 - Plugin-provided text (plugin names, descriptions, setting labels, export labels) and backend error
   messages are shown as delivered, usually in English.
 - Views that need a live database have no automated axe run (see above).
-- Drag-and-drop tab reordering has no keyboard equivalent yet.
+- Drag-and-drop tab reordering has no keyboard equivalent yet (moving a connection between groups does: context menu → Move to group).
+- Launcher group headers are focusable `role=group` elements with `aria-expanded` (a button is not allowed inside a listbox); screen readers may announce them as "group" rather than as a disclosure button.
 - The ER diagram is an SVG canvas without a text alternative; use the Structure view instead.
 - Context menus open at the mouse position or under the focused element; they do not reposition
   themselves when they would overflow the window bottom.

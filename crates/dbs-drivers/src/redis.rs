@@ -192,7 +192,7 @@ impl DatabaseConnection for RedisConnection {
     async fn server_info(&self) -> DbResult<ServerInfo> {
         let info: String = redis::cmd("INFO").arg("server").query_async(&mut *self.conn.lock().await).await.map_err(map_err)?;
         let version = info.lines().find_map(|l| l.strip_prefix("redis_version:")).unwrap_or("").to_string();
-        Ok(ServerInfo { engine: Engine::Redis, version, current_database: None, current_user: None })
+        Ok(ServerInfo { engine: Engine::Redis, version, current_database: None, current_user: None, tls_version: None })
     }
 
     async fn ping(&self) -> DbResult<()> {

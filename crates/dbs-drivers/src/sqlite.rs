@@ -323,7 +323,7 @@ impl DatabaseConnection for SqliteConnection {
     async fn server_info(&self) -> DbResult<ServerInfo> {
         self.with(|c| {
             let v: String = c.query_row("SELECT sqlite_version()", [], |r| r.get(0)).map_err(map_err)?;
-            Ok(ServerInfo { engine: Engine::Sqlite, version: v, current_database: Some("main".into()), current_user: None })
+            Ok(ServerInfo { engine: Engine::Sqlite, version: v, current_database: Some("main".into()), current_user: None, tls_version: None })
         })
         .await
     }

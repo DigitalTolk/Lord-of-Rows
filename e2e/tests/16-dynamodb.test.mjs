@@ -108,7 +108,7 @@ describe('DynamoDB', () => {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       });
       await waitText(b, '1 pending change');
-      await clickText(b, 'Commit…');
+      await clickSel(b, 'button[aria-label="Preview pending changes"]');
       await waitText(b, `UpdateItem "${TABLE}" KEY {"pk": 'cust#2', "sk": 1} SET "status" = 'closed' IF item exists AND "status" = 'open'`);
       await clickText(b, 'Commit', { exact: true });
       await waitText(b, 'Committed 1 row');

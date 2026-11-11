@@ -36,7 +36,7 @@ describe('English source', () => {
     const files = import.meta.glob(['../**/*.{ts,tsx}', '!../**/*.test.{ts,tsx}'], { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
     const src = Object.values(files).join('\n');
     // Literal keys anywhere in a string ('a.b'), plus template prefixes (`a.b.${x}` covers a.b.*).
-    const literals = new Set([...src.matchAll(/['"`]([a-zA-Z]\w*(?:\.\w+)+)['"`]/g)].map((m) => m[1]));
+    const literals = new Set([...src.matchAll(/['"`]([a-zA-Z]\w*(?:\.\w+)+)(?=['"`])/g)].map((m) => m[1]));
     const prefixes = [...src.matchAll(/`([a-zA-Z]\w*\.(?:\w+\.)*)\$\{/g)].map((m) => m[1]);
     // Shared vocabulary kept for in-flight work: `common.*` and the `conn.*` form labels
     // (the connection dialog is being redesigned on another branch).

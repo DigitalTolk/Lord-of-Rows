@@ -1,29 +1,25 @@
 import { fmtNumber } from '../lib/format';
 // Table-tab side of the grid context menu: turns grid actions into staged
 // changes, filters, tabs and exports. Kept out of TableView so the view only
-// needs a couple of hook-up lines. Commits still go through TableView's review
-// dialog and the backend safety policy; nothing here writes to the database.
-import { useEffect } from 'react';
+// needs a couple of hook-up lines. Commits still go through TableView's commit
+// path and the backend safety policy; nothing here writes to the database.
+// Filters (Quick Filter, foreign-key links) go through the tab's workspace store
+// (lib/tableWorkspace.ts `setFilters`), the same state the filter bar edits.
 import { useTranslation } from 'react-i18next';
-import { create } from 'zustand';
 import { ask } from '../components/ask';
 import type { CellEdit, GridProps } from '../components/DataGrid';
 import { addRow, removeInserted, setCell, setInsertedCell, toggleDelete, unsetInsertedCell, type StagedState } from '../lib/changes';
 import { api } from '../lib/ipc';
-import type { ExportFormat, FilterOp, ResultSet, TableDescription, TableTarget, Value } from '../lib/types';
+import { useTableWs, type TypedFilter } from '../lib/tableWorkspace';
+import type { ExportFormat, ResultSet, TableDescription, TableTarget, Value } from '../lib/types';
 import { errMsg, useApp, type OpenSession, type Tab } from '../store';
 
-export interface GridFilter {
-  column: string;
-  op: FilterOp;
-  value?: Value | null;
-}
+/** @deprecated use TypedFilter from lib/tableWorkspace. */
+export type GridFilter = TypedFilter;
 
-// Filters requested for a table tab by another tab (foreign-key "→" links).
-const useFilterRequests = create<{ byTab: Record<string, GridFilter[]> }>(() => ({ byTab: {} }));
-
-export function requestTableFilters(tabId: string, filters: GridFilter[]) {
-  useFilterRequests.setState((s) => ({ byTab: { ...s.byTab, [tabId]: filters } }));
+/** Replace a table tab's filters (also for a tab that has not mounted yet, e.g. a foreign-key target). */
+export function requestTableFilters(tabId: string, filters: TypedFilter[]) {
+  useTableWs.getState().setFilters(tabId, filters);
 }
 
 interface Opts {
@@ -37,8 +33,6 @@ interface Opts {
   count: number | null;
   editable: boolean;
   reload: () => void;
-  /** Adapter onto the tab's filter mechanism: replaces the current filters and reloads from page 1. */
-  setFilters: (filters: GridFilter[]) => void;
 }
 
 const EXT: Partial<Record<ExportFormat, string>> = { json_lines: 'jsonl', sql_insert: 'sql', markdown: 'md' };
@@ -52,18 +46,6 @@ export function useTableGridActions(o: Opts): Partial<GridProps> {
   const loaded = rs?.rows.length ?? 0;
   const idx = (name: string) => columns.findIndex((c) => c.name === name);
   const identity = new Set((desc?.columns ?? []).filter((c) => c.is_identity).map((c) => c.name));
-
-  // Apply filters another tab asked for (e.g. following a foreign key here).
-  const req = useFilterRequests((st) => st.byTab[o.tab.id]);
-  useEffect(() => {
-    if (!req) return;
-    useFilterRequests.setState((st) => {
-      const byTab = { ...st.byTab };
-      delete byTab[o.tab.id];
-      return { byTab };
-    });
-    o.setFilters(req);
-  }, [req]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pending = Object.keys(staged.edits).length + staged.deleted.length + staged.inserted.length;
   // Reloading drops staged changes; ask first.
@@ -154,7 +136,7 @@ export function useTableGridActions(o: Opts): Partial<GridProps> {
     onDeleteRows: o.editable ? onDeleteRows : undefined,
     onQuickFilter: (f) => {
       void okToDiscard().then((ok) => {
-        if (ok) o.setFilters([f]);
+        if (ok) requestTableFilters(o.tab.id, [f]);
       });
     },
     onOpenForeignKey: s

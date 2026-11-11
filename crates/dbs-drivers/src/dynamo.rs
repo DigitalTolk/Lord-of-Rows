@@ -358,6 +358,9 @@ impl Expr {
 fn filter_expression(filters: &[FilterCondition], e: &mut Expr) -> DbResult<Option<String>> {
     let mut parts = Vec::new();
     for f in filters {
+        if !f.any_columns.is_empty() {
+            return Err(DbError::unsupported("\"any column\" filters on DynamoDB"));
+        }
         let need = || f.value.as_ref().ok_or_else(|| DbError::invalid("filter value required"));
         let part = match f.op {
             FilterOp::IsNull => {
@@ -375,21 +378,37 @@ fn filter_expression(filters: &[FilterCondition], e: &mut Expr) -> DbResult<Opti
                 let n = e.name(&f.column);
                 format!("begins_with({n}, {})", e.value(v))
             }
-            FilterOp::Contains => {
+            FilterOp::Contains | FilterOp::NotContains => {
                 let v = from_value(need()?)?;
                 let n = e.name(&f.column);
-                format!("contains({n}, {})", e.value(v))
+                let not = if f.op == FilterOp::NotContains { "NOT " } else { "" };
+                format!("{not}contains({n}, {})", e.value(v))
+            }
+            FilterOp::Like | FilterOp::NotLike => return Err(DbError::unsupported("LIKE filters on DynamoDB (use contains or begins with)")),
+            FilterOp::Raw => return Err(DbError::unsupported("raw SQL filters on DynamoDB")),
+            FilterOp::Between => {
+                let [lo, hi] = f.values.as_slice() else {
+                    return Err(DbError::invalid("BETWEEN needs exactly two values"));
+                };
+                let n = e.name(&f.column);
+                let a = e.value(from_value(lo)?);
+                let b = e.value(from_value(hi)?);
+                format!("{n} BETWEEN {a} AND {b}")
             }
             FilterOp::EndsWith => return Err(DbError::unsupported("'ends with' filters on DynamoDB (use contains or begins with)")),
-            FilterOp::In => {
+            FilterOp::In | FilterOp::NotIn => {
                 if f.values.is_empty() || f.values.len() > 100 {
                     return Err(DbError::invalid("IN filter needs 1-100 values on DynamoDB"));
                 }
                 let n = e.name(&f.column);
                 let ps = f.values.iter().map(|v| Ok(e.value(from_value(v)?))).collect::<DbResult<Vec<_>>>()?;
-                format!("{n} IN ({})", ps.join(", "))
+                if f.op == FilterOp::NotIn {
+                    format!("NOT ({n} IN ({}))", ps.join(", "))
+                } else {
+                    format!("{n} IN ({})", ps.join(", "))
+                }
             }
-            op => {
+            op @ (FilterOp::Eq | FilterOp::Ne | FilterOp::Lt | FilterOp::Le | FilterOp::Gt | FilterOp::Ge) => {
                 let v = from_value(need()?)?;
                 let n = e.name(&f.column);
                 let p = e.value(v);
@@ -682,7 +701,7 @@ impl DatabaseConnection for DynamoConnection {
             Some(ep) => format!("DynamoDB {} via {ep}", self.region),
             None => format!("DynamoDB {}", self.region),
         };
-        Ok(ServerInfo { engine: Engine::DynamoDb, version, current_database: Some(self.region.clone()), current_user: None })
+        Ok(ServerInfo { engine: Engine::DynamoDb, version, current_database: Some(self.region.clone()), current_user: None, tls_version: None })
     }
 
     async fn ping(&self) -> DbResult<()> {
@@ -1099,20 +1118,35 @@ mod tests {
     fn filters_use_placeholders() {
         let mut e = Expr::default();
         let f = vec![
-            FilterCondition { column: "na\"me".into(), op: FilterOp::Eq, value: Some(Value::Text("x) OR (1=1".into())), values: vec![] },
-            FilterCondition { column: "n".into(), op: FilterOp::In, value: None, values: vec![Value::Int(1), Value::Int(2)] },
-            FilterCondition { column: "s".into(), op: FilterOp::StartsWith, value: Some(Value::Text("ab".into())), values: vec![] },
-            FilterCondition { column: "z".into(), op: FilterOp::IsNull, value: None, values: vec![] },
+            FilterCondition { column: "na\"me".into(), op: FilterOp::Eq, value: Some(Value::Text("x) OR (1=1".into())), values: vec![], ..Default::default() },
+            FilterCondition { column: "n".into(), op: FilterOp::In, value: None, values: vec![Value::Int(1), Value::Int(2)], ..Default::default() },
+            FilterCondition { column: "s".into(), op: FilterOp::StartsWith, value: Some(Value::Text("ab".into())), values: vec![], ..Default::default() },
+            FilterCondition { column: "z".into(), op: FilterOp::IsNull, value: None, values: vec![], ..Default::default() },
         ];
         let s = filter_expression(&f, &mut e).unwrap().unwrap();
         assert_eq!(s, "#n0 = :v0 AND #n1 IN (:v1, :v2) AND begins_with(#n2, :v3) AND (attribute_not_exists(#n3) OR attribute_type(#n3, :v4))");
         assert_eq!(e.names["#n0"], "na\"me");
         assert_eq!(e.values[":v0"], AttributeValue::S("x) OR (1=1".into()));
         assert!(filter_expression(
-            &[FilterCondition { column: "a".into(), op: FilterOp::EndsWith, value: Some(Value::Text("x".into())), values: vec![] }],
+            &[FilterCondition { column: "a".into(), op: FilterOp::EndsWith, value: Some(Value::Text("x".into())), values: vec![], ..Default::default() }],
             &mut e
         )
         .is_err());
+        // New operators map to DynamoDB expressions; SQL-only ones are refused, never misread.
+        let mut e2 = Expr::default();
+        let more = vec![
+            FilterCondition { column: "a".into(), op: FilterOp::NotIn, values: vec![Value::Int(1)], ..Default::default() },
+            FilterCondition { column: "b".into(), op: FilterOp::Between, values: vec![Value::Int(1), Value::Int(5)], ..Default::default() },
+            FilterCondition { column: "c".into(), op: FilterOp::NotContains, value: Some(Value::Text("q".into())), ..Default::default() },
+        ];
+        assert_eq!(filter_expression(&more, &mut e2).unwrap().unwrap(), "NOT (#n0 IN (:v0)) AND #n1 BETWEEN :v1 AND :v2 AND NOT contains(#n2, :v3)");
+        for bad in [
+            FilterCondition { column: "a".into(), op: FilterOp::Like, value: Some(Value::Text("x%".into())), ..Default::default() },
+            FilterCondition { op: FilterOp::Raw, value: Some(Value::Text("1=1".into())), ..Default::default() },
+            FilterCondition { op: FilterOp::Contains, value: Some(Value::Text("x".into())), any_columns: vec!["a".into()], ..Default::default() },
+        ] {
+            assert!(filter_expression(&[bad], &mut Expr::default()).is_err());
+        }
     }
 
     #[test]

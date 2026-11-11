@@ -3,7 +3,7 @@
 // (customers(id INTEGER PK, name NOT NULL, email UNIQUE), orders(id INTEGER PK, customer_id FK, total)).
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
-import { clickText, fill, launch, pageText, resultsText, runSql, screenshot, sleep, until, waitText } from '../lib.mjs';
+import { clickSel, clickText, fill, launch, pageText, resultsText, runSql, screenshot, sleep, until, waitText } from '../lib.mjs';
 
 let b;
 before(async () => {
@@ -68,7 +68,8 @@ async function gridKey(key, code, mods = {}) {
 }
 
 async function commit() {
-  await clickText(b, 'Commit…');
+  // Pending changes live in the top toolbar: the eye button previews the SQL, Commit runs it.
+  await clickSel(b, 'button[aria-label="Preview pending changes"]');
   await clickText(b, 'Commit', { exact: true });
   await until(async () => !(await pageText(b)).includes('pending change'), 'pending changes committed');
   await waitText(b, 'Committed');

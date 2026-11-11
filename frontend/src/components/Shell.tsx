@@ -9,6 +9,8 @@ import { api } from '../lib/ipc';
 import { fmtMs, fmtNumber } from '../lib/format';
 import { ask } from './ask';
 import { ThemeToggle } from './ThemeToggle';
+import { PendingChangesBar } from './PendingChangesBar';
+import { StatusPill } from './StatusPill';
 
 const KIND_ICON: Record<TabKind, IconName> = { query: 'sql', table: 'table', structure: 'structure', diff: 'copy', audit: 'shield', monitor: 'pulse', er: 'diagram', settings: 'gear', import: 'download', backup: 'db', history: 'history', dashboard: 'chart' };
 
@@ -22,6 +24,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { t } = useTranslation();
   const { sessions, activeSession, openTab, closeSession, loadObjects } = useApp();
   const s = activeSession ? sessions[activeSession] : undefined;
+  const activeTable = useApp((st) => st.tabs.find((x) => x.id === st.activeTab && x.kind === 'table' && x.sessionId === st.activeSession)?.target?.table);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const tool = (kind: TabKind, title: string) => () => openTab({ kind, title, sessionId: s?.session_id });
   return (
@@ -34,22 +37,13 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       <button className="icon-btn" title={t('common.refresh')} aria-label={t('common.refresh')} disabled={!s} onClick={() => s && loadObjects(s.session_id, s.activeSchema)}><Icon name="refresh" /></button>
       <button className="icon-btn" title={t('io.importTitle')} aria-label={t('io.importTitle')} disabled={!s} onClick={tool('import', t('io.importTitle'))}><Icon name="download" /></button>
       <button className="icon-btn" title={t('backup.title')} aria-label={t('backup.title')} disabled={!s} onClick={tool('backup', t('backup.title'))}><Icon name="upload" /></button>
+      <span className="mx-1 h-5 border-s border-border" aria-hidden />
+      <PendingChangesBar />
 
       {/* Connection pill */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         {s ? (
-          <button
-            onClick={(e) => setMenu(menu ? null : menuAnchor(e.currentTarget))}
-            className="flex h-7 max-w-[46vw] items-center gap-2 rounded-md border border-border bg-raised pe-3 ps-1 text-[0.92rem] shadow-sm hover:bg-hover"
-            aria-haspopup="menu"
-            aria-expanded={!!menu}
-          >
-            <EnvBadge env={s.config.environment} />
-            <span role="img" className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'}`} aria-label={s.healthy ? t('status.connected') : t('status.lost')} />
-            <span className="truncate font-medium">{s.config.name}</span>
-            <span className="truncate text-muted" dir="auto">{s.server.version.split(' on ')[0].split(',')[0].replace(/\s*\(.*\)/, '')}{s.activeSchema ? ` : ${s.activeSchema}` : ''}</span>
-            {s.config.read_only && <Icon name="lock" size={13} />}
-          </button>
+          <StatusPill s={s} table={activeTable} expanded={!!menu} onClick={(e) => setMenu(menu ? null : menuAnchor(e.currentTarget))} />
         ) : (
           <span className="text-muted">{t('status.disconnected')}</span>
         )}

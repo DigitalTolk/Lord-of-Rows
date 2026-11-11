@@ -73,6 +73,8 @@ export const api = {
 
   fetchTable: (sessionId: string, target: T.TableTarget, page: T.PageRequest) => call<T.ResultSet>('fetch_table', { sessionId, target, page }).then(hydrate),
   countRows: (sessionId: string, target: T.TableTarget, filters: T.FilterCondition[]) => call<number>('count_rows', { sessionId, target, filters }),
+  tableSelectSql: (sessionId: string, target: T.TableTarget, page: T.PageRequest) => call<string>('table_select_sql', { sessionId, target, page }),
+  validateFilterSql: (sessionId: string, expr: string) => call<void>('validate_filter_sql', { sessionId, expr }),
   previewChanges: (sessionId: string, target: T.TableTarget, changes: T.RowChange[]) =>
     call<{ statements: string[]; decision: T.Decision }>('preview_changes', { sessionId, target, changes }),
   applyChanges: (sessionId: string, target: T.TableTarget, changes: T.RowChange[], confirmToken?: string | null) =>

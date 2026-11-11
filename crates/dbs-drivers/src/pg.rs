@@ -434,11 +434,19 @@ impl DatabaseConnection for PgConnection {
     async fn server_info(&self) -> DbResult<ServerInfo> {
         let r = self.text_rows("SELECT version(), current_database()::text, current_user::text", &[]).await?;
         let r = r.into_iter().next().unwrap_or_default();
+        // Best effort (pg_stat_ssl exists since 9.5; forks may lack it): "" when plaintext.
+        let tls_version = self
+            .text_rows("SELECT CASE WHEN ssl THEN version::text ELSE '' END FROM pg_stat_ssl WHERE pid = pg_backend_pid()", &[])
+            .await
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|row| row.first().cloned().flatten());
         Ok(ServerInfo {
             engine: self.engine,
             version: r.first().cloned().flatten().unwrap_or_default(),
             current_database: r.get(1).cloned().flatten(),
             current_user: r.get(2).cloned().flatten(),
+            tls_version,
         })
     }
 
