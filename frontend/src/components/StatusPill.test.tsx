@@ -21,13 +21,16 @@ describe('status pill refresh state', () => {
     expect(pill.textContent).toContain('orders');
     expect(pill.getAttribute('aria-busy')).not.toBe('true');
     expect(pill.querySelector('.pill-shimmer')).toBeNull();
+    expect(pill.querySelector('.pill-progress')).toBeNull();
   });
 
   it('shows "Refreshing…" with the shimmer while refreshing', () => {
     render(<StatusPill s={s} table="orders" refreshing expanded={false} onClick={() => undefined} />);
     const pill = screen.getByTestId('status-pill');
     expect(pill.textContent).toContain('LOCAL');
-    expect(pill.textContent).toContain('Refreshing…');
+    expect(pill.textContent).toContain('Refreshing');
+    expect(pill.querySelector('.pill-spinner')).not.toBeNull();
+    expect(pill.querySelector('.pill-progress')).not.toBeNull();
     expect(pill.textContent).not.toContain('orders');
     expect(pill.getAttribute('aria-busy')).toBe('true');
     expect(pill.querySelector('.pill-shimmer')).not.toBeNull();

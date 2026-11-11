@@ -35,7 +35,19 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const activeTableTab = useApp((st) => st.tabs.find((x) => x.id === st.activeTab && x.kind === 'table')?.id);
   const tableLoading = useTableWs((w) => (activeTableTab ? !!w.tabs[activeTableTab]?.loading : false));
   const [treeLoading, setTreeLoading] = useState(false);
-  const refreshing = treeLoading || tableLoading;
+  // Keep the refresh animation up for at least 700 ms so a fast refresh is still seen.
+  const busy = treeLoading || tableLoading;
+  const [refreshing, setRefreshing] = useState(false);
+  const since = useRef(0);
+  useEffect(() => {
+    if (busy) {
+      since.current = Date.now();
+      setRefreshing(true);
+      return;
+    }
+    const h = setTimeout(() => setRefreshing(false), Math.max(0, 700 - (Date.now() - since.current)));
+    return () => clearTimeout(h);
+  }, [busy]);
   const refreshAll = () => {
     if (!s) return;
     if (activeTableTab) {

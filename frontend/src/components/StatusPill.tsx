@@ -70,11 +70,22 @@ export function StatusPill({ s, table, onClick, expanded, refreshing }: { s: Ope
       style={style}
       data-testid="status-pill"
     >
-      <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'} ring-1 ring-black/10`} role="img" aria-label={s.healthy ? t('status.healthyDot') : t('status.lostDot')} />
+      {refreshing ? (
+        <span className="pill-spinner h-3 w-3 shrink-0" aria-hidden />
+      ) : (
+        <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'} ring-1 ring-black/10`} role="img" aria-label={s.healthy ? t('status.healthyDot') : t('status.lostDot')} />
+      )}
       <span className="shrink-0 font-semibold tracking-wide">{env}</span>
       <span className="shrink-0 opacity-60" aria-hidden>|</span>
-      <span className="truncate" dir="auto" aria-live="polite">{refreshing ? t('status.refreshing') : parts.join(' : ')}</span>
-      {refreshing && <span className="pill-shimmer pointer-events-none absolute inset-0" aria-hidden />}
+      <span className="truncate" dir="auto" aria-live="polite">
+        {refreshing ? <>{t('status.refreshing').replace(/[.…]+$/, '')}<span className="pill-dots" aria-hidden /></> : parts.join(' : ')}
+      </span>
+      {refreshing && (
+        <>
+          <span className="pill-shimmer pointer-events-none absolute inset-0" aria-hidden />
+          <span className="pill-progress pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden" aria-hidden><span /></span>
+        </>
+      )}
       {s.config.read_only && <Icon name="lock" size={13} className="shrink-0" />}
       {warn && <Icon name="warning" size={14} className={`shrink-0 ${color || prod ? '' : 'text-warn'}`} aria-hidden={false} aria-label={warn} role="img" />}
     </button>
