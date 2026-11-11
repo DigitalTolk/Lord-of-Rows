@@ -11,7 +11,7 @@ see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOCKERS.md).
 - PostgreSQL, MySQL, SQLite, Redis (plus wire-compatible engines, unverified)
 - Connection launcher, engine picker, connection rail with per-database tabs
 - SSH tunnels (password / key / passphrase / agent, jump hosts, strict host-key checks)
-- TLS with certificate + hostname verification (custom CA, client certs)
+- SSL modes PREFERRED / DISABLED / REQUIRED / VERIFY-CA / VERIFY-IDENTITY (custom CA, client certs); plaintext-capable modes refused for remote production
 - SQL editor (Monaco) with schema-aware completion; grid / JSON / text / record / chart results
 - Inline editing with SQL review, single-transaction commit and conflict detection
 - Structure view, table designer, schema diff → migrations (reversibility-aware)

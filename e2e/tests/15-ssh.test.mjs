@@ -23,12 +23,12 @@ async function sshForm(name, env) {
   await clickText(b, 'Create a new connection');
   await clickSel(b, 'button[title="PostgreSQL"]');
   await fill(b, 'Name', name);
-  await fill(b, 'Host', 'postgres'); // as resolved by the SSH server
+  await fill(b, 'Host/IP', 'postgres'); // as resolved by the SSH server
   await fill(b, 'User', 'dbs_test');
   await fill(b, 'Password', 'dbs_test');
   await fill(b, 'Database', 'dbs_test');
-  if (env) await clickText(b, env, { exact: true, selector: '[role=radio]' });
-  await clickText(b, 'Connect through an SSH tunnel', { selector: 'label' });
+  if (env) await fill(b, 'Tag', env.toLowerCase());
+  await clickText(b, 'Over SSH', { exact: true });
   await fill(b, 'SSH host', 'sshd');
   await fill(b, 'SSH user', 'tunnel');
   await fill(b, 'SSH password', 'tunnelpw');
@@ -55,11 +55,11 @@ test('SSH: declining an unknown host key does not connect', fail('ssh-decline', 
   await clickSel(b, 'button[aria-label="Open another connection"]');
   await clickText(b, 'Create a new connection');
   await clickSel(b, 'button[title="PostgreSQL"]');
-  await fill(b, 'Host', 'postgres');
+  await fill(b, 'Host/IP', 'postgres');
   await fill(b, 'User', 'dbs_test');
   await fill(b, 'Password', 'dbs_test');
-  await clickText(b, 'Connect through an SSH tunnel', { selector: 'label' });
-  await fill(b, 'SSH host', 'dbstudio-sshd-1');
+  await clickText(b, 'Over SSH', { exact: true });
+  await fill(b, 'SSH host', 'bastion'); // network alias of the same sshd
   await fill(b, 'SSH user', 'tunnel');
   await fill(b, 'SSH password', 'tunnelpw');
   await clickText(b, 'Test', { exact: true });
@@ -86,10 +86,10 @@ test('SSH: known host reconnects without a prompt; wrong SSH password is rejecte
   await clickSel(b, 'button[aria-label="Open another connection"]');
   await clickText(b, 'Create a new connection');
   await clickSel(b, 'button[title="PostgreSQL"]');
-  await fill(b, 'Host', 'postgres');
+  await fill(b, 'Host/IP', 'postgres');
   await fill(b, 'User', 'dbs_test');
   await fill(b, 'Password', 'dbs_test');
-  await clickText(b, 'Connect through an SSH tunnel', { selector: 'label' });
+  await clickText(b, 'Over SSH', { exact: true });
   await fill(b, 'SSH host', 'sshd');
   await fill(b, 'SSH user', 'tunnel');
   await fill(b, 'SSH password', 'nope-nope');

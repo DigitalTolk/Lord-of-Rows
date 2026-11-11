@@ -41,7 +41,7 @@ async fn pg_through(port: u16) -> Vec<StatementResult> {
         database: Some("dbs_test".into()),
         username: Some("dbs_test".into()),
         socket_path: None,
-        tls: TlsConfig { mode: TlsMode::Disable, ..Default::default() },
+        tls: TlsConfig { mode: TlsMode::Disabled, ..Default::default() },
         ssh: None,
         environment: EnvironmentKind::Local,
         read_only: false,
@@ -176,7 +176,7 @@ async fn pg_tls_verified_through_tunnel() {
         database: Some("dbs_test".into()),
         username: Some("dbs_test".into()),
         socket_path: None,
-        tls: TlsConfig { mode: TlsMode::VerifyFull, ca_cert_path: Some("/certs/ca.crt".into()), ..Default::default() },
+        tls: TlsConfig { mode: TlsMode::VerifyIdentity, ca_cert_path: Some("/certs/ca.crt".into()), ..Default::default() },
         ssh: None,
         environment: EnvironmentKind::Production,
         read_only: false,
@@ -195,7 +195,7 @@ async fn pg_tls_verified_through_tunnel() {
     let r = conn.execute("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()", &ExecOptions::default(), CancellationToken::new()).await.unwrap();
     assert_eq!(r[0].result.as_ref().unwrap().rows[0][0], Value::Bool(true));
     // Plain (no TLS) via tunnel also works.
-    c.tls = TlsConfig { mode: TlsMode::Disable, ..Default::default() };
+    c.tls = TlsConfig { mode: TlsMode::Disabled, ..Default::default() };
     c.environment = EnvironmentKind::Local;
     dbs_drivers::driver_for(Engine::Postgres).unwrap().connect(&c, ConnectSecrets { password: Some("dbs_test".into()) }).await.expect("plain via tunnel");
 }

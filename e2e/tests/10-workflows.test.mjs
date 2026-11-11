@@ -22,20 +22,25 @@ async function fail(name, fn) {
 
 async function newPgConnection(name, { env, readOnly, tls } = {}) {
   await clickText(b, 'Create a new connection');
-  await clickSel(b, 'button[title="PostgreSQL"]');
-  await fill(b, 'Name', name);
-  await fill(b, 'Host', 'postgres');
-  await fill(b, 'User', 'dbs_test');
-  await fill(b, 'Password', 'dbs_test');
-  await fill(b, 'Database', 'dbs_test');
-  if (env) await clickText(b, env, { exact: true, selector: '[role=radio]' });
-  if (readOnly) await clickText(b, 'Read-only', { selector: 'label' });
   if (tls) {
-    // Verified TLS against the test CA (certificate + hostname "postgres").
-    await fill(b, 'SSL / TLS', 'verify_full');
-    await clickText(b, 'Advanced', { exact: true });
-    await fill(b, 'CA cert', '/certs/ca.crt');
+    // Verified TLS against the test CA (certificate + hostname "postgres"). The CA path comes from the
+    // URL (libpq sslrootcert): the form's CA Cert… button opens a native picker WebDriver can't drive.
+    await fill(b, 'Import from URL', 'postgresql://dbs_test:dbs_test@postgres:5432/dbs_test?sslmode=verify-full&sslrootcert=/certs/ca.crt');
+    await clickText(b, 'Import from URL', { exact: true });
+    await waitText(b, 'PostgreSQL Connection');
+    const sel = await b.execute(() => document.querySelector('[role=dialog] select[aria-label="SSL mode"]')?.value);
+    assert.equal(sel, 'verify_identity');
+    await waitText(b, 'ca.crt');
+  } else {
+    await clickSel(b, 'button[title="PostgreSQL"]');
+    await fill(b, 'Host/IP', 'postgres');
+    await fill(b, 'User', 'dbs_test');
+    await fill(b, 'Password', 'dbs_test');
+    await fill(b, 'Database', 'dbs_test');
   }
+  await fill(b, 'Name', name);
+  if (env) await fill(b, 'Tag', env.toLowerCase());
+  if (readOnly) await fill(b, 'Safe mode', 'read_only');
 }
 
 async function openLauncher() {
@@ -240,7 +245,7 @@ describe('production safety', () => {
       await openLauncher();
       await newPgConnection('E2E Prod Plain', { env: 'Production' });
       await clickText(b, 'Connect', { exact: true });
-      await waitText(b, 'TLS cannot be disabled for a non-local production connection');
+      await waitText(b, 'SSL mode PREFERRED can send data unencrypted');
       await clickSel(b, 'button[aria-label="Close"]');
     }));
 
@@ -285,6 +290,41 @@ describe('production safety', () => {
       await runSql(b, "insert into customers(name) values ('x')");
       await waitText(b, 'Blocked by safety policy');
       await clickText(b, 'Close', { exact: true }).catch(() => clickSel(b, 'button[aria-label="Close"]'));
+    }));
+});
+
+describe('SSL modes', () => {
+  test('the SSL mode list shows the five standard modes, PREFERRED by default', () =>
+    fail('ssl-list', async () => {
+      await openLauncher();
+      await clickText(b, 'Create a new connection');
+      await clickSel(b, 'button[title="MySQL"]');
+      await waitText(b, 'MySQL Connection');
+      const s = await b.execute(() => {
+        const el = document.querySelector('[role=dialog] select[aria-label="SSL mode"]');
+        return el && { value: el.value, labels: [...el.options].map((o) => o.textContent) };
+      });
+      assert.deepEqual(s?.labels, ['PREFERRED', 'DISABLED', 'REQUIRED', 'VERIFY-CA', 'VERIFY-IDENTITY']);
+      assert.equal(s?.value, 'preferred');
+      await screenshot(b, 'connection-form'); // visual record (artifacts/)
+    }));
+
+  test('MySQL connection with SSL mode REQUIRED connects encrypted', () =>
+    fail('mysql-required', async () => {
+      await fill(b, 'Name', 'E2E MySQL TLS');
+      await fill(b, 'Host/IP', 'mysql');
+      await fill(b, 'User', 'dbs_test');
+      await fill(b, 'Password', 'dbs_test');
+      await fill(b, 'Database', 'dbs_test');
+      await fill(b, 'SSL mode', 'required');
+      await waitText(b, 'server certificate is not verified');
+      await clickText(b, 'Test', { exact: true });
+      await waitText(b, 'Connected to');
+      await clickText(b, 'Connect', { exact: true });
+      await until(async () => (await pageText(b)).includes('orders'), 'mysql tree');
+      await newQueryTab();
+      await runSql(b, "show session status like 'Ssl_cipher'");
+      await until(async () => /(TLS_|ECDHE|AES)/.test(await resultsText(b)), 'encrypted session (Ssl_cipher)');
     }));
 });
 

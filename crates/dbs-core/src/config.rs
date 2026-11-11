@@ -104,16 +104,48 @@ pub enum EnvironmentKind {
     Custom,
 }
 
+/// Standard SSL modes (libpq / MySQL naming). Serialized snake_case; the old
+/// names `disable` and `verify_full` are still accepted when reading saved configs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TlsMode {
-    /// No TLS. Only allowed for loopback/socket hosts unless the user explicitly opts in.
-    Disable,
-    /// TLS required, certificate + hostname verified (default).
-    #[default]
-    VerifyFull,
-    /// TLS required, CA verified, hostname not verified. Must be chosen explicitly.
+    /// Try TLS without certificate verification; fall back to plaintext if the
+    /// server does not support TLS. Never allowed for remote production (see `validate`).
+    Preferred,
+    /// No TLS.
+    #[serde(alias = "disable")]
+    Disabled,
+    /// TLS mandatory, certificate NOT verified (encrypts, but no MITM protection).
+    Required,
+    /// TLS mandatory, certificate chain verified (custom CA optional), hostname not verified.
     VerifyCa,
+    /// TLS mandatory, certificate chain + hostname verified (default for configs that don't say).
+    #[default]
+    #[serde(alias = "verify_full")]
+    VerifyIdentity,
+}
+
+impl TlsMode {
+    /// Whether this mode can end up sending data in plaintext.
+    pub fn may_be_plaintext(self) -> bool {
+        matches!(self, TlsMode::Disabled | TlsMode::Preferred)
+    }
+
+    /// Whether the server certificate chain is verified.
+    pub fn verifies_certificate(self) -> bool {
+        matches!(self, TlsMode::VerifyCa | TlsMode::VerifyIdentity)
+    }
+
+    /// UI / documentation label.
+    pub fn label(self) -> &'static str {
+        match self {
+            TlsMode::Preferred => "PREFERRED",
+            TlsMode::Disabled => "DISABLED",
+            TlsMode::Required => "REQUIRED",
+            TlsMode::VerifyCa => "VERIFY-CA",
+            TlsMode::VerifyIdentity => "VERIFY-IDENTITY",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -231,10 +263,14 @@ impl ConnectionConfig {
                 return Err(DbError::invalid("host contains invalid characters"));
             }
         }
-        if self.tls.mode == TlsMode::Disable && self.ssh.is_none() && self.tunnel.is_none() {
+        // PREFERRED may silently fall back to plaintext, so it is treated like DISABLED here.
+        if self.tls.mode.may_be_plaintext() && self.ssh.is_none() && self.tunnel.is_none() {
             if let Some(h) = &self.host {
                 if !is_loopback(h) && self.environment == EnvironmentKind::Production {
-                    return Err(DbError::invalid("TLS cannot be disabled for a non-local production connection without an SSH tunnel"));
+                    return Err(DbError::invalid(format!(
+                        "SSL mode {} can send data unencrypted: a non-local production connection needs SSL mode REQUIRED, VERIFY-CA or VERIFY-IDENTITY, or an SSH tunnel",
+                        self.tls.mode.label()
+                    )));
                 }
             }
         }
@@ -308,20 +344,68 @@ mod tests {
 
     #[test]
     fn tls_on_by_default() {
-        assert_eq!(pg().tls.mode, TlsMode::VerifyFull);
+        assert_eq!(pg().tls.mode, TlsMode::VerifyIdentity);
     }
 
     #[test]
     fn rejects_plaintext_remote_production() {
-        let mut c = pg();
-        c.tls.mode = TlsMode::Disable;
-        assert!(c.validate().is_err());
-        c.host = Some("localhost".into());
-        assert!(c.validate().is_ok());
-        // An active SSH tunnel (runtime endpoint) counts as an encrypted path.
-        c.host = Some("db.internal".into());
-        c.tunnel = Some(("127.0.0.1".into(), 40000));
-        assert!(c.validate().is_ok());
+        for mode in [TlsMode::Disabled, TlsMode::Preferred] {
+            let mut c = pg();
+            c.tls.mode = mode;
+            let e = c.validate().unwrap_err();
+            assert!(e.message.contains(mode.label()), "{e:?}");
+            c.host = Some("localhost".into());
+            assert!(c.validate().is_ok());
+            // An active SSH tunnel (runtime endpoint) counts as an encrypted path.
+            c.host = Some("db.internal".into());
+            c.tunnel = Some(("127.0.0.1".into(), 40000));
+            assert!(c.validate().is_ok());
+            // So does a configured SSH tunnel.
+            c.tunnel = None;
+            c.ssh = Some(SshConfig {
+                host: "bastion".into(),
+                port: 22,
+                user: "u".into(),
+                auth: SshAuth::Agent,
+                private_key_path: None,
+                jump_hosts: vec![],
+                keepalive_secs: 30,
+            });
+            assert!(c.validate().is_ok());
+            // Non-production remote connections may use them.
+            c.ssh = None;
+            c.environment = EnvironmentKind::Staging;
+            assert!(c.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn encrypted_modes_allowed_for_remote_production() {
+        for mode in [TlsMode::Required, TlsMode::VerifyCa, TlsMode::VerifyIdentity] {
+            let mut c = pg();
+            c.tls.mode = mode;
+            assert!(c.validate().is_ok(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn tls_mode_serde_names_and_legacy_aliases() {
+        let ser = |m: TlsMode| serde_json::to_string(&m).unwrap();
+        assert_eq!(ser(TlsMode::Preferred), "\"preferred\"");
+        assert_eq!(ser(TlsMode::Disabled), "\"disabled\"");
+        assert_eq!(ser(TlsMode::Required), "\"required\"");
+        assert_eq!(ser(TlsMode::VerifyCa), "\"verify_ca\"");
+        assert_eq!(ser(TlsMode::VerifyIdentity), "\"verify_identity\"");
+        let de = |s: &str| serde_json::from_str::<TlsMode>(s).unwrap();
+        assert_eq!(de("\"disable\""), TlsMode::Disabled);
+        assert_eq!(de("\"verify_full\""), TlsMode::VerifyIdentity);
+        assert_eq!(de("\"verify_ca\""), TlsMode::VerifyCa);
+        for m in [TlsMode::Preferred, TlsMode::Disabled, TlsMode::Required, TlsMode::VerifyCa, TlsMode::VerifyIdentity] {
+            assert_eq!(de(&ser(m)), m);
+        }
+        // A saved config from an older version still loads.
+        let old: TlsConfig = serde_json::from_str(r#"{"mode":"disable","ca_cert_path":null,"client_cert_path":null,"client_key_path":null}"#).unwrap();
+        assert_eq!(old.mode, TlsMode::Disabled);
     }
 
     #[test]

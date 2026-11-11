@@ -2,7 +2,7 @@ import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactEleme
 import { useTranslation } from 'react-i18next';
 import type { EnvironmentKind } from '../lib/types';
 
-export function Dialog({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+export function Dialog({ title, onClose, children, footer, wide, icon }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; icon?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const closeRef = useRef(onClose);
@@ -53,7 +53,7 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
         className={`flex max-h-[90vh] flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-[0_20px_60px_rgb(var(--shadow)/0.25)] outline-none ${wide ? 'w-[min(980px,95vw)]' : 'w-[min(660px,95vw)]'}`}
       >
         <div className="flex h-11 shrink-0 items-center justify-between px-4">
-          <h2 id={titleId} className="text-[1.05rem] font-semibold">{title}</h2>
+          <h2 id={titleId} className="flex items-center gap-2 text-[1.05rem] font-semibold">{icon}{title}</h2>
           <button className="icon-btn" aria-label="Close" onClick={onClose}>✕</button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">{children}</div>

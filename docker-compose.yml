@@ -56,6 +56,10 @@ services:
     volumes:
       - ./tests/ssh:/keys
     ports: ["127.0.0.1:52222:22"]
+    # Second name for the same server (E2E: a host alias whose key isn't trusted yet).
+    networks:
+      default:
+        aliases: [bastion]
 
   postgres:
     image: postgres:16
