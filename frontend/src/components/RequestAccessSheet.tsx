@@ -28,6 +28,8 @@ export function RequestAccessSheet({ draft, onClose }: { draft?: RequestDraft; o
   const [query, setQuery] = useState('');
   const [targets, setTargets] = useState<AccessTargets | null>(null);
   const [dbFilter, setDbFilter] = useState('');
+  /** Database names typed by hand when the provider can't list them. */
+  const [typed, setTyped] = useState(() => (draft?.databases ?? []).join(', '));
   const [newDb, setNewDb] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +82,7 @@ export function RequestAccessSheet({ draft, onClose }: { draft?: RequestDraft; o
   const problem = draftProblem(form, newDb);
   const pick = (s: AccessResource) => {
     setForm((f) => ({ ...f, resourceId: s.id, access: s.access_levels.includes(f.access) ? f.access : (s.access_levels[0] ?? 'read_only'), databases: f.resourceId === s.id ? f.databases : [] }));
+    if (s.id !== form.resourceId) setTyped('');
     setNewDb(null);
     setPicking(false);
   };
@@ -209,10 +212,21 @@ export function RequestAccessSheet({ draft, onClose }: { draft?: RequestDraft; o
             {newDb === null &&
               (targets === null ? (
                 <Spinner label={t('access.loadingDatabases')} />
-              ) : targets.error ? (
-                <p className="text-sm text-muted">{t('access.databasesUnavailable', { error: targets.error ?? '' })}</p>
-              ) : targets.targets.length === 0 ? (
-                <p className="text-sm text-muted">{t('access.noDatabases')}</p>
+              ) : targets.error || targets.targets.length === 0 ? (
+                <div>
+                  <p className="mb-1 text-xs text-muted">{targets.error ? t('access.databasesUnavailable', { error: targets.error }) : t('access.noDatabases')}</p>
+                  <input
+                    className="input w-full font-mono"
+                    aria-label={t('access.typeDatabases')}
+                    placeholder={t('access.typeDatabases')}
+                    value={typed}
+                    onChange={(e) => {
+                      setTyped(e.target.value);
+                      const dbs = e.target.value.split(',').map((d) => d.trim()).filter(Boolean);
+                      setForm((f) => ({ ...f, databases: dbs }));
+                    }}
+                  />
+                </div>
               ) : (
                 <>
                   {targets.targets.length > 8 && (

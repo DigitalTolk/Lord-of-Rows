@@ -144,16 +144,42 @@ export function ProviderForm({ edit, onDone }: { edit?: boolean; onDone?: () => 
   );
 }
 
-/** Picker shown when more than one provider is configured. */
-function ProviderPicker() {
+const ADD = '__add';
+
+/** Provider switcher (always shown, with the current provider's name) plus "Add provider…". */
+function ProviderPicker({ onAdd }: { onAdd: () => void }) {
   const { t } = useTranslation();
   const providers = useAccess((s) => s.providers) ?? [];
   const id = useAccess((s) => s.providerId);
-  if (providers.length < 2) return null;
   return (
-    <select className="input h-7 max-w-[160px] py-0 text-[0.82rem]" aria-label={t('access.provider')} value={id ?? ''} onChange={(e) => void useAccess.getState().selectProvider(e.target.value)}>
-      {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select>
+    <span className="inline-flex items-center gap-1">
+      <select
+        className="input h-7 max-w-[170px] py-0 text-[0.82rem]"
+        aria-label={t('access.provider')}
+        value={id ?? ''}
+        onChange={(e) => {
+          if (e.target.value === ADD) onAdd();
+          else void useAccess.getState().selectProvider(e.target.value);
+        }}
+      >
+        {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        <option value={ADD}>{t('access.addProviderOption')}</option>
+      </select>
+      <button type="button" className="icon-btn" aria-label={t('access.addAnother')} title={t('access.addAnother')} onClick={onAdd}>
+        <Icon name="plus" size={14} />
+      </button>
+    </span>
+  );
+}
+
+/** Inline "Add provider" form under the header. */
+function AddProviderPanel({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <section className="border-b border-border bg-panel px-3 py-3" aria-label={t('access.addAnother')}>
+      <h3 className="label mx-auto max-w-[460px]">{t('access.addAnother')}</h3>
+      <ProviderForm onDone={onDone} />
+    </section>
   );
 }
 
@@ -163,6 +189,7 @@ function SignedOut() {
   const notice = useAccess((s) => s.notice);
   const provider = useAccess(currentProvider);
   const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
   const remove = async () => {
     if (!provider || !(await ask.confirm(t('access.removeProvider'), t('access.removeConfirm', { provider: provider.name }), true))) return;
     await useAccess.getState().removeProvider().catch((e) => useApp.getState().toast('error', errMsg(e)));
@@ -172,7 +199,7 @@ function SignedOut() {
       <Intro />
       {notice && <p role="alert" className="mx-auto max-w-[420px] rounded border border-warn/50 bg-warn/10 px-3 py-2 text-center text-sm text-warn">{notice}</p>}
       <div className="flex flex-col items-center gap-2">
-        <ProviderPicker />
+        <ProviderPicker onAdd={() => { setAdding(true); setEditing(false); }} />
         {signingIn ? (
           <div className="flex flex-col items-center gap-2" role="status">
             <Spinner label={t('access.waitingBrowser')} />
@@ -186,12 +213,15 @@ function SignedOut() {
         )}
         <p className="text-xs text-muted">
           {t('access.signInVia', { host: hostOf(provider?.base_url ?? '') })}{' '}
-          <button className="text-accent underline-offset-2 hover:underline" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>{t('access.editProvider')}</button>
+          <button className="text-accent underline-offset-2 hover:underline" aria-expanded={editing} onClick={() => { setEditing((v) => !v); setAdding(false); }}>{t('access.editProvider')}</button>
           {' · '}
           <button className="text-accent underline-offset-2 hover:underline" onClick={() => void remove()}>{t('access.removeProvider')}</button>
+          {' · '}
+          <button className="text-accent underline-offset-2 hover:underline" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setEditing(false); }}>{t('access.addAnother')}</button>
         </p>
       </div>
-      {editing && <ProviderForm edit onDone={() => setEditing(false)} />}
+      {editing && <ProviderForm key={`edit-${provider?.id}`} edit onDone={() => setEditing(false)} />}
+      {adding && <ProviderForm key="add" onDone={() => setAdding(false)} />}
     </div>
   );
 }
@@ -212,6 +242,7 @@ function SignedIn() {
   const error = useAccess((s) => s.error);
   const approver = useAccess(canApprove);
   const provider = useAccess(currentProvider);
+  const [adding, setAdding] = useState(false);
   const user = status?.user;
   const pending = approvals?.length ?? 0;
   const active = approver ? tab : 'mine';
@@ -229,11 +260,11 @@ function SignedIn() {
         </span>
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-sm font-medium">{user?.email || user?.name || t('access.signedIn')}</div>
-          <div className="truncate text-xs text-muted">{provider?.name}</div>
         </div>
-        <ProviderPicker />
+        <ProviderPicker onAdd={() => setAdding(true)} />
         <button className="btn h-7" onClick={() => void useAccess.getState().signOut()}>{t('access.signOut')}</button>
       </div>
+      {adding && <AddProviderPanel onDone={() => setAdding(false)} />}
       {error && (
         <div role="alert" className="flex items-center gap-2 border-b border-warn/40 bg-warn/10 px-3 py-1.5 text-[0.82rem] text-warn">
           <Icon name="warning" size={14} />

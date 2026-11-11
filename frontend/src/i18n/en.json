@@ -1364,6 +1364,8 @@
     "editProvider": "Edit provider",
     "removeProvider": "Remove provider",
     "removeConfirm": "Remove {{provider}}? You are signed out of it; connections it created keep working until their access ends.",
-    "use": "Use"
+    "use": "Use",
+    "typeDatabases": "Database names, comma-separated",
+    "addProviderOption": "+ Add provider…"
   }
 }

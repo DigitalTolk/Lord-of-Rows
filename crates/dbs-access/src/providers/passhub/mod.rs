@@ -78,7 +78,13 @@ impl AccessProvider for PasshubProvider {
     }
 
     async fn resource_targets(&self, resource_id: &str) -> AccessResult<TargetList> {
-        let t = self.client.service_targets(resource_id).await?;
+        // A server without a target lister answers 503; that (like any listing failure) is a
+        // soft error: the user can still type database names.
+        let t = match self.client.service_targets(resource_id).await {
+            Ok(t) => t,
+            Err(e @ (AccessError::SignedOut | AccessError::Unreachable(_))) => return Err(e),
+            Err(e) => return Ok(TargetList { targets: vec![], error: Some(e.to_string()) }),
+        };
         Ok(if t.ok {
             TargetList { targets: t.targets, error: None }
         } else {
@@ -202,6 +208,9 @@ mod tests {
                 ("GET", "/api/v1/requests/r2") => Reply::json(200, r#"{"requestId":"r2","status":"pending"}"#),
                 ("GET", "/api/v1/credentials?requestId=r1") => Reply::json(200, r#"[{"credentialId":"c1","username":"dev_r1","credentialType":"db_password","status":"active","viewCount":0,"maxViews":5}]"#),
                 ("POST", "/api/v1/credentials/c1/reveal") => Reply::json(200, r#"{"password":"pw-1","revealsRemaining":4}"#),
+                ("GET", "/api/v1/services/s1/targets") => Reply::json(503, r#"{"error":"targets not configured"}"#),
+                ("GET", "/api/v1/services/s2/targets") => Reply::json(200, r#"{"ok":false,"error":"connection refused"}"#),
+                ("GET", "/api/v1/services/s3/targets") => Reply::json(200, r#"{"ok":true,"targets":["app","audit"]}"#),
                 ("POST", "/api/v1/requests") => {
                     let v: serde_json::Value = serde_json::from_str(&req.body).unwrap();
                     assert_eq!((v["accessType"].as_str(), v["requestType"].as_str()), (Some("read"), Some("developer")));
@@ -271,5 +280,15 @@ mod tests {
         let n = srv.requests().len();
         assert!(p.create_request(&AccessRequestInput { reason: " ".into(), ..input }).await.is_err());
         assert_eq!(srv.requests().len(), n, "validated before sending");
+    }
+
+    #[tokio::test]
+    async fn target_listing_failures_are_soft() {
+        let srv = mock_passhub().await;
+        let p = PasshubProvider::new(&srv.url(), Some("phd_x".into())).unwrap();
+        let t = p.resource_targets("s1").await.unwrap();
+        assert!(t.targets.is_empty() && t.error.as_deref().unwrap().contains("targets not configured"), "{t:?}");
+        assert_eq!(p.resource_targets("s2").await.unwrap().error.as_deref(), Some("connection refused"));
+        assert_eq!(p.resource_targets("s3").await.unwrap().targets, vec!["app", "audit"]);
     }
 }

@@ -1364,6 +1364,8 @@
     "editProvider": "Anbieter bearbeiten",
     "removeProvider": "Anbieter entfernen",
     "removeConfirm": "{{provider}} entfernen? Du wirst abgemeldet; damit erstellte Verbindungen funktionieren bis zum Ende des Zugriffs.",
-    "use": "Verwenden"
+    "use": "Verwenden",
+    "typeDatabases": "Datenbanknamen, durch Kommas getrennt",
+    "addProviderOption": "+ Anbieter hinzufügen …"
   }
 }

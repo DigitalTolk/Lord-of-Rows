@@ -148,4 +148,44 @@ describe('AccessPanel', () => {
     expect(screen.queryByRole('tab', { name: /Approvals/ })).toBeNull();
     expect(screen.getByText('No access requests yet')).toBeTruthy();
   });
+
+  it('signed in: the provider switcher is always shown and can add a provider', async () => {
+    state.providers = [PROVIDER];
+    state.status = { signed_in: true, signing_in: false, user: { id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false } };
+    await show();
+    const picker = screen.getByLabelText('Access provider') as HTMLSelectElement;
+    expect(picker.value).toBe('p1');
+    expect(within(picker).getByText('Company access')).toBeTruthy();
+    expect(screen.queryByLabelText('Provider URL')).toBeNull();
+    fireEvent.change(picker, { target: { value: '__add' } });
+    expect(await screen.findByLabelText('Provider URL')).toBeTruthy();
+    expect(picker.value).toBe('p1');
+    fireEvent.change(screen.getByLabelText('Provider URL'), { target: { value: 'https://other.example.com' } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add provider' }));
+    });
+    expect(api.accessAddProvider).toHaveBeenCalledWith('passhub', 'passhub', 'https://other.example.com');
+  });
+
+  it('signed in: the + button next to the switcher opens the add form too', async () => {
+    state.providers = [PROVIDER, { ...PROVIDER, id: 'p2', name: 'Second access' }];
+    state.status = { signed_in: true, signing_in: false, user: { id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false } };
+    await show();
+    expect(within(screen.getByLabelText('Access provider')).getByText('Second access')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add another provider' }));
+    expect(screen.getByRole('region', { name: 'Add another provider' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByLabelText('Provider URL')).toBeNull();
+  });
+
+  it('signed out: "Add another provider" shows the add form', async () => {
+    state.providers = [PROVIDER];
+    await show();
+    expect((screen.getByLabelText('Access provider') as HTMLSelectElement).value).toBe('p1');
+    const links = screen.getAllByRole('button', { name: 'Add another provider' });
+    expect(links).toHaveLength(2); // the + next to the switcher and the link under the sign-in button
+    fireEvent.click(links[1]);
+    expect(screen.getByLabelText('Provider URL')).toBeTruthy();
+    expect((screen.getByLabelText('Provider URL') as HTMLInputElement).value).toBe('');
+  });
 });

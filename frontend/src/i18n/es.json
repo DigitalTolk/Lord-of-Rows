@@ -1429,6 +1429,8 @@
     "editProvider": "Editar proveedor",
     "removeProvider": "Quitar proveedor",
     "removeConfirm": "¿Quitar {{provider}}? Se cerrará tu sesión; las conexiones que creó siguen funcionando hasta que termine su acceso.",
-    "use": "Usar"
+    "use": "Usar",
+    "typeDatabases": "Nombres de bases de datos, separados por comas",
+    "addProviderOption": "+ Añadir proveedor…"
   }
 }
