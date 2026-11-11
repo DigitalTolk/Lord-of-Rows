@@ -5,6 +5,7 @@
 mod ai;
 mod backup;
 mod commands;
+mod migrate;
 mod plugins;
 mod state;
 mod updater;
@@ -30,6 +31,11 @@ pub fn run() {
         .manage(updater::UpdaterState::default())
         .setup(|app| {
             let dir = app.path().app_data_dir().expect("app data dir");
+            match migrate::migrate_legacy_data_dir(&dir) {
+                Ok(Some(old)) => tracing::info!(from = %old.display(), to = %dir.display(), "migrated app data from legacy identifier"),
+                Ok(None) => {}
+                Err(e) => tracing::warn!("could not migrate legacy app data: {e}"),
+            }
             std::fs::create_dir_all(&dir)?;
             #[cfg(unix)]
             {
