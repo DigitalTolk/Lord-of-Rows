@@ -11,6 +11,7 @@ import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
 import { monaco, registerSqlCompletion, setCompletionSource, useEditorTheme } from '../lib/monaco';
 import { formatters, usePlugins } from '../lib/plugins';
+import { DEFAULT_KEYS, displayCombo } from '../lib/keys';
 import { family } from '../lib/sqlgen';
 import { displayValue } from '../lib/value';
 import type { StatementResult } from '../lib/types';
@@ -18,9 +19,11 @@ import { errMsg, useApp, type Tab } from '../store';
 
 const formatterLang = (e: string) => (family(e as never) === 'pg' ? 'postgresql' : family(e as never) === 'mysql' ? 'mysql' : family(e as never) === 'sqlite' ? 'sqlite' : family(e as never) === 'mssql' ? 'transactsql' : 'sql');
 
-export function QueryView({ tab }: { tab: Tab }) {
+export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
   const { t } = useTranslation();
-  const { sessions, updateTab, settings, toast } = useApp();
+  const { sessions, updateTab, settings, toast, toggleSplit } = useApp();
+  // Split tabs: pane 1 edits `sql2`; each pane runs and shows results independently.
+  const textKey = pane === 1 ? 'sql2' : 'sql';
   const s = tab.sessionId ? sessions[tab.sessionId] : undefined;
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [running, setRunning] = useState<string | null>(null);
@@ -182,7 +185,7 @@ export function QueryView({ tab }: { tab: Tab }) {
   // AI panel inputs: only what the user is looking at; the panel decides what to send.
   const editorSql = () => {
     const ed = editorRef.current;
-    if (!ed) return tab.sql ?? '';
+    if (!ed) return tab[textKey] ?? '';
     const sel = ed.getSelection();
     return sel && !sel.isEmpty() ? ed.getModel()!.getValueInRange(sel) : ed.getValue();
   };
@@ -209,7 +212,7 @@ export function QueryView({ tab }: { tab: Tab }) {
     ed.addCommand(K.CtrlCmd | C.Period, () => void cancel());
     ed.onDidChangeModelContent(() => {
       monaco.editor.setModelMarkers(ed.getModel()!, 'db', []);
-      updateTab(tab.id, { sql: ed.getValue() });
+      updateTab(tab.id, { [textKey]: ed.getValue() });
     });
     ed.focus();
   };
@@ -255,6 +258,18 @@ export function QueryView({ tab }: { tab: Tab }) {
           <button className={`btn btn-ghost h-6 px-2 ${aiOpen ? 'bg-accent/15' : ''}`} onClick={() => setAiOpen((x) => !x)} aria-pressed={aiOpen} title={t('ai.toggle')}><Icon name="bolt" size={13} /> {t('ai.button')}</button>
         )}
         <button className="btn btn-ghost ml-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
+        {pane === 0 && !tab.split && (
+          <>
+            <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id, 'right')} title={`${t('split.right')} (${displayCombo(DEFAULT_KEYS.splitEditor)})`} aria-label={t('split.right')}><Icon name="splitRight" size={13} /></button>
+            <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id, 'down')} title={t('split.down')} aria-label={t('split.down')}><Icon name="splitDown" size={13} /></button>
+          </>
+        )}
+        {pane === 0 && tab.split && (
+          <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id, tab.split === 'right' ? 'down' : 'right')} title={t('split.rotate')} aria-label={t('split.rotate')}><Icon name={tab.split === 'right' ? 'splitDown' : 'splitRight'} size={13} /></button>
+        )}
+        {pane === 1 && (
+          <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id)} title={`${t('split.close')} (${displayCombo(DEFAULT_KEYS.splitEditor)})`} aria-label={t('split.close')}><Icon name="x" size={13} /></button>
+        )}
         {s ? <span className="text-[0.82rem] text-muted">{s.config.name}{s.activeSchema ? ` · ${s.activeSchema}` : ''}</span> : <span className="text-warn">{t('status.disconnected')}</span>}
       </div>
       {!s && (
@@ -275,7 +290,7 @@ export function QueryView({ tab }: { tab: Tab }) {
         <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
           <Editor
             defaultLanguage={isRedis ? 'redis' : 'sql'}
-            defaultValue={tab.sql ?? ''}
+            defaultValue={tab[textKey] ?? ''}
             theme={editorTheme}
             onMount={onMount}
             options={{

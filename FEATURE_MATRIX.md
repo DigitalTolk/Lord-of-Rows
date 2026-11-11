@@ -58,6 +58,8 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Dashboards / charts | IMPLEMENTED_UNVERIFIED | |
 | Command palette | TESTED | E2E |
 | Session restore (tabs re-attach) | TESTED | E2E `after restart…` |
+| Multiple windows: New Window (macOS File menu, toolbar, connection menu, palette, Mod+Shift+N); each window has its own tabs and its own sessions; closing a window disconnects only its sessions; title "Lord of the Rows — &lt;connection&gt;"; only the main window persists/restores tabs | IMPLEMENTED_UNVERIFIED | UT `closing_a_window_takes_only_its_own_sessions` (real SQLite sessions), `navigation_guard_allows_only_bundled_content`; vitest `store.test.ts` (window-scoped restore/persist, title); E2E `40-windows-split` written, not yet run |
+| Split editor panes (right/down, Mod+\\, toolbar, palette): each pane own text, run, results; split layout + both texts persisted with the tab | IMPLEMENTED_UNVERIFIED | vitest `store.test.ts` (toggle, persist/restore); E2E `40-windows-split` written, not yet run |
 | Themes (light/dark/high contrast), UI scale | TESTED (dark) | E2E |
 | Import CSV/TSV/JSON/JSONL, export CSV/TSV/JSON/JSONL/SQL/XLSX/MD/XML | engine TESTED, UI IMPLEMENTED_UNVERIFIED | UT `dbs-io` (13); native file dialogs not drivable by WebDriver |
 | Backup/restore (pg_dump, mysqldump, SQLite backup API) | SQLite TESTED (IT); pg_dump/mysqldump IMPLEMENTED_UNVERIFIED | IT `sqlite_end_to_end` |
