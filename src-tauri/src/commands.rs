@@ -182,19 +182,39 @@ pub fn set_connection_group(st: State<'_, AppState>, id: Uuid, group: Option<Str
 }
 
 fn resolve_secrets(st: &AppState, cfg: &ConnectionConfig, override_pw: Option<String>) -> R<ConnectSecrets> {
+    resolve_secrets_with(st, cfg, override_pw, &crate::import::os_keychain_reader)
+}
+
+/// Like [`resolve_secrets`], with the reader used for passwords an import left
+/// in another app's keychain (tests pass a fake).
+pub(crate) fn resolve_secrets_with(
+    st: &AppState,
+    cfg: &ConnectionConfig,
+    override_pw: Option<String>,
+    read: crate::import::KeychainReader<'_>,
+) -> R<ConnectSecrets> {
     if let Some(p) = override_pw {
         return Ok(ConnectSecrets { password: Some(p) });
     }
     let p = match st.session_secrets.get(cfg.id, SecretKind::DbPassword)? {
         Some(s) => Some(s.into_inner()),
-        None => st.secrets.get(cfg.id, SecretKind::DbPassword)?.map(|s| s.into_inner()),
+        None => match st.secrets.get(cfg.id, SecretKind::DbPassword)? {
+            Some(s) => Some(s.into_inner()),
+            None => crate::import::take_deferred_secret(st, cfg.id, SecretKind::DbPassword, read),
+        },
     };
     Ok(ConnectSecrets { password: p })
 }
 
-/// SSH secrets: explicit values (from the connection form) win, else the keychain.
+/// SSH secrets: explicit values (from the connection form) win, else the keychain
+/// (including a password an import left in another app's keychain).
 fn resolve_ssh_secrets(st: &AppState, cfg: &ConnectionConfig, password: Option<String>, passphrase: Option<String>) -> R<dbs_ssh::SshSecrets> {
-    let get = |k| -> R<Option<String>> { Ok(st.secrets.get(cfg.id, k)?.map(|s| s.into_inner())) };
+    let get = |k| -> R<Option<String>> {
+        Ok(match st.secrets.get(cfg.id, k)? {
+            Some(s) => Some(s.into_inner()),
+            None => crate::import::take_deferred_secret(st, cfg.id, k, &crate::import::os_keychain_reader),
+        })
+    };
     Ok(dbs_ssh::SshSecrets {
         password: match password {
             Some(p) => Some(p),

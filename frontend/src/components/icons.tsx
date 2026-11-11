@@ -45,6 +45,8 @@ const P: Record<string, string> = {
   panelRight: 'M4 5h16v14H4zM15 5v14M17 9h1M17 12h1',
   warning: 'M12 4L2.8 19.5h18.4zM12 10v4.5M12 17h.01',
   minus: 'M5 12h14',
+  check: 'M5 12.5l4.5 4.5L19 7.5',
+  checkSquare: 'M4 4h16v16H4zM8 12l3 3 5-6',
   chevronLeft: 'M15 6l-6 6 6 6',
   splitRight: 'M4 5h16v14H4zM12 5v14',
   splitDown: 'M4 5h16v14H4zM4 12h16',

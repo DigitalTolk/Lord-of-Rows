@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- Import: saved passwords from another app's keychain (TablePlus) are no longer read during import, which made macOS ask once per connection. Each is read the first time you connect to that connection (one prompt), then kept in this app's keychain. Bringing passwords along is now on by default.
+- Connection list: Select mode (checkbox button next to New group) with Select all / Select all shown, ⌘A and a bulk Delete with one confirmation that counts production connections.
+
 ## 0.1.2
 - Redis key browser: logical databases (db0, db1, …) as schemas with key counts (sidebar, schema rail, Open database picker); a lazily expanded namespace tree (configurable separator, bounded SCAN batches with "Load more"); a SCAN-paged key grid (key, type, TTL, size, value preview) with a server-side Key pattern; values by type (string/JSON, hash, list, set, sorted set, stream, JSON documents) paged in the detail panel; staged key edits (set, TTL, rename, delete, field/member add/remove) previewed as commands and committed through the safety policy. `KEYS` is never used.
 - Import connections from other database tools (TablePlus, DBeaver, Sequel Ace / Sequel Pro, pgAdmin, DataGrip) or a list of connection URLs, with a preview, duplicate detection, groups and environment tags kept, and optional import of TablePlus passwords from the macOS Keychain.

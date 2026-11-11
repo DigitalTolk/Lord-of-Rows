@@ -983,7 +983,24 @@
     "deleteGroupConfirm_one": "Delete group \"{{name}}\"? Its {{count}} connection(s) move to Ungrouped. No connection is deleted.",
     "deleteGroupConfirm_other": "Delete group \"{{name}}\"? Its {{count}} connection(s) move to Ungrouped. No connection is deleted.",
     "groupCount_one": "{{count}} connection(s)",
-    "groupCount_other": "{{count}} connection(s)"
+    "groupCount_other": "{{count}} connection(s)",
+    "select": "Select connections",
+    "selectionToolbar": "Selection",
+    "selectAll": "Select all",
+    "selectAllShown": "Select all shown",
+    "selectDone": "Done",
+    "selectedCount_one": "{{count}} selected",
+    "selectedCount_other": "{{count}} selected",
+    "deleteManyTitle_one": "Delete {{count}} connection",
+    "deleteManyTitle_other": "Delete {{count}} connections",
+    "deleteManyConfirm_one": "Delete {{count}} connection? Its saved passwords are removed too. This cannot be undone.",
+    "deleteManyConfirm_other": "Delete {{count}} connections? Their saved passwords are removed too. This cannot be undone.",
+    "deleteManyProd_one": "{{count}} of them is a production connection.",
+    "deleteManyProd_other": "{{count}} of them are production connections.",
+    "deletedMany_one": "Deleted {{count}} connection",
+    "deletedMany_other": "Deleted {{count}} connections",
+    "deleteManyFailed_one": "{{count}} connection could not be deleted",
+    "deleteManyFailed_other": "{{count}} connections could not be deleted"
   },
   "filter": {
     "title": "Filters",
@@ -1139,8 +1156,8 @@
     "keepGroups": "Keep groups (create them as needed)",
     "keepEnv": "Keep environment tags",
     "keepEnvHint": "Production connections stay production, so the production safety rules apply.",
-    "passwordsKeychain": "Also import saved passwords from the macOS Keychain",
-    "passwordsKeychainHint": "macOS asks for permission for each saved password. Passwords go straight into this app's keychain entries and are never shown.",
+    "passwordsKeychain": "Bring saved passwords from the macOS Keychain",
+    "passwordsKeychainHint": "Nothing is read now. The first time you connect to an imported connection, macOS asks once for that one password, and it is then kept in this app’s keychain. Passwords are never shown.",
     "passwordsIncluded": "Import passwords included in the URLs",
     "noPasswords": "Passwords are not imported from {{source}}; enter them when you first connect.",
     "imported_one": "Imported {{count}} connection",
@@ -1152,7 +1169,9 @@
     "failed_one": "{{count}} could not be imported",
     "failed_other": "{{count}} could not be imported",
     "passwordErrors_one": "{{count}} password could not be imported",
-    "passwordErrors_other": "{{count}} passwords could not be imported"
+    "passwordErrors_other": "{{count}} passwords could not be imported",
+    "passwordsDeferred_one": "{{count}} saved password will be fetched the first time you connect",
+    "passwordsDeferred_other": "{{count}} saved passwords will be fetched the first time you connect to each connection"
   },
   "redis": {
     "databases": "Databases",
