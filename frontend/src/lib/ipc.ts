@@ -45,6 +45,12 @@ export const api = {
     call<{ server: T.ServerInfo; latency_ms: number }>('test_connection', { config, password, sshPassword: ssh.password ?? null, sshPassphrase: ssh.passphrase ?? null, trustHostKey: trustHostKey ?? null }),
   exportConnections: () => call<string>('export_connections'),
   importConnections: (json: string) => call<number>('import_connections', { json }),
+  /** Other database tools with connection files on this machine. */
+  importConnectionsDetect: () => call<T.ConnImportDetected[]>('import_connections_detect'),
+  importConnectionsPreview: (request: T.ConnImportRequest) => call<T.ConnImportPreview>('import_connections_preview', { request }),
+  /** Saves the selected rows (by key) of the last preview. */
+  importConnectionsApply: (previewId: string, keys: string[], options: T.ConnImportOptions) =>
+    call<T.ConnImportResult>('import_connections_apply', { request: { preview_id: previewId, keys, options } }),
   parseConnectionUrl: (url: string) => call<{ config: T.ConnectionConfig; password?: string | null }>('parse_connection_url', { url }),
 
   /** `database` (Postgres family only) opens the saved connection on another database of the same server. */

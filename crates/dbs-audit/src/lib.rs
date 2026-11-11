@@ -54,6 +54,7 @@ pub enum Category {
     AuditExported,
     AuditPurged,
     AiRequest,
+    ConnectionsImported,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

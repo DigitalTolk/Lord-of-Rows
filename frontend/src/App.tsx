@@ -7,6 +7,7 @@ import { SafetyDialog } from './components/SafetyDialog';
 import { CommandPalette, panelDomId, StatusBar, TabBar, tabDomId, TopBar } from './components/Shell';
 import { Welcome } from './components/Welcome';
 import { OpenDatabaseHost, useDbPicker } from './components/OpenDatabaseDialog';
+import { ImportConnectionsHost } from './components/ImportConnectionsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
@@ -265,6 +266,7 @@ export default function App() {
       {st.connectionDialog && <ConnectionDialog key={JSON.stringify(st.connectionDialog)} />}
       {st.paletteOpen && <CommandPalette />}
       <OpenDatabaseHost />
+      <ImportConnectionsHost />
       {pending && <SafetyDialog pending={pending} />}
       <AskHost />
       {/* Live region stays mounted so screen readers announce toasts added later. */}

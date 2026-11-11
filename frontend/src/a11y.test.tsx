@@ -24,6 +24,17 @@ vi.mock('./lib/ipc', () => {
     pingSession: 3,
     listSchemas: ['public', 'audit', 'information_schema', 'pg_catalog'],
     listDatabases: ['app', 'postgres'],
+    importConnectionsDetect: [{ source: 'table_plus', label: 'TablePlus', count: 2, error: null }],
+    importConnectionsPreview: {
+      preview_id: 'p1',
+      source: 'table_plus',
+      label: 'TablePlus',
+      passwords_supported: true,
+      rows: [
+        { key: 'a', name: 'Shop prod', source_engine: 'PostgreSQL', engine: 'postgres', host: 'db.example.com', port: 5432, database: 'shop', username: 'app', environment: 'production', group: 'Shop', ssh: false, color: '#c0392b', status: 'ready', reason: null, notes: [], password: 'keychain' },
+        { key: 'b', name: 'Warehouse', source_engine: 'Microsoft SQL Server', engine: 'sql_server', host: 'mssql.example.com', port: null, database: null, username: null, environment: 'development', group: null, ssh: true, color: null, status: 'unsupported', reason: null, notes: ['SSH host or user is missing'], password: 'none' },
+      ],
+    },
   };
   const api = new Proxy({}, { get: (_t, k: string) => async () => (k in defaults ? defaults[k] : []) });
   return { api, IpcError: class extends Error {} };
@@ -43,6 +54,7 @@ import App from './App';
 import { ask } from './components/ask';
 import { confirmDecision } from './components/confirm';
 import { openDatabasePicker } from './components/OpenDatabaseDialog';
+import { openImportDialog } from './components/ImportConnectionsDialog';
 import { useApp, type OpenSession } from './store';
 
 const SESSION: OpenSession = {
@@ -197,6 +209,25 @@ describe('axe: no serious or critical violations', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(opener);
     openDatabasePicker(false);
+  });
+
+  it('import connections dialog (sources and preview)', async () => {
+    await renderApp();
+    await act(async () => {
+      openImportDialog();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.getByRole('dialog', { name: 'Import connections' })).toBeTruthy();
+    await expectAccessible('ImportConnections/sources');
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /TablePlus: 2 connections found/ }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.getByRole('table')).toBeTruthy();
+    await expectAccessible('ImportConnections/preview');
+    await act(async () => {
+      openImportDialog(false);
+    });
   });
 
   it('Arabic (RTL) launcher and workspace', async () => {

@@ -8,6 +8,7 @@ import { ConnectionList, type ConnAction } from './ConnectionList';
 import logo from '../assets/logo.svg';
 import { Icon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
+import { openImportDialog } from './ImportConnectionsDialog';
 
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
@@ -76,6 +77,9 @@ export function Welcome() {
               } catch (e) { toast('error', errMsg(e)); }
             }}>
               <Icon name="download" size={15} /> {t('welcome.fromUrl')}
+            </button>
+            <button className="btn h-8 w-full" onClick={() => openImportDialog()}>
+              <Icon name="upload" size={15} /> {t('welcome.importConnections')}
             </button>
             <button className="btn h-8 w-full" onClick={() => { openTab({ kind: 'settings', title: t('settings.title') }); useApp.setState({ launcher: false }); }}>
               <Icon name="gear" size={15} /> {t('settings.title')}

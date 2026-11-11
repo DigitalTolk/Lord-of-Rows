@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Favorites Root</key>
+	<dict>
+		<key>Name</key><string>FAVORITES</string>
+		<key>Children</key>
+		<array>
+			<dict>
+				<key>id</key><integer>101</integer>
+				<key>name</key><string>Blog</string>
+				<key>host</key><string>blog.example.com</string>
+				<key>user</key><string>blog</string>
+				<key>port</key><string>3307</string>
+				<key>database</key><string>wordpress</string>
+				<key>type</key><integer>0</integer>
+				<key>useSSL</key><integer>1</integer>
+				<key>sslCACertFileLocation</key><string>/certs/blog-ca.pem</string>
+				<key>sslCACertFileLocationEnabled</key><integer>1</integer>
+				<key>colorIndex</key><integer>3</integer>
+			</dict>
+			<dict>
+				<key>Name</key><string>Clients</string>
+				<key>Children</key>
+				<array>
+					<dict>
+						<key>id</key><integer>102</integer>
+						<key>name</key><string>Client A</string>
+						<key>host</key><string>127.0.0.1</string>
+						<key>user</key><string>root</string>
+						<key>port</key><string></string>
+						<key>type</key><integer>2</integer>
+						<key>sshHost</key><string>ssh.example.com</string>
+						<key>sshUser</key><string>tunnel</string>
+						<key>sshPort</key><string></string>
+						<key>sshKeyLocationEnabled</key><integer>1</integer>
+						<key>sshKeyLocation</key><string>~/.ssh/client_a</string>
+						<key>colorIndex</key><integer>-1</integer>
+					</dict>
+				</array>
+			</dict>
+		</array>
+	</dict>
+</dict>
+</plist>
