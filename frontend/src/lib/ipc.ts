@@ -109,4 +109,8 @@ export const api = {
     call<{ tool: string; bytes: number; verified: boolean; notes: string[] }>('run_backup', { sessionId, grant, options }),
   runRestore: (sessionId: string, grant: string, confirmToken?: string | null, typedConfirmation?: string | null) =>
     call<{ tool: string; verified: boolean; notes: string[] }>('run_restore', { sessionId, grant, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }),
+
+  checkUpdate: () => call<T.UpdateCheck>('check_update'),
+  installUpdate: (version: string) => call<{ version: string; restart_required: boolean }>('install_update', { version }),
+  restartAfterUpdate: () => call<void>('restart_after_update'),
 };

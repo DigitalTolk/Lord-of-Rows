@@ -67,7 +67,17 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Read-only: DB-enforced session + backend block | TESTED | IT (PG/MySQL/SQLite) + E2E |
 | Tamper-evident audit log (hash chain), viewer, verify, export, purge | TESTED | UT `dbs-audit`, E2E audit |
 
+## Application updates
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Endpoint validation (https only; http loopback in dev builds), channel → endpoint resolution, no hardcoded URL | TESTED | UT `updater::tests` (endpoint/channel/setting validation) |
+| Compatibility check: reject non-newer manifest versions; stable rejects pre-releases | TESTED | UT `only_newer_versions_are_accepted...` |
+| Minisign signature check with shipped pubkey; tampered artifact / altered signed version / foreign key rejected | TESTED (at the minisign layer, mirroring the plugin's check) | UT `shipped_pubkey_verifies_release_signatures_and_rejects_tampering`, `shipped_updater_config_keeps_verification_strict` |
+| Auto-check on startup is opt-in (no network when off) | TESTED | vitest `updates.test.ts` |
+| Check now / release notes / download progress / install / restart prompt / failure recovery / `app_updated` audit events | IMPLEMENTED_UNVERIFIED | no end-to-end run against a real signed release + update server yet |
+
 ## Not started (spec items)
 
-Plugin system, AI assistant, auto-updater, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
+Plugin system, AI assistant, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
 CI pipelines, localization beyond English (architecture in place), accessibility audit with assistive tech.

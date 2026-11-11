@@ -5,6 +5,7 @@
 mod backup;
 mod commands;
 mod state;
+mod updater;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -29,6 +30,9 @@ fn is_app_url(url: &tauri::Url) -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Signature verification uses `plugins.updater.pubkey`; no updater permissions are granted to the webview.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::UpdaterState::default())
         .setup(|app| {
             let dir = app.path().app_data_dir().expect("app data dir");
             std::fs::create_dir_all(&dir)?;
@@ -123,6 +127,9 @@ pub fn run() {
             commands::backup_tools,
             commands::run_backup,
             commands::run_restore,
+            updater::check_update,
+            updater::install_update,
+            updater::restart_after_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DB Studio");

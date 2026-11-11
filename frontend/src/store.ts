@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import i18n from './i18n';
 import { api } from './lib/ipc';
 import { withHostKeyTrust } from './lib/hostkey';
+import { autoCheckForUpdates } from './lib/updates';
 import type { AppInfo, ObjectRef, SessionOpened, StoredConnection, TableTarget } from './lib/types';
 
 export type TabKind = 'query' | 'table' | 'structure' | 'diff' | 'audit' | 'monitor' | 'er' | 'settings' | 'import' | 'backup' | 'history' | 'dashboard';
@@ -71,6 +73,8 @@ export const useApp = create<State>((set, get) => ({
   async init() {
     const [info, settings, connections] = await Promise.all([api.appInfo(), api.getSettings(), api.listConnections()]);
     set({ info, settings, connections });
+    // Opt-in only (`updates.autoCheck`); runs in the background and never blocks startup.
+    void autoCheckForUpdates(settings, api.checkUpdate, (v) => get().toast('info', i18n.t('updates.autoFound', { version: v })));
     // Restore saved workspace tabs (query text only; sessions must be reopened explicitly).
     const ws = settings['workspace.tabs'];
     if (Array.isArray(ws)) {

@@ -210,4 +210,10 @@ export interface HistoryEntry { id: number; connection_id: string; ts: string; s
 export interface Document<T = unknown> { kind: string; id: string; name: string; body: T; updated: string }
 
 export interface AppInfo { version: string; os: string; arch: string; secret_backend: string; supported_engines: Engine[]; all_engines: Engine[] }
+export type UpdateChannel = 'stable' | 'beta';
+export type UpdateCheck =
+  | { status: 'not_configured'; channel: UpdateChannel; current_version: string }
+  | { status: 'up_to_date'; channel: UpdateChannel; current_version: string }
+  | { status: 'available'; channel: UpdateChannel; current_version: string; version: string; notes?: string | null; date?: string | null };
+export type UpdateProgress = { phase: 'downloading'; downloaded: number; total?: number | null } | { phase: 'verifying' } | { phase: 'installing' };
 export interface PickedFile { grant: string; name: string; display_path: string }
