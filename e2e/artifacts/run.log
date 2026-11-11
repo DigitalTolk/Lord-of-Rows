@@ -1,50 +1,54 @@
-✔ app launches and shows the connection launcher (704.676375ms)
+✔ app launches and shows the connection launcher (2085.618293ms)
 ▶ connections
-  ✔ create a PostgreSQL connection with Test, then Save (2081.736918ms)
-  ✔ wrong password shows an authentication error and never echoes the password (30909.884306ms)
-  ✔ connect by double-clicking; opens on the schema that has tables (328.170041ms)
-✔ connections (33983.215058ms)
+  ✔ create a PostgreSQL connection with Test, then Save (2157.443918ms)
+  ✔ wrong password shows an authentication error and never echoes the password (32234.114306ms)
+  ✔ connect by double-clicking; opens on the schema that has tables (313.411334ms)
+✔ connections (37202.130558ms)
 ▶ browsing and querying
-  ✔ open a table: grid, row count, paging (293.410001ms)
-  ✔ Structure view shows columns, indexes and DDL (817.312417ms)
-  ✔ SQL tab: unqualified names resolve to the selected schema (1159.624709ms)
-  ✔ switching schema in the sidebar changes name resolution (2131.137877ms)
-  ✔ multiple statements, multiple result sets, affected-row messages (827.861292ms)
-  ✔ syntax errors are reported with SQLSTATE (282.747708ms)
-  ✔ types: bigint, numeric, json, null vs empty string (292.461ms)
-  ✔ cancel a long-running query (1391.675959ms)
-  ✔ EXPLAIN shows a plan (553.2155ms)
-✔ browsing and querying (7751.211504ms)
+  ✔ open a table: grid, row count, paging (331.396709ms)
+  ✔ Structure view shows columns, indexes and DDL (792.605ms)
+  ✔ SQL tab: unqualified names resolve to the selected schema (1157.896084ms)
+  ✔ switching schema in the sidebar changes name resolution (2124.642585ms)
+  ✔ multiple statements, multiple result sets, affected-row messages (841.635625ms)
+  ✔ syntax errors are reported with SQLSTATE (291.567ms)
+  ✔ types: bigint, numeric, json, null vs empty string (327.945958ms)
+  ✔ cancel a long-running query (1366.359459ms)
+  ✔ EXPLAIN shows a plan (546.472375ms)
+✔ browsing and querying (7782.314004ms)
 ▶ editing data
-  ✔ edit a cell, review generated SQL, commit (1178.045667ms)
-  ✔ the edit is really in the database (799.739792ms)
-  ✔ stale edits are detected as conflicts and nothing is overwritten (3567.240376ms)
-✔ editing data (5546.177086ms)
+  ✔ edit a cell, review generated SQL, commit (1157.617834ms)
+  ✔ the edit is really in the database (822.611375ms)
+  ✔ stale edits are detected as conflicts and nothing is overwritten (3485.914294ms)
+✔ editing data (5467.070169ms)
 ▶ production safety
-  ✔ plaintext production connections are refused (2407.129459ms)
-  ✔ production connection over verified TLS: banner + typed confirmation for destructive SQL (4200.538002ms)
-  ✔ cancelling the confirmation runs nothing (865.204292ms)
-  ✔ read-only connection blocks writes (3559.437169ms)
-✔ production safety (11035.016254ms)
+  ✔ plaintext production connections are refused (2422.192709ms)
+  ✔ production connection over verified TLS: banner + typed confirmation for destructive SQL (4295.468209ms)
+  ✔ cancelling the confirmation runs nothing (820.618209ms)
+  ✔ read-only connection blocks writes (3574.757335ms)
+✔ production safety (11113.802671ms)
 ▶ multiple databases
-  ✔ MySQL via URL (2050.799751ms)
-  ✔ SQLite via URL (964.443417ms)
-  ✔ Redis via URL (2012.255792ms)
-  ✔ connection rail lists every open database and keeps tabs per database (284.291292ms)
-✔ multiple databases (5312.52942ms)
+  ✔ MySQL via URL (2169.902043ms)
+  ✔ SQLite via URL (951.338208ms)
+  ✔ Redis via URL (2176.395918ms)
+  ✔ connection rail lists every open database and keeps tabs per database (271.346667ms)
+✔ multiple databases (5569.595544ms)
 ▶ tools
-  ✔ command palette opens a table (540.28775ms)
-  ✔ ER diagram renders tables and relationships (276.421417ms)
-  ✔ monitor lists live sessions (270.262125ms)
-  ✔ audit log records activity and the hash chain verifies (556.1955ms)
-  ✔ settings: dark theme applies (15496.565507ms)
-✔ tools (17140.162132ms)
-✔ after restart: launcher shows saved connections, query tab re-attaches and runs (1670.881751ms)
-ℹ tests 30
+  ✔ command palette opens a table (567.068583ms)
+  ✔ ER diagram renders tables and relationships (281.401959ms)
+  ✔ monitor lists live sessions (279.527125ms)
+  ✔ audit log records activity and the hash chain verifies (562.611917ms)
+  ✔ settings: dark theme applies (15443.395049ms)
+✔ tools (17134.370092ms)
+✔ SSH: unknown host key asks for confirmation, then tunnel works (5569.030628ms)
+✔ SSH: declining an unknown host key does not connect (2861.873501ms)
+✔ SSH: production over a plaintext DB link is allowed when tunnelled (2975.891751ms)
+✔ SSH: known host reconnects without a prompt; wrong SSH password is rejected (4740.342502ms)
+✔ after restart: launcher shows saved connections, query tab re-attaches and runs (1901.762751ms)
+ℹ tests 34
 ℹ suites 6
-ℹ pass 30
+ℹ pass 34
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 89583.808541
+ℹ duration_ms 113187.072218

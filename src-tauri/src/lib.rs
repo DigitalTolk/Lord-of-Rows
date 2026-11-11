@@ -53,6 +53,7 @@ pub fn run() {
                 sessions: Mutex::new(HashMap::new()),
                 running: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
+                known_hosts: dir.join("known_hosts"),
             });
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.

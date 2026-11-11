@@ -110,7 +110,15 @@ impl DatabaseDriver for PgDriver {
         } else if let Some(h) = &cfg.host {
             pc.host(h);
         }
-        pc.port(cfg.effective_port().unwrap_or(5432));
+        // Note: tokio-postgres `port()`/`hostaddr()` append to lists; set each exactly once.
+        if let Some((addr, port)) = &cfg.tunnel {
+            // Dial the SSH tunnel but keep `host` for TLS SNI + hostname verification.
+            let ip: std::net::IpAddr = addr.parse().map_err(|_| DbError::internal("invalid tunnel address"))?;
+            pc.hostaddr(ip);
+            pc.port(*port);
+        } else {
+            pc.port(cfg.effective_port().unwrap_or(5432));
+        }
         if let Some(u) = &cfg.username {
             pc.user(u);
         }

@@ -77,6 +77,11 @@ pub struct SaveConnection {
     /// Save password to the OS keychain (true) or keep it only for this app run.
     #[serde(default = "yes")]
     remember_password: bool,
+    /// SSH password / private-key passphrase (same semantics as `password`). Stored in the OS keychain.
+    #[serde(default)]
+    ssh_password: Option<String>,
+    #[serde(default)]
+    ssh_passphrase: Option<String>,
 }
 fn yes() -> bool {
     true
@@ -110,6 +115,17 @@ pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<Connec
         }
         audit(&st, Category::CredentialChanged, Outcome::Success, Some(&cfg), |_| {});
     }
+    for (val, kind) in [(req.ssh_password, SecretKind::SshPassword), (req.ssh_passphrase, SecretKind::SshKeyPassphrase)] {
+        if let Some(v) = val {
+            check_len(&v, 4096, "SSH secret")?;
+            if v.is_empty() {
+                st.secrets.delete(cfg.id, kind)?;
+            } else {
+                st.secrets.set(cfg.id, kind, &v)?;
+            }
+            audit(&st, Category::CredentialChanged, Outcome::Success, Some(&cfg), |e| e.detail = Some("ssh".into()));
+        }
+    }
     audit(&st, if existed { Category::ConnectionModified } else { Category::ConnectionCreated }, Outcome::Success, Some(&cfg), |_| {});
     Ok(cfg)
 }
@@ -141,13 +157,66 @@ fn resolve_secrets(st: &AppState, cfg: &ConnectionConfig, override_pw: Option<St
     Ok(ConnectSecrets { password: p })
 }
 
-async fn connect(cfg: &ConnectionConfig, secrets: ConnectSecrets) -> R<Box<dyn DatabaseConnection>> {
-    if cfg.ssh.is_some() {
-        return Err(DbError::unsupported("SSH tunnelling (not yet implemented in this build; see KNOWN_LIMITATIONS.md)"));
-    }
+/// SSH secrets: explicit values (from the connection form) win, else the keychain.
+fn resolve_ssh_secrets(st: &AppState, cfg: &ConnectionConfig, password: Option<String>, passphrase: Option<String>) -> R<dbs_ssh::SshSecrets> {
+    let get = |k| -> R<Option<String>> { Ok(st.secrets.get(cfg.id, k)?.map(|s| s.into_inner())) };
+    Ok(dbs_ssh::SshSecrets {
+        password: match password {
+            Some(p) => Some(p),
+            None => get(SecretKind::SshPassword)?,
+        },
+        key_passphrase: match passphrase {
+            Some(p) => Some(p),
+            None => get(SecretKind::SshKeyPassphrase)?,
+        },
+    })
+}
+
+/// Connect, through an SSH tunnel when configured. The tunnel (if any) must be
+/// kept alive for as long as the connection is used.
+async fn connect(
+    st: &AppState,
+    cfg: &ConnectionConfig,
+    secrets: ConnectSecrets,
+    ssh_secrets: dbs_ssh::SshSecrets,
+    trust_host_key: Option<&str>,
+) -> R<(Box<dyn DatabaseConnection>, Option<dbs_ssh::Tunnel>)> {
     let drv = dbs_drivers::driver_for(cfg.engine)
         .ok_or_else(|| DbError::unsupported(&format!("the {} driver (not yet implemented; see FEATURE_MATRIX.md)", engine_name(cfg.engine))))?;
-    drv.connect(cfg, secrets).await
+    let Some(ssh) = &cfg.ssh else {
+        return Ok((drv.connect(cfg, secrets).await?, None));
+    };
+    if matches!(cfg.engine.wire_family(), Some(Engine::Sqlite)) {
+        return Err(DbError::invalid("SSH tunnels apply to network databases, not local files"));
+    }
+    let target_host = cfg.host.clone().ok_or_else(|| DbError::invalid("host is required (as seen from the SSH server)"))?;
+    let target_port = cfg.effective_port().ok_or_else(|| DbError::invalid("port is required"))?;
+    let tunnel = dbs_ssh::open_tunnel(
+        ssh,
+        ssh_secrets,
+        &target_host,
+        target_port,
+        &st.known_hosts,
+        trust_host_key,
+        std::time::Duration::from_secs(cfg.connect_timeout_secs as u64),
+    )
+    .await?;
+    let mut eff = cfg.clone();
+    eff.ssh = None;
+    if cfg.engine.wire_family() == Some(Engine::Postgres) {
+        // Dial the tunnel; TLS still verifies against the real hostname.
+        eff.tunnel = Some(("127.0.0.1".into(), tunnel.local_port));
+    } else {
+        if cfg.tls.mode != TlsMode::Disable {
+            return Err(DbError::unsupported(
+                "TLS through an SSH tunnel for this engine (hostname verification can't be preserved). Disable TLS: the SSH tunnel already encrypts the connection",
+            ));
+        }
+        eff.host = Some("127.0.0.1".into());
+        eff.port = Some(tunnel.local_port);
+    }
+    let conn = drv.connect(&eff, secrets).await?;
+    Ok((conn, Some(tunnel)))
 }
 
 #[derive(Serialize)]
@@ -157,12 +226,20 @@ pub struct TestResult {
 }
 
 #[tauri::command]
-pub async fn test_connection(st: State<'_, AppState>, config: ConnectionConfig, password: Option<String>) -> R<TestResult> {
+pub async fn test_connection(
+    st: State<'_, AppState>,
+    config: ConnectionConfig,
+    password: Option<String>,
+    ssh_password: Option<String>,
+    ssh_passphrase: Option<String>,
+    trust_host_key: Option<String>,
+) -> R<TestResult> {
     config.validate()?;
     let secrets = resolve_secrets(&st, &config, password)?;
+    let ssh_secrets = resolve_ssh_secrets(&st, &config, ssh_password, ssh_passphrase)?;
     let t = Instant::now();
     let r = async {
-        let c = connect(&config, secrets).await?;
+        let (c, _tunnel) = connect(&st, &config, secrets, ssh_secrets, trust_host_key.as_deref()).await?;
         let info = c.server_info().await?;
         let _ = c.close().await;
         Ok::<_, DbError>(info)
@@ -248,6 +325,7 @@ pub fn parse_connection_url(url: String) -> R<ParsedUrl> {
         connect_timeout_secs: 10,
         query_timeout_secs: None,
         init_sql: None,
+        tunnel: None,
     };
     if engine == Engine::Sqlite {
         cfg.database = Some(rest.to_string());
@@ -325,11 +403,12 @@ pub struct SessionOpened {
 }
 
 #[tauri::command]
-pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password: Option<String>) -> R<SessionOpened> {
+pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password: Option<String>, trust_host_key: Option<String>) -> R<SessionOpened> {
     let cfg = st.store.get_connection(connection_id)?;
     let secrets = resolve_secrets(&st, &cfg, password)?;
+    let ssh_secrets = resolve_ssh_secrets(&st, &cfg, None, None)?;
     let t = Instant::now();
-    let conn = match connect(&cfg, secrets).await {
+    let (conn, tunnel) = match connect(&st, &cfg, secrets, ssh_secrets, trust_host_key.as_deref()).await {
         Ok(c) => c,
         Err(e) => {
             audit(&st, Category::ConnectionFailed, Outcome::Failure, Some(&cfg), |ev| ev.error_kind = Some(e.kind));
@@ -339,7 +418,12 @@ pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password
     let server = conn.server_info().await?;
     let capabilities = conn.capabilities();
     let id = Uuid::new_v4();
-    st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn) }));
+    if trust_host_key.is_some() {
+        audit(&st, Category::SecurityPolicyChanged, Outcome::Success, Some(&cfg), |e| {
+            e.detail = Some(format!("trusted SSH host key {}", trust_host_key.clone().unwrap_or_default()))
+        });
+    }
+    st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn), _tunnel: tunnel }));
     st.store.touch_connection(cfg.id)?;
     audit(&st, Category::ConnectionOpened, Outcome::Success, Some(&cfg), |e| {
         e.session_id = Some(id.to_string());

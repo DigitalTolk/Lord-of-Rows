@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from './lib/ipc';
+import { withHostKeyTrust } from './lib/hostkey';
 import type { AppInfo, ObjectRef, SessionOpened, StoredConnection, TableTarget } from './lib/types';
 
 export type TabKind = 'query' | 'table' | 'structure' | 'diff' | 'audit' | 'monitor' | 'er' | 'settings' | 'import' | 'backup' | 'history' | 'dashboard';
@@ -88,7 +89,7 @@ export const useApp = create<State>((set, get) => ({
   },
 
   async openSession(connectionId, password) {
-    const s = await api.openSession(connectionId, password ?? null);
+    const s = await withHostKeyTrust((trust) => api.openSession(connectionId, password ?? null, trust));
     let schemas: string[] = [];
     try {
       schemas = s.capabilities.schemas ? await api.listSchemas(s.session_id) : [];

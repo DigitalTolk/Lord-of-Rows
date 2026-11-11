@@ -9,6 +9,7 @@ members = [
   "crates/dbs-drivers",
   "crates/dbs-io",
   "crates/dbs-schema",
+  "crates/dbs-ssh",
   "src-tauri",
 ]
 
@@ -27,6 +28,7 @@ dbs-secrets = { path = "crates/dbs-secrets" }
 dbs-drivers = { path = "crates/dbs-drivers" }
 dbs-io = { path = "crates/dbs-io" }
 dbs-schema = { path = "crates/dbs-schema" }
+dbs-ssh = { path = "crates/dbs-ssh" }
 
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"

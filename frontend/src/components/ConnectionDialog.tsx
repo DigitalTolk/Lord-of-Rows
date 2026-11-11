@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { ConnectionConfig, Engine, EnvironmentKind, TlsMode } from '../lib/types';
 import { errMsg, useApp } from '../store';
+import { withHostKeyTrust } from '../lib/hostkey';
 import { EngineBadge } from './EngineBadge';
 import { Icon } from './icons';
 import { Dialog, Spinner } from './ui';
@@ -96,6 +97,8 @@ export function ConnectionDialog() {
   });
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
+  const [sshPassword, setSshPassword] = useState('');
+  const [sshPassphrase, setSshPassphrase] = useState('');
   const [busy, setBusy] = useState<null | 'test' | 'save' | 'connect'>(null);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [url, setUrl] = useState('');
@@ -135,13 +138,17 @@ export function ConnectionDialog() {
   const autoName = cfg.name.trim() || (isFile ? (cfg.database ?? '').split('/').pop() || ENGINE_LABELS[cfg.engine] : `${cfg.database || ENGINE_LABELS[cfg.engine]}${cfg.host ? ' @ ' + cfg.host : ''}`);
   const finalCfg = { ...cfg, name: autoName };
   const pw = password === '' ? null : password;
-  const remoteHost = cfg.host && !['localhost', '127.0.0.1', '::1'].includes(cfg.host);
+  const remoteHost = cfg.host && !['localhost', '127.0.0.1', '::1'].includes(cfg.host) && !cfg.ssh;
+  // null = keep what is stored in the keychain
+  const sshSecrets = { password: sshPassword === '' ? null : sshPassword, passphrase: sshPassphrase === '' ? null : sshPassphrase };
+  const ssh = cfg.ssh;
+  const setSsh = (patch: Partial<NonNullable<ConnectionConfig['ssh']>>) => set('ssh', ssh ? { ...ssh, ...patch } : null);
 
   const test = async () => {
     setBusy('test');
     setStatus(null);
     try {
-      const r = await api.testConnection(finalCfg, pw);
+      const r = await withHostKeyTrust((trust) => api.testConnection(finalCfg, pw, sshSecrets, trust));
       setStatus({ ok: true, text: t('conn.testOk', { version: r.server.version.split(' on ')[0].split(',')[0], ms: r.latency_ms }) });
     } catch (e) {
       setStatus({ ok: false, text: errMsg(e) });
@@ -154,7 +161,7 @@ export function ConnectionDialog() {
     setBusy(andConnect ? 'connect' : 'save');
     setStatus(null);
     try {
-      const saved = await api.saveConnection(finalCfg, pw, remember);
+      const saved = await api.saveConnection(finalCfg, pw, remember, sshSecrets);
       await reloadConnections();
       if (andConnect) await openSession(saved.id, remember ? undefined : pw ?? undefined);
       else toast('ok', `Saved “${saved.name}”`);
@@ -254,6 +261,52 @@ export function ConnectionDialog() {
           </Row>
         </>
       )}
+      {!isFile && (
+        <>
+          <Row label="">
+            <label className="flex items-center gap-2 text-[0.92rem]">
+              <input
+                type="checkbox"
+                checked={!!ssh}
+                onChange={(e) => set('ssh', e.target.checked ? { host: '', port: 22, user: '', auth: 'password', private_key_path: null, jump_hosts: [], keepalive_secs: 30 } : null)}
+              />
+              Connect through an SSH tunnel
+            </label>
+          </Row>
+          {ssh && (
+            <div className="mb-1 rounded-lg border border-border bg-panel/60 py-1 pr-2">
+              <Row label="SSH host">
+                <input className="input" value={ssh.host} placeholder="bastion.example.com" onChange={(e) => setSsh({ host: e.target.value })} />
+                <span className="text-muted">Port</span>
+                <input className="input w-20" inputMode="numeric" value={ssh.port} onChange={(e) => setSsh({ port: Number(e.target.value.replace(/\D/g, '')) || 22 })} />
+              </Row>
+              <Row label="SSH user"><input className="input" value={ssh.user} autoComplete="off" onChange={(e) => setSsh({ user: e.target.value })} /></Row>
+              <Row label="SSH auth">
+                <div className="seg" role="radiogroup" aria-label="SSH authentication">
+                  {(['password', 'private_key', 'agent'] as const).map((a) => (
+                    <button key={a} role="radio" aria-checked={ssh.auth === a} onClick={() => setSsh({ auth: a })}>{a === 'password' ? 'Password' : a === 'private_key' ? 'Private key' : 'SSH agent'}</button>
+                  ))}
+                </div>
+              </Row>
+              {ssh.auth === 'password' && (
+                <Row label="SSH password" hint={!isNew && !sshPassword ? 'Leave empty to keep the saved SSH password' : undefined}>
+                  <input className="input" type="password" value={sshPassword} autoComplete="new-password" onChange={(e) => setSshPassword(e.target.value)} />
+                </Row>
+              )}
+              {ssh.auth === 'private_key' && (
+                <>
+                  <Row label="Private key"><input className="input font-mono" value={ssh.private_key_path ?? ''} placeholder="~/.ssh/id_ed25519" onChange={(e) => setSsh({ private_key_path: e.target.value || null })} /></Row>
+                  <Row label="Passphrase" hint="Only if the key is encrypted"><input className="input" type="password" value={sshPassphrase} autoComplete="new-password" onChange={(e) => setSshPassphrase(e.target.value)} /></Row>
+                </>
+              )}
+              <Row label="Jump hosts" hint="Optional, comma separated: user@bastion1:22, bastion2">
+                <input className="input font-mono" value={ssh.jump_hosts.join(', ')} onChange={(e) => setSsh({ jump_hosts: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })} />
+              </Row>
+              <p className="ml-[132px] text-[0.8rem] text-muted">Host above is resolved from the SSH server. Host keys are verified; you'll be asked to confirm a new server's fingerprint.</p>
+            </div>
+          )}
+        </>
+      )}
       <Row label="">
         <label className="flex items-center gap-2 text-[0.92rem]">
           <input type="checkbox" checked={cfg.read_only} onChange={(e) => set('read_only', e.target.checked)} />
@@ -274,7 +327,6 @@ export function ConnectionDialog() {
             </>
           )}
           {!isFile && <Row label={t('conn.socket')}><input className="input font-mono" value={cfg.socket_path ?? ''} onChange={(e) => set('socket_path', e.target.value || null)} /></Row>}
-          <Row label="SSH" hint={t('conn.sshUnavailable')}><span className="text-muted">—</span></Row>
           <Row label="Timeouts">
             <input className="input w-20" inputMode="numeric" value={cfg.connect_timeout_secs} onChange={(e) => set('connect_timeout_secs', Number(e.target.value.replace(/\D/g, '')) || 10)} />
             <span className="text-muted">s connect</span>

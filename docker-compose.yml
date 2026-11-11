@@ -14,15 +14,18 @@ services:
       - cargo-target:/target
       - node-modules:/work/frontend/node_modules
       - ./tests/certs:/certs:ro
+      - ./tests/ssh:/ssh-keys:ro
     environment:
       DBS_IT: "1"
       DBS_IT_PG_HOST: postgres
       DBS_IT_MYSQL_HOST: mysql
       DBS_IT_REDIS_HOST: redis
+      DBS_IT_SSH_HOST: sshd
     depends_on:
       postgres: { condition: service_healthy }
       mysql: { condition: service_healthy }
       redis: { condition: service_started }
+      sshd: { condition: service_started }
     command: sleep infinity
 
   # Preview the Linux build in a browser: http://localhost:6080/vnc.html?autoconnect=1&resize=scale
@@ -41,6 +44,16 @@ services:
       postgres: { condition: service_healthy }
       mysql: { condition: service_healthy }
       redis: { condition: service_started }
+
+  # Test-only SSH bastion (user tunnel / tunnelpw; keys in tests/ssh).
+  sshd:
+    build:
+      context: docker
+      dockerfile: Dockerfile.sshd
+    image: dbstudio-sshd:latest
+    volumes:
+      - ./tests/ssh:/keys
+    ports: ["127.0.0.1:52222:22"]
 
   postgres:
     image: postgres:16

@@ -1,0 +1,17 @@
+[package]
+name = "dbs-ssh"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbs-core.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+russh = "0.65"
+
+[dev-dependencies]
+dbs-drivers.workspace = true
+tempfile = "3"
+uuid.workspace = true
+tokio-util.workspace = true

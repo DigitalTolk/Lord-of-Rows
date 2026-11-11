@@ -16,6 +16,8 @@ pub struct Session {
     pub id: Uuid,
     pub config: ConnectionConfig,
     pub conn: Arc<dyn DatabaseConnection>,
+    /// Keeps the SSH tunnel open for the lifetime of the session.
+    pub _tunnel: Option<dbs_ssh::Tunnel>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -41,6 +43,8 @@ pub struct AppState {
     pub sessions: Mutex<HashMap<Uuid, Arc<Session>>>,
     pub running: Mutex<HashMap<String, CancellationToken>>,
     pub grants: Mutex<HashMap<String, FileGrant>>,
+    /// App-managed SSH known_hosts (separate from ~/.ssh/known_hosts).
+    pub known_hosts: PathBuf,
 }
 
 impl AppState {

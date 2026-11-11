@@ -1,0 +1,11 @@
+# Test-only OpenSSH server (bastion) for SSH-tunnel integration/E2E tests.
+FROM debian:bookworm-slim
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server \
+ && rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd \
+ && useradd -m -s /bin/bash tunnel && echo 'tunnel:tunnelpw' | chpasswd \
+ && printf 'PasswordAuthentication yes\nPubkeyAuthentication yes\nAllowTcpForwarding yes\nPermitRootLogin no\nStrictModes no\nAuthorizedKeysFile /keys/authorized_keys\nUsePAM no\n' > /etc/ssh/sshd_config.d/test.conf
+CMD ["bash", "-c", "set -e; mkdir -p /keys; \
+  [ -f /keys/id_plain ] || ssh-keygen -q -t ed25519 -N '' -C plain -f /keys/id_plain; \
+  [ -f /keys/id_secret ] || ssh-keygen -q -t ed25519 -N 'keypass' -C secret -f /keys/id_secret; \
+  cat /keys/id_plain.pub /keys/id_secret.pub > /keys/authorized_keys; chmod 644 /keys/*; \
+  exec /usr/sbin/sshd -D -e"]

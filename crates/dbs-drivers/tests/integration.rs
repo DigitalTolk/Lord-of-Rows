@@ -39,6 +39,7 @@ fn cfg(engine: Engine, host: Option<&str>, db: Option<&str>) -> ConnectionConfig
         connect_timeout_secs: 10,
         query_timeout_secs: None,
         init_sql: None,
+        tunnel: None,
     }
 }
 

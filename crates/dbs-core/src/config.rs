@@ -195,6 +195,11 @@ pub struct ConnectionConfig {
     /// Statements run once after connect. Subject to the same safety policy as user SQL.
     #[serde(default)]
     pub init_sql: Option<String>,
+    /// Runtime only (never saved): local SSH-tunnel endpoint. Drivers that can
+    /// separate "address to dial" from "hostname to verify" (Postgres) dial this
+    /// while still verifying TLS against `host`.
+    #[serde(skip)]
+    pub tunnel: Option<(String, u16)>,
 }
 
 fn default_connect_timeout() -> u32 {
@@ -226,7 +231,7 @@ impl ConnectionConfig {
                 return Err(DbError::invalid("host contains invalid characters"));
             }
         }
-        if self.tls.mode == TlsMode::Disable && self.ssh.is_none() {
+        if self.tls.mode == TlsMode::Disable && self.ssh.is_none() && self.tunnel.is_none() {
             if let Some(h) = &self.host {
                 if !is_loopback(h) && self.environment == EnvironmentKind::Production {
                     return Err(DbError::invalid("TLS cannot be disabled for a non-local production connection without an SSH tunnel"));
@@ -297,6 +302,7 @@ mod tests {
             connect_timeout_secs: 10,
             query_timeout_secs: None,
             init_sql: None,
+            tunnel: None,
         }
     }
 
@@ -311,6 +317,10 @@ mod tests {
         c.tls.mode = TlsMode::Disable;
         assert!(c.validate().is_err());
         c.host = Some("localhost".into());
+        assert!(c.validate().is_ok());
+        // An active SSH tunnel (runtime endpoint) counts as an encrypted path.
+        c.host = Some("db.internal".into());
+        c.tunnel = Some(("127.0.0.1".into(), 40000));
         assert!(c.validate().is_ok());
     }
 

@@ -25,17 +25,18 @@ export const api = {
   appInfo: () => call<T.AppInfo>('app_info'),
 
   listConnections: () => call<T.StoredConnection[]>('list_connections'),
-  saveConnection: (config: T.ConnectionConfig, password: string | null, rememberPassword = true) =>
-    call<T.ConnectionConfig>('save_connection', { req: { config, password, remember_password: rememberPassword } }),
+  saveConnection: (config: T.ConnectionConfig, password: string | null, rememberPassword = true, ssh: { password?: string | null; passphrase?: string | null } = {}) =>
+    call<T.ConnectionConfig>('save_connection', { req: { config, password, remember_password: rememberPassword, ssh_password: ssh.password ?? null, ssh_passphrase: ssh.passphrase ?? null } }),
   deleteConnection: (id: string) => call<void>('delete_connection', { id }),
   reorderConnections: (ids: string[]) => call<void>('reorder_connections', { ids }),
-  testConnection: (config: T.ConnectionConfig, password: string | null) =>
-    call<{ server: T.ServerInfo; latency_ms: number }>('test_connection', { config, password }),
+  testConnection: (config: T.ConnectionConfig, password: string | null, ssh: { password?: string | null; passphrase?: string | null } = {}, trustHostKey?: string) =>
+    call<{ server: T.ServerInfo; latency_ms: number }>('test_connection', { config, password, sshPassword: ssh.password ?? null, sshPassphrase: ssh.passphrase ?? null, trustHostKey: trustHostKey ?? null }),
   exportConnections: () => call<string>('export_connections'),
   importConnections: (json: string) => call<number>('import_connections', { json }),
   parseConnectionUrl: (url: string) => call<{ config: T.ConnectionConfig; password?: string | null }>('parse_connection_url', { url }),
 
-  openSession: (connectionId: string, password?: string | null) => call<T.SessionOpened>('open_session', { connectionId, password: password ?? null }),
+  openSession: (connectionId: string, password?: string | null, trustHostKey?: string) =>
+    call<T.SessionOpened>('open_session', { connectionId, password: password ?? null, trustHostKey: trustHostKey ?? null }),
   closeSession: (sessionId: string) => call<void>('close_session', { sessionId }),
   pingSession: (sessionId: string) => call<number>('ping_session', { sessionId }),
 
