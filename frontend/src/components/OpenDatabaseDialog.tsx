@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { create } from 'zustand';
 import { api } from '../lib/ipc';
@@ -36,6 +36,14 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
   const [schemas, setSchemas] = useState<string[]>(s.schemas);
   const [databases, setDatabases] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Keep the caret in the search box: the list load re-renders the dialog and WebKit can
+  // leave focus on the toolbar button that opened it.
+  useEffect(() => {
+    if (loading) return;
+    const el = searchRef.current;
+    if (el && document.activeElement !== el && !el.closest('[role=dialog]')?.contains(document.activeElement)) el.focus();
+  }, [loading]);
   const [q, setQ] = useState('');
   const [idx, setIdx] = useState<number | null>(null);
   const [want, setWant] = useState<string | null>(s.activeSchema);
@@ -154,6 +162,7 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
       <div className="relative mb-2">
         <Icon name="search" size={13} className="absolute start-2 top-1/2 -translate-y-1/2 text-muted" />
         <input
+          ref={searchRef}
           className="input h-8 ps-7"
           data-autofocus
           placeholder={t('openDb.search')}
