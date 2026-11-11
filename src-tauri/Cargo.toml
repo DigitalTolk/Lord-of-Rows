@@ -3,7 +3,7 @@ name = "dbstudio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "DB Studio - cross-platform database management"
+description = "Lord of the Rows - cross-platform database management"
 
 [lib]
 name = "dbstudio_lib"

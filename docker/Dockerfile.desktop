@@ -1,4 +1,4 @@
-# Runs the Linux build of DB Studio on a virtual display, viewable in a browser via noVNC.
+# Runs the Linux build of Lord of the Rows on a virtual display, viewable in a browser via noVNC.
 # For previewing only; macOS/Windows builds must be produced on those platforms.
 FROM dbstudio-dev:latest
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \

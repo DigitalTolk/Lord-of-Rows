@@ -1,4 +1,4 @@
-# DB Studio
+# Lord of the Rows
 
 A desktop database client: Tauri 2 (Rust backend) + React/TypeScript.
 Original code and artwork.

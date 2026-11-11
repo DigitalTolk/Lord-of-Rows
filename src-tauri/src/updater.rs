@@ -165,7 +165,7 @@ fn map_err(e: tauri_plugin_updater::Error) -> DbError {
     let msg = e.to_string();
     if is_signature_error(&e) {
         return DbError::new(ErrorKind::PolicyBlocked, format!("update rejected: signature verification failed ({msg})"))
-            .with_hint("The downloaded update is not signed by the DB Studio release key. Nothing was installed.");
+            .with_hint("The downloaded update is not signed by the Lord of the Rows release key. Nothing was installed.");
     }
     match e {
         E::Reqwest(_) | E::Network(_) => DbError::new(ErrorKind::Connection, format!("update server unreachable: {msg}")),

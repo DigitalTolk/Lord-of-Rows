@@ -1,6 +1,6 @@
-# Releasing DB Studio updates
+# Releasing Lord of the Rows updates
 
-DB Studio updates through [`tauri-plugin-updater`](https://v2.tauri.app/plugin/updater/) (v2).
+Lord of the Rows updates through [`tauri-plugin-updater`](https://v2.tauri.app/plugin/updater/) (v2).
 Every update artifact is signed with a **minisign** key; the app embeds the matching public key
 (`src-tauri/tauri.conf.json` → `plugins.updater.pubkey`) and refuses to install anything whose
 signature does not verify. `requireSignedVersion: true` additionally binds each signature to the
@@ -58,7 +58,7 @@ Produced artifacts (each with a `.sig` next to it):
 
 | Platform | Updater artifact | Manifest key(s) |
 |---|---|---|
-| macOS | `bundle/macos/DB Studio.app.tar.gz` | `darwin-aarch64`, `darwin-x86_64` |
+| macOS | `bundle/macos/Lord of the Rows.app.tar.gz` | `darwin-aarch64`, `darwin-x86_64` |
 | Windows | `bundle/nsis/*-setup.exe` and/or `bundle/msi/*.msi` | `windows-x86_64` (or `windows-x86_64-nsis` / `-msi`) |
 | Linux | `bundle/appimage/*.AppImage`, `bundle/deb/*.deb` | `linux-x86_64-appimage`, `linux-x86_64-deb` (or `linux-x86_64`) |
 

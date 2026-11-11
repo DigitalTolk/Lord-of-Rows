@@ -62,7 +62,7 @@ impl Prompt {
     }
 }
 
-const BASE_SYSTEM: &str = "You are a database assistant inside DB Studio, a desktop SQL client. \
+const BASE_SYSTEM: &str = "You are a database assistant inside Lord of the Rows, a desktop SQL client. \
 You only see the text below; you cannot run queries or see data. Be concise and accurate. \
 String and number literals may have been replaced with ? for privacy. \
 When you include SQL, put it in a single ```sql fenced block. \

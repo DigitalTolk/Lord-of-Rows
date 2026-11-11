@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DB Studio",
+  "productName": "Lord of the Rows",
   "version": "0.1.0",
   "identifier": "dev.dbstudio.app",
   "build": {

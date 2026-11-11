@@ -9,5 +9,5 @@ after(async () => b?.deleteSession());
 test('app launches and shows the connection launcher', async () => {
   await waitText(b, 'Create a new connection');
   const text = await pageText(b);
-  assert.match(text, /DB Studio/);
+  assert.match(text, /Lord of the Rows/);
 });

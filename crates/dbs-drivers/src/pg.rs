@@ -126,7 +126,7 @@ impl DatabaseDriver for PgDriver {
             pc.password(p.as_bytes());
         }
         pc.dbname(cfg.database.as_deref().unwrap_or("postgres"));
-        pc.application_name("DB Studio");
+        pc.application_name("Lord of the Rows");
         pc.connect_timeout(Duration::from_secs(cfg.connect_timeout_secs as u64));
         pc.keepalives(true);
         pc.keepalives_idle(Duration::from_secs(30));

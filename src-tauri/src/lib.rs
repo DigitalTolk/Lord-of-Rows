@@ -64,7 +64,7 @@ pub fn run() {
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
             tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
-                .title("DB Studio")
+                .title("Lord of the Rows")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(900.0, 600.0)
                 .on_navigation(is_app_url)
@@ -139,5 +139,5 @@ pub fn run() {
             updater::restart_after_update,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running DB Studio");
+        .expect("error while running Lord of the Rows");
 }

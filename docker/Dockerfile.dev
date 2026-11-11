@@ -1,4 +1,4 @@
-# Development/CI toolchain image for DB Studio.
+# Development/CI toolchain image for Lord of the Rows.
 # Contains Rust (stable), Node 22, and the Linux system libraries Tauri 2 needs to compile.
 # It is used for compiling, linting, unit tests and integration tests against the
 # database containers in docker-compose.yml. It CANNOT produce signed macOS or

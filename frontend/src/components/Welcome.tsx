@@ -6,6 +6,7 @@ import { errMsg, useApp } from '../store';
 import { ask } from './ask';
 import { ENGINE_LABELS } from './ConnectionDialog';
 import { EngineBadge } from './EngineBadge';
+import logo from '../assets/logo.svg';
 import { Icon } from './icons';
 import { EnvBadge, Spinner } from './ui';
 import { ThemeToggle } from './ThemeToggle';
@@ -73,9 +74,7 @@ export function Welcome() {
       <div className="flex h-[min(560px,90%)] w-[min(860px,100%)] overflow-hidden rounded-xl border border-border bg-bg shadow-[0_10px_40px_rgb(var(--shadow)/0.12)]">
         {/* Brand / actions */}
         <div className="flex w-[300px] shrink-0 flex-col items-center border-r border-border bg-panel px-6 py-8 text-center">
-          <div className="mb-3 flex h-20 w-20 items-center justify-center rounded-[22%] bg-gradient-to-b from-accent-solid/80 to-accent-solid text-on-solid shadow-lg">
-            <Icon name="db" size={44} strokeWidth={1.6} />
-          </div>
+          <img src={logo} alt="" width={88} height={88} className="mb-3 h-[88px] w-[88px] drop-shadow-lg" draggable={false} />
           <h1 className="text-xl font-semibold">{t('app.name')}</h1>
           <p className="mb-6 text-[0.85rem] text-muted">Version {info?.version}</p>
           <div className="flex w-full flex-col gap-2">
