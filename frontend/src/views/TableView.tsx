@@ -2,14 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { confirmDecision } from '../components/confirm';
 import { DataGrid } from '../components/DataGrid';
-import { copyAs } from '../components/Results';
 import { Dialog, ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { StructureView } from './StructureView';
 import { addRow, buildChanges, emptyStaged, History, pendingCount, setCell, setInsertedCell, toggleDelete, type StagedState } from '../lib/changes';
 import { api } from '../lib/ipc';
 import type { ExportFormat, FilterCondition, FilterOp, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
-import { parseInput } from '../lib/value';
+import { editableText, parseInput } from '../lib/value';
+import { useTableGridActions, type GridFilter } from './useTableGridActions';
 import { errMsg, useApp, type Tab } from '../store';
 
 const OPS: [FilterOp, string][] = [['eq', '='], ['ne', '≠'], ['lt', '<'], ['le', '≤'], ['gt', '>'], ['ge', '≥'], ['contains', 'contains'], ['starts_with', 'starts with'], ['ends_with', 'ends with'], ['is_null', 'is NULL'], ['is_not_null', 'is not NULL'], ['in', 'in (a,b,c)']];
@@ -137,17 +137,13 @@ export function TableView({ tab }: { tab: Tab }) {
     }
   };
 
-  const copy = async (rows: number[], cols: string[], fmt: ExportFormat = 'tsv') => {
-    if (!rs) return;
-    const ci = cols.length ? cols.map((c) => columns.findIndex((x) => x.name === c)) : columns.map((_, i) => i);
-    const data = (rows.length ? rows.filter((r) => r < rs.rows.length).map((r) => rs.rows[r]) : rs.rows).map((r) => ci.map((i) => r[i]));
-    try {
-      await copyAs(ci.map((i) => columns[i]), data, fmt, target.table);
-      toast('info', `Copied ${data.length} row(s)`);
-    } catch (e) {
-      toast('error', errMsg(e));
-    }
+  // Grid context menu (Quick Filter, FK links): adapter onto the tab's filter mechanism.
+  const setGridFilters = (fs: GridFilter[]) => {
+    setFilters(fs.map((f) => ({ column: f.column, op: f.op, text: f.value ? editableText(f.value) : '' })));
+    setApplied(fs.map((f) => ({ column: f.column, op: f.op, value: f.value ?? null, values: [] })));
+    setPage(0);
   };
+  const gridActions = useTableGridActions({ tab, session: s, target, desc, rs, staged, change, count, editable, reload: () => void load(), setFilters: setGridFilters });
 
   const exportAll = async (format: ExportFormat) => {
     if (!s) return;
@@ -277,7 +273,7 @@ export function TableView({ tab }: { tab: Tab }) {
           onEdit={onEdit}
           onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
           onSelectRows={setSelRows}
-          onCopy={(r, c) => copy(r, c)}
+          {...gridActions}
           ariaLabel={`Table ${header}`}
         />
       ) : null}

@@ -78,6 +78,9 @@ export const api = {
     call<T.PickedFile | null>('pick_file', { save, defaultName: defaultName ?? null, extensions }),
   exportTable: (sessionId: string, target: T.TableTarget, filters: T.FilterCondition[], grant: string, options: T.ExportOptions, gzip: boolean) =>
     call<{ rows: number; path: string }>('export_table', { sessionId, target, filters, grant, options, gzip }),
+  /** Write rows already loaded in the UI (e.g. the current grid page) to a file granted by pickFile. */
+  exportRows: (sessionId: string, target: T.TableTarget, columns: T.ColumnMeta[], rows: T.Value[][], grant: string, options: T.ExportOptions) =>
+    call<{ rows: number; path: string }>('export_rows', { sessionId, target, columns, rows, grant, options }),
   exportQuery: (sessionId: string, sql: string, grant: string, options: T.ExportOptions, gzip: boolean) =>
     call<{ rows: number; path: string }>('export_query', { sessionId, sql, grant, options, gzip }),
   importPreview: (grant: string, options: T.ImportOptions) => call<T.ImportPreview>('import_preview', { grant, options }),
