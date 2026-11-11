@@ -8,6 +8,8 @@
 #      (same setup as the ECS Shell / vibe-staff releases).
 #   2. otherwise a notarytool keychain profile (NOTARY_PROFILE, default "lotr-notary").
 #
+# CI: .github/workflows/release.yml runs this same script on a version tag (secrets in the env).
+#
 # Usage:
 #   scripts/release-macos.sh                 # build + sign + notarize -> ~/Downloads
 #   NOTARY_PROFILE=other scripts/release-macos.sh
@@ -57,7 +59,9 @@ if [ -z "${SKIP_BUILD:-}" ]; then
   echo "==> Building frontend"
   (cd frontend && npm ci --no-fund --silent && npx vite build)
   CFG='{"build":{"beforeBuildCommand":""}}'
-  if [ -f "$HOME/.dbstudio/updater.key" ]; then
+  if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"   # CI secret
+  elif [ -f "$HOME/.dbstudio/updater.key" ]; then
     export TAURI_SIGNING_PRIVATE_KEY="$(cat "$HOME/.dbstudio/updater.key")" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
   else
     CFG='{"build":{"beforeBuildCommand":""},"bundle":{"createUpdaterArtifacts":false}}'

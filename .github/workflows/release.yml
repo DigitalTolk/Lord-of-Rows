@@ -1,0 +1,115 @@
+# Release: on a version tag (vX.Y.Z), build the universal macOS app, sign it with
+# DigitalTolk's Developer ID, notarize + staple the app and the DMG, publish the
+# GitHub release, and ask DigitalTolk/homebrew-tools to open its cask-update PR.
+#
+# Same steps as a local release (scripts/release-macos.sh + scripts/publish-homebrew.sh).
+#
+# Secrets (repository or organisation level; same names as DigitalTolk/ex-electron):
+#   MAC_CSC_LINK                  base64 of the Developer ID Application .p12
+#   MAC_CSC_KEY_PASSWORD          password of that .p12
+#   APPLE_ID                      Apple ID used for notarization
+#   APPLE_APP_SPECIFIC_PASSWORD   app-specific password of that Apple ID
+#   APPLE_TEAM_ID                 H8S8C5U3W2
+#   TAURI_SIGNING_PRIVATE_KEY     (optional) updater signing key; without it no updater artifacts
+#   HOMEBREW_TAP_TOKEN            (optional) token allowed to run workflows in DigitalTolk/homebrew-tools;
+#                                 without it the tap's 6-hourly check picks the release up
+#
+# Release:  bump the version in src-tauri/tauri.conf.json, commit, then
+#           git tag v0.1.2 && git push origin v0.1.2
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      KEYCHAIN: lotr-release.keychain-db
+      OUT_DIR: ${{ github.workspace }}/dist
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          P12: ${{ secrets.MAC_CSC_LINK }}
+          P12_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          missing=()
+          for v in P12 P12_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing secrets: ${missing[*]} (MAC_CSC_LINK / MAC_CSC_KEY_PASSWORD / APPLE_*)"
+            exit 1
+          fi
+
+      - name: Tag matches app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          app="v$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          [ "$app" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME does not match tauri.conf.json version $app"; exit 1; }
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Import Developer ID certificate into a temporary keychain
+        env:
+          P12: ${{ secrets.MAC_CSC_LINK }}
+          P12_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          [ -n "$IDENTITY" ] || { echo "::error::No 'Developer ID Application' identity in MAC_CSC_LINK"; exit 1; }
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "Signing as: $IDENTITY"
+
+      - name: Build, sign, notarize, staple (universal DMG)
+        run: scripts/release-macos.sh
+
+      - name: Publish GitHub release and update Homebrew
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          DMG="$OUT_DIR/LordOfTheRows-$VERSION-universal.dmg" TAP_TOKEN="$TAP_TOKEN" scripts/publish-homebrew.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lord-of-the-rows-macos-universal
+          path: dist/*.dmg
+
+      - name: Remove temporary keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN" 2>/dev/null || true

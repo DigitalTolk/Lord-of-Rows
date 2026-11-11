@@ -43,6 +43,7 @@ else
 fi
 
 echo "==> Asking $TAP to update the cask"
-gh workflow run update-lord-of-the-rows-cask.yml --repo "$TAP" \
+# In CI the default token cannot start workflows in another repo: use TAP_TOKEN when given.
+env ${TAP_TOKEN:+GH_TOKEN="$TAP_TOKEN"} gh workflow run update-lord-of-the-rows-cask.yml --repo "$TAP" \
   && echo "    The tap will open an 'Update lord-of-the-rows cask' PR; merge it to ship $VERSION." \
   || echo "    Could not trigger the workflow; it runs every 6 h anyway."
