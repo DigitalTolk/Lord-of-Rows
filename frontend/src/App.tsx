@@ -6,6 +6,7 @@ import { ConnectionDialog } from './components/ConnectionDialog';
 import { SafetyDialog } from './components/SafetyDialog';
 import { CommandPalette, panelDomId, StatusBar, TabBar, tabDomId, TopBar } from './components/Shell';
 import { Welcome } from './components/Welcome';
+import { OpenDatabaseHost, useDbPicker } from './components/OpenDatabaseDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
@@ -143,6 +144,7 @@ export default function App() {
       const cur = tabs.findIndex((x) => x.id === st.activeTab);
       let handled = true;
       if (is('palette') || is('quickOpen')) useApp.setState({ paletteOpen: !st.paletteOpen });
+      else if (is('openDatabase') && s) useDbPicker.setState({ open: !useDbPicker.getState().open });
       else if (is('newQuery')) st.openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' });
       else if (is('closeTab') && st.activeTab) st.closeTab(st.activeTab);
       else if (is('reopenTab')) st.reopenClosedTab();
@@ -259,6 +261,7 @@ export default function App() {
       <StatusBar />
       {st.connectionDialog && <ConnectionDialog key={JSON.stringify(st.connectionDialog)} />}
       {st.paletteOpen && <CommandPalette />}
+      <OpenDatabaseHost />
       {pending && <SafetyDialog pending={pending} />}
       <AskHost />
       {/* Live region stays mounted so screen readers announce toasts added later. */}

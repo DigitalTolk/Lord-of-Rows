@@ -22,6 +22,8 @@ vi.mock('./lib/ipc', () => {
     listHistory: [],
     listSnippets: [],
     pingSession: 3,
+    listSchemas: ['public', 'audit', 'information_schema', 'pg_catalog'],
+    listDatabases: ['app', 'postgres'],
   };
   const api = new Proxy({}, { get: (_t, k: string) => async () => (k in defaults ? defaults[k] : []) });
   return { api, IpcError: class extends Error {} };
@@ -40,6 +42,7 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: async () => () => undefined })
 import App from './App';
 import { ask } from './components/ask';
 import { confirmDecision } from './components/confirm';
+import { openDatabasePicker } from './components/OpenDatabaseDialog';
 import { useApp, type OpenSession } from './store';
 
 const SESSION: OpenSession = {
@@ -170,6 +173,30 @@ describe('axe: no serious or critical violations', () => {
     });
     expect(screen.getByRole('combobox', { name: 'Command palette' })).toBeTruthy();
     await expectAccessible('CommandPalette');
+  });
+
+  it('open database dialog', async () => {
+    await renderApp();
+    await openWorkspace();
+    const opener = screen.getByRole('button', { name: 'Open database' });
+    act(() => opener.focus());
+    await act(async () => {
+      fireEvent.click(opener);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('dialog', { name: 'Open database' })).toBeTruthy();
+    const input = screen.getByRole('combobox', { name: 'Search for database…' });
+    expect(document.activeElement).toBe(input);
+    expect(screen.getByRole('listbox', { name: 'Available databases' })).toBeTruthy();
+    await expectAccessible('OpenDatabaseDialog');
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Escape' });
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+    openDatabasePicker(false);
   });
 
   it('Arabic (RTL) launcher and workspace', async () => {

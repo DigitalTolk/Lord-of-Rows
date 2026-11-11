@@ -125,7 +125,9 @@
       "extension": "Extensions",
       "key": "Keys",
       "collection": "Collections"
-    }
+    },
+    "pendingChanges_one": "{{count}} pending change",
+    "pendingChanges_other": "{{count}} pending changes"
   },
   "query": {
     "newTab": "New query",
@@ -739,7 +741,8 @@
     "settings": "Settings",
     "toggleSidebar": "Toggle sidebar",
     "newConnection": "New connection",
-    "focusMode": "Focus mode"
+    "focusMode": "Focus mode",
+    "openDatabase": "Open database"
   },
   "ssh": {
     "trustTitle": "Trust this SSH host?",
@@ -1060,5 +1063,24 @@
     "sidebarSections": "Sidebar",
     "rowsSelectedShort_one": "{{formatted}} row selected",
     "rowsSelectedShort_other": "{{formatted}} rows selected"
+  },
+  "openDb": {
+    "title": "Open database",
+    "search": "Search for database…",
+    "results": "Available databases",
+    "databases": "Databases",
+    "schemasIn": "Schemas in {{db}}",
+    "system": "System",
+    "otherDatabases": "Other databases on this server",
+    "current": "current",
+    "noMatches": "No matching databases",
+    "none": "This connection has no databases to open",
+    "new": "New…",
+    "open": "Open",
+    "newDatabase": "New database",
+    "newSchema": "New schema",
+    "newHint": "Name (it is quoted for you; you will review the statement before it runs)",
+    "created": "Created {{name}}",
+    "paletteLabel": "Open database…"
   }
 }

@@ -42,6 +42,18 @@ impl Dialect {
         })
     }
 
+    /// Statement that creates a new database (MySQL family: `CREATE DATABASE`) or a new
+    /// schema in the connected database (Postgres family: `CREATE SCHEMA`), with the name
+    /// quoted for the dialect. Surrounding whitespace is trimmed; other dialects are unsupported.
+    pub fn create_database_sql(self, name: &str) -> DbResult<String> {
+        let name = name.trim();
+        match self {
+            Dialect::MySql => Ok(format!("CREATE DATABASE {};", self.quote_ident(name)?)),
+            Dialect::Postgres => Ok(format!("CREATE SCHEMA {};", self.quote_ident(name)?)),
+            _ => Err(DbError::unsupported("creating databases for this engine")),
+        }
+    }
+
     pub fn qualified(self, t: &TableTarget) -> DbResult<String> {
         match &t.schema {
             Some(s) if !s.is_empty() => Ok(format!("{}.{}", self.quote_ident(s)?, self.quote_ident(&t.table)?)),
@@ -247,6 +259,20 @@ mod tests {
         assert!(Dialect::Postgres.quote_ident("").is_err());
         assert!(Dialect::Postgres.quote_ident("a\0b").is_err());
         assert!(Dialect::Postgres.quote_ident(&"x".repeat(129)).is_err());
+    }
+
+    #[test]
+    fn create_database_sql_quotes_per_dialect() {
+        assert_eq!(Dialect::MySql.create_database_sql("shop").unwrap(), "CREATE DATABASE `shop`;");
+        assert_eq!(Dialect::MySql.create_database_sql(" a`b; DROP DATABASE x ").unwrap(), "CREATE DATABASE `a``b; DROP DATABASE x`;");
+        assert_eq!(Dialect::Postgres.create_database_sql("Sales 2026").unwrap(), "CREATE SCHEMA \"Sales 2026\";");
+        assert_eq!(Dialect::Postgres.create_database_sql("a\"; DROP SCHEMA public; --").unwrap(), "CREATE SCHEMA \"a\"\"; DROP SCHEMA public; --\";");
+        assert!(Dialect::Postgres.create_database_sql("   ").is_err());
+        assert!(Dialect::MySql.create_database_sql("a\0b").is_err());
+        assert!(Dialect::MySql.create_database_sql(&"x".repeat(129)).is_err());
+        for d in [Dialect::Sqlite, Dialect::SqlServer, Dialect::Generic] {
+            assert_eq!(d.create_database_sql("x").unwrap_err().kind, crate::ErrorKind::Unsupported);
+        }
     }
 
     #[test]

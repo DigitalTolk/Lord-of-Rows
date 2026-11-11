@@ -125,7 +125,9 @@
       "extension": "Erweiterungen",
       "key": "Schlüssel",
       "collection": "Collections"
-    }
+    },
+    "pendingChanges_one": "{{count}} ausstehende Änderung",
+    "pendingChanges_other": "{{count}} ausstehende Änderungen"
   },
   "query": {
     "newTab": "Neue Abfrage",
@@ -739,7 +741,8 @@
     "settings": "Einstellungen",
     "toggleSidebar": "Seitenleiste ein-/ausblenden",
     "newConnection": "Neue Verbindung",
-    "focusMode": "Fokusmodus"
+    "focusMode": "Fokusmodus",
+    "openDatabase": "Datenbank öffnen"
   },
   "ssh": {
     "trustTitle": "Diesem SSH-Host vertrauen?",
@@ -1060,5 +1063,24 @@
     "sidebarSections": "Seitenleiste",
     "rowsSelectedShort_one": "{{formatted}} Zeile ausgewählt",
     "rowsSelectedShort_other": "{{formatted}} Zeilen ausgewählt"
+  },
+  "openDb": {
+    "title": "Datenbank öffnen",
+    "search": "Datenbank suchen…",
+    "results": "Verfügbare Datenbanken",
+    "databases": "Datenbanken",
+    "schemasIn": "Schemas in {{db}}",
+    "system": "System",
+    "otherDatabases": "Weitere Datenbanken auf diesem Server",
+    "current": "aktuell",
+    "noMatches": "Keine passenden Datenbanken",
+    "none": "Diese Verbindung hat keine Datenbanken zum Öffnen",
+    "new": "Neu…",
+    "open": "Öffnen",
+    "newDatabase": "Neue Datenbank",
+    "newSchema": "Neues Schema",
+    "newHint": "Name (wird automatisch maskiert; Sie prüfen die Anweisung vor der Ausführung)",
+    "created": "{{name}} erstellt",
+    "paletteLabel": "Datenbank öffnen…"
   }
 }

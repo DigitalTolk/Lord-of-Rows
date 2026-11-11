@@ -47,14 +47,17 @@ export const api = {
   importConnections: (json: string) => call<number>('import_connections', { json }),
   parseConnectionUrl: (url: string) => call<{ config: T.ConnectionConfig; password?: string | null }>('parse_connection_url', { url }),
 
-  openSession: (connectionId: string, password?: string | null, trustHostKey?: string) =>
-    call<T.SessionOpened>('open_session', { connectionId, password: password ?? null, trustHostKey: trustHostKey ?? null }),
+  /** `database` (Postgres family only) opens the saved connection on another database of the same server. */
+  openSession: (connectionId: string, password?: string | null, trustHostKey?: string, database?: string | null) =>
+    call<T.SessionOpened>('open_session', { connectionId, password: password ?? null, trustHostKey: trustHostKey ?? null, database: database ?? null }),
   closeSession: (sessionId: string) => call<void>('close_session', { sessionId }),
   pingSession: (sessionId: string) => call<number>('ping_session', { sessionId }),
 
   listDatabases: (sessionId: string) => call<string[]>('list_databases', { sessionId }),
   listSchemas: (sessionId: string) => call<string[]>('list_schemas', { sessionId }),
   useSchema: (sessionId: string, schema: string) => call<void>('use_schema', { sessionId, schema }),
+  /** `CREATE DATABASE`/`CREATE SCHEMA` text, quoted in Rust; run it through evaluateSql + runMigration. */
+  createDatabaseSql: (sessionId: string, name: string) => call<string>('create_database_sql', { sessionId, name }),
   listObjects: (sessionId: string, schema: string | null) => call<T.ObjectRef[]>('list_objects', { sessionId, schema }),
   describeTable: (sessionId: string, target: T.TableTarget) => call<T.TableDescription>('describe_table', { sessionId, target }),
   objectDdl: (sessionId: string, object: T.ObjectRef) => call<string>('object_ddl', { sessionId, object }),

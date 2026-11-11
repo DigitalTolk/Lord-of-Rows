@@ -66,7 +66,8 @@ interface State {
   init(): Promise<void>;
   reloadConnections(): Promise<void>;
   setSetting(key: string, value: unknown): Promise<void>;
-  openSession(connectionId: string, password?: string): Promise<string>;
+  /** `database` (Postgres family): open the saved connection on another database of the same server. */
+  openSession(connectionId: string, password?: string, database?: string): Promise<string>;
   closeSession(sessionId: string): Promise<void>;
   loadObjects(sessionId: string, schema: string | null): Promise<void>;
   setActiveSchema(sessionId: string, schema: string): void;
@@ -118,8 +119,8 @@ export const useApp = create<State>((set, get) => ({
     set({ settings: { ...get().settings, [key]: value } });
   },
 
-  async openSession(connectionId, password) {
-    const s = await withHostKeyTrust((trust) => api.openSession(connectionId, password ?? null, trust));
+  async openSession(connectionId, password, database) {
+    const s = await withHostKeyTrust((trust) => api.openSession(connectionId, password ?? null, trust, database ?? null));
     let schemas: string[] = [];
     try {
       schemas = s.capabilities.schemas ? await api.listSchemas(s.session_id) : [];
