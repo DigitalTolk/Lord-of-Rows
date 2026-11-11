@@ -1187,6 +1187,7 @@
     "noHistory": "لا يوجد سجل استعلامات لهذا الاتصال.",
     "schemasRail": "قواعد البيانات",
     "resizeDetail": "تغيير حجم تفاصيل الصف",
+    "toggleDetailPanel": "إظهار أو إخفاء تفاصيل الصف",
     "sidebarSections": "الشريط الجانبي",
     "rowsSelectedShort_zero": "لم يُحدَّد أي صف",
     "rowsSelectedShort_one": "صف واحد محدد",

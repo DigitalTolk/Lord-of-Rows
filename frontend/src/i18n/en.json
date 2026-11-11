@@ -1063,6 +1063,7 @@
     "noHistory": "No query history for this connection.",
     "schemasRail": "Databases",
     "resizeDetail": "Resize row details",
+    "toggleDetailPanel": "Toggle row details",
     "sidebarSections": "Sidebar",
     "rowsSelectedShort_one": "{{count}} rows selected",
     "rowsSelectedShort_other": "{{count}} rows selected"

@@ -1094,6 +1094,7 @@
     "noHistory": "No hay historial de consultas para esta conexión.",
     "schemasRail": "Bases de datos",
     "resizeDetail": "Cambiar el tamaño de los detalles de la fila",
+    "toggleDetailPanel": "Mostrar u ocultar los detalles de la fila",
     "sidebarSections": "Barra lateral",
     "rowsSelectedShort_one": "{{formatted}} fila seleccionada",
     "rowsSelectedShort_many": "{{formatted}} filas seleccionadas",

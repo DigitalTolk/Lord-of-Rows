@@ -14,6 +14,7 @@ import { RAW_SQL, toConditions, type FilterRow } from '../lib/filters';
 import { api } from '../lib/ipc';
 import { displayCombo } from '../lib/keys';
 import { selectTab, useTableWs, type PendingActions } from '../lib/tableWorkspace';
+import { clampDetailWidth, detailWidth, onRowsSelected, saveDetailWidth, setDetailPanel } from '../lib/detailPanel';
 import type { ExportFormat, FilterCondition, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
 import { useTableGridActions } from './useTableGridActions';
 import { errMsg, useApp, type Tab } from '../store';
@@ -40,7 +41,7 @@ export function TableView({ tab }: { tab: Tab }) {
   const [selRows, setSelRows] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [detailW, setDetailW] = useState(320);
+  const [detailW, setDetailW] = useState(() => detailWidth(settings));
   const hist = useRef(new History<StagedState>());
   const countKey = useRef<string | null>(null);
   const [mode, setMode] = useState<TableMode>('data');
@@ -265,7 +266,7 @@ export function TableView({ tab }: { tab: Tab }) {
       wsApi.toggleFilterBar(tab.id);
     } else if (k === 'd' && e.shiftKey && mode === 'data') {
       e.preventDefault();
-      wsApi.toggleDetail(tab.id);
+      setDetailPanel(tab.id);
     }
   };
 
@@ -293,14 +294,28 @@ export function TableView({ tab }: { tab: Tab }) {
   const resizeDetail = (e: React.MouseEvent) => {
     const startX = e.clientX;
     const startW = detailW;
-    const move = (m: MouseEvent) => setDetailW(Math.min(720, Math.max(220, startW - (m.clientX - startX))));
+    let last = startW;
+    const move = (m: MouseEvent) => {
+      last = clampDetailWidth(startW - (m.clientX - startX));
+      setDetailW(last);
+    };
     const up = () => {
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      if (last !== startW) saveDetailWidth(last);
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   };
+
+  // Selecting a row opens the detail panel unless the user closed it (preference 'closed').
+  const onSelectRows = useCallback(
+    (rows: number[]) => {
+      setSelRows(rows);
+      onRowsSelected(tab.id, rows);
+    },
+    [tab.id],
+  );
 
   const header = `${target.schema ? target.schema + '.' : ''}${target.table}`;
 
@@ -358,7 +373,7 @@ export function TableView({ tab }: { tab: Tab }) {
               onSort={isDynamo ? undefined : sortBy}
               onEdit={onEdit}
               onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
-              onSelectRows={setSelRows}
+              onSelectRows={onSelectRows}
               {...gridActions}
               ariaLabel={t('table.gridLabel', { table: header })}
             />
@@ -376,7 +391,7 @@ export function TableView({ tab }: { tab: Tab }) {
                   editable={editable}
                   canEditExisting={keyCols.length > 0}
                   onStage={change}
-                  onClose={() => wsApi.toggleDetail(tab.id, false)}
+                  onClose={() => setDetailPanel(tab.id, false)}
                 />
               </div>
             </>
@@ -402,7 +417,7 @@ export function TableView({ tab }: { tab: Tab }) {
         filterOpen={ws.filterOpen}
         onToggleFilter={() => wsApi.toggleFilterBar(tab.id)}
         detailOpen={ws.detailOpen}
-        onToggleDetail={() => wsApi.toggleDetail(tab.id)}
+        onToggleDetail={() => setDetailPanel(tab.id)}
       />
     </div>
   );
