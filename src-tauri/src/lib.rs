@@ -2,6 +2,7 @@
 //! Every command validates its arguments; safety policy and audit logging are
 //! enforced here, in Rust, not in the webview.
 
+mod ai;
 mod backup;
 mod commands;
 mod state;
@@ -50,6 +51,7 @@ pub fn run() {
                 secrets: Box::new(dbs_secrets::OsKeychain),
                 session_secrets: Default::default(),
                 guard: ConfirmationGuard::new(state::random_key()),
+                ai_guard: dbs_ai::PromptGuard::new(state::random_key()),
                 sessions: Mutex::new(HashMap::new()),
                 running: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
@@ -123,6 +125,11 @@ pub fn run() {
             commands::backup_tools,
             commands::run_backup,
             commands::run_restore,
+            ai::ai_status,
+            ai::ai_set_api_key,
+            ai::ai_preview,
+            ai::ai_send,
+            ai::ai_test,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DB Studio");

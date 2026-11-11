@@ -67,7 +67,18 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Read-only: DB-enforced session + backend block | TESTED | IT (PG/MySQL/SQLite) + E2E |
 | Tamper-evident audit log (hash chain), viewer, verify, export, purge | TESTED | UT `dbs-audit`, E2E audit |
 
+## AI assistant (optional, off by default)
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Disabled by default; backend refuses when `ai.enabled` is off | TESTED (UT) | UT `dbs-ai` `disabled_by_default_and_refuses` |
+| Prompt builders (explain/generate/optimize SQL, errors, plans, indexes, schema summary) with only user-approved context | TESTED (UT) | UT `dbs-ai` prompt tests (8) |
+| Secret + literal redaction (toggle, default on) | TESTED (UT) | UT `dbs-ai` redact tests (4) |
+| Preview token binds exact prompt + endpoint (no send without preview) | TESTED (UT, vitest) | UT `guard_binds_prompt_task_and_endpoint`, vitest `AiPanel` |
+| Anthropic + OpenAI-compatible clients (key only in auth header, no redirects, clear errors) | TESTED against local mock HTTP server | UT `dbs-ai` provider tests (6); **no real provider call made** |
+| AI panel in query tab, Settings → AI, API key in OS keychain, test connection, `ai_request` audit event | IMPLEMENTED_UNVERIFIED | typecheck/lint + vitest only; no E2E, not run against a live provider or keychain |
+
 ## Not started (spec items)
 
-Plugin system, AI assistant, auto-updater, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
+Plugin system, auto-updater, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
 CI pipelines, localization beyond English (architecture in place), accessibility audit with assistive tech.

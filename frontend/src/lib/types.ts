@@ -211,3 +211,12 @@ export interface Document<T = unknown> { kind: string; id: string; name: string;
 
 export interface AppInfo { version: string; os: string; arch: string; secret_backend: string; supported_engines: Engine[]; all_engines: Engine[] }
 export interface PickedFile { grant: string; name: string; display_path: string }
+
+// AI assistant (optional, disabled by default). Prompts are built and redacted in Rust.
+export type AiTask = 'explain_sql' | 'generate_sql' | 'optimize_sql' | 'explain_error' | 'explain_plan' | 'suggest_indexes' | 'summarize_schema';
+export type AiProvider = 'anthropic' | 'openai_compatible';
+export interface AiSettings { enabled: boolean; provider: AiProvider; model: string; base_url: string; redact_literals: boolean }
+export interface AiStatus { settings: AiSettings; has_api_key: boolean }
+export interface AiPreviewRequest { task: AiTask; input: string; sql?: string | null; session_id?: string | null; include_dialect: boolean; tables: TableTarget[] }
+export interface AiPreview { token: string; task: AiTask; system: string; user: string; text: string; bytes: number; provider: AiProvider; model: string; base_url: string }
+export interface AiAnswer { text: string; sql?: string | null; truncated: boolean; provider: AiProvider; model: string; duration_ms: number }

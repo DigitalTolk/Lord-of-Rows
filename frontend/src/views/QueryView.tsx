@@ -2,6 +2,7 @@ import Editor, { type OnMount } from '@monaco-editor/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { format as formatSql } from 'sql-formatter';
+import { AiPanel } from '../components/AiPanel';
 import { confirmDecision } from '../components/confirm';
 import { Results } from '../components/Results';
 import { ask } from '../components/ask';
@@ -10,6 +11,7 @@ import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
 import { monaco, registerSqlCompletion, setCompletionSource, useEditorTheme } from '../lib/monaco';
 import { family } from '../lib/sqlgen';
+import { displayValue } from '../lib/value';
 import type { StatementResult } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
 
@@ -27,6 +29,8 @@ export function QueryView({ tab }: { tab: Tab }) {
   const [split, setSplit] = useState(0.5);
   const isRedis = s?.config.engine === 'redis';
   const editorTheme = useEditorTheme();
+  const aiEnabled = settings['ai.enabled'] === true;
+  const [aiOpen, setAiOpen] = useState(false);
 
   // Feed schema metadata into autocomplete.
   useEffect(() => {
@@ -157,6 +161,25 @@ export function QueryView({ tab }: { tab: Tab }) {
     toast('ok', 'Snippet saved');
   };
 
+  // AI panel inputs: only what the user is looking at; the panel decides what to send.
+  const editorSql = () => {
+    const ed = editorRef.current;
+    if (!ed) return tab.sql ?? '';
+    const sel = ed.getSelection();
+    return sel && !sel.isEmpty() ? ed.getModel()!.getValueInRange(sel) : ed.getValue();
+  };
+  const lastPlan = results.length > 0 && /^EXPLAIN/i.test(results[0].sql_excerpt) && results[0].result
+    ? results[0].result.rows.map((r) => r.map(displayValue).join('\t')).join('\n')
+    : null;
+  // AI-generated SQL is only inserted (replacing the selection); running it goes through the normal run path.
+  const insertSql = (sql: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    const range = ed.getSelection() ?? ed.getModel()!.getFullModelRange();
+    ed.executeEdits('ai-insert', [{ range, text: sql, forceMoveMarkers: true }]);
+    ed.focus();
+  };
+
   const onMount: OnMount = (ed) => {
     editorRef.current = ed;
     registerSqlCompletion();
@@ -201,6 +224,9 @@ export function QueryView({ tab }: { tab: Tab }) {
             <button className="btn btn-ghost h-6 px-2" onClick={minify}>{t('query.minify')}</button>
           </>
         )}
+        {aiEnabled && !isRedis && (
+          <button className={`btn btn-ghost h-6 px-2 ${aiOpen ? 'bg-accent/15' : ''}`} onClick={() => setAiOpen((x) => !x)} aria-pressed={aiOpen} title={t('ai.toggle')}><Icon name="bolt" size={13} /> {t('ai.button')}</button>
+        )}
         <button className="btn btn-ghost ml-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
         {s ? <span className="text-[0.82rem] text-muted">{s.config.name}{s.activeSchema ? ` · ${s.activeSchema}` : ''}</span> : <span className="text-warn">{t('status.disconnected')}</span>}
       </div>
@@ -217,7 +243,8 @@ export function QueryView({ tab }: { tab: Tab }) {
           )}
         </div>
       )}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
           <Editor
             defaultLanguage={isRedis ? 'redis' : 'sql'}
@@ -245,6 +272,8 @@ export function QueryView({ tab }: { tab: Tab }) {
         <div className="min-h-0 flex-1">
           {error ? <div className="p-2"><ErrorBox error={error} /></div> : <Results results={results} messages={messages} />}
         </div>
+      </div>
+      {aiEnabled && aiOpen && !isRedis && <AiPanel session={s} sources={{ sql: editorSql, error, plan: lastPlan }} onInsert={insertSql} onClose={() => setAiOpen(false)} />}
       </div>
     </div>
   );
