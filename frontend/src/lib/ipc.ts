@@ -34,6 +34,13 @@ export const api = {
     call<T.ConnectionConfig>('save_connection', { req: { config, password, remember_password: rememberPassword, ssh_password: ssh.password ?? null, ssh_passphrase: ssh.passphrase ?? null } }),
   deleteConnection: (id: string) => call<void>('delete_connection', { id }),
   reorderConnections: (ids: string[]) => call<void>('reorder_connections', { ids }),
+  listConnectionGroups: () => call<T.ConnectionGroup[]>('list_connection_groups'),
+  saveConnectionGroup: (group: T.ConnectionGroup) => call<T.ConnectionGroup>('save_connection_group', { group }),
+  renameConnectionGroup: (from: string, to: string) => call<void>('rename_connection_group', { from, to }),
+  /** Removes the group; its connections become ungrouped. Resolves to how many moved. */
+  deleteConnectionGroup: (name: string) => call<number>('delete_connection_group', { name }),
+  reorderConnectionGroups: (names: string[]) => call<void>('reorder_connection_groups', { names }),
+  setConnectionGroup: (id: string, group: string | null) => call<T.ConnectionConfig>('set_connection_group', { id, group }),
   testConnection: (config: T.ConnectionConfig, password: string | null, ssh: { password?: string | null; passphrase?: string | null } = {}, trustHostKey?: string) =>
     call<{ server: T.ServerInfo; latency_ms: number }>('test_connection', { config, password, sshPassword: ssh.password ?? null, sshPassphrase: ssh.passphrase ?? null, trustHostKey: trustHostKey ?? null }),
   exportConnections: () => call<string>('export_connections'),

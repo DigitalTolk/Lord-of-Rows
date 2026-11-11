@@ -29,7 +29,7 @@ fn cfg(engine: Engine, host: Option<&str>, db: Option<&str>) -> ConnectionConfig
         database: db.map(String::from),
         username: Some("dbs_test".into()),
         socket_path: None,
-        tls: TlsConfig { mode: TlsMode::Disable, ..Default::default() },
+        tls: TlsConfig { mode: TlsMode::Disabled, ..Default::default() },
         ssh: None,
         environment: EnvironmentKind::Testing,
         read_only: false,

@@ -522,11 +522,7 @@ async fn mysql_sha256_password_auth() {
     let mut root = cfg(Engine::MySql, Some(&host), None);
     root.port = port;
     root.username = Some("root".into());
-    let rc = driver_for(Engine::MySql)
-        .unwrap()
-        .connect(&root, ConnectSecrets { password: Some("dbs_root_test".into()) })
-        .await
-        .expect("root connect");
+    let rc = driver_for(Engine::MySql).unwrap().connect(&root, ConnectSecrets { password: Some("dbs_root_test".into()) }).await.expect("root connect");
     exec(
         &*rc,
         "DROP USER IF EXISTS 'it_sha256'@'%', 'it_sha256_empty'@'%';
@@ -546,18 +542,11 @@ async fn mysql_sha256_password_auth() {
     let r = exec(&*c, "SELECT CURRENT_USER()").await;
     assert!(format!("{:?}", first_rows(&r)[0][0]).contains("it_sha256"));
 
-    let bad = driver_for(Engine::MySql)
-        .unwrap()
-        .connect(&u, ConnectSecrets { password: Some("wrong".into()) })
-        .await;
+    let bad = driver_for(Engine::MySql).unwrap().connect(&u, ConnectSecrets { password: Some("wrong".into()) }).await;
     assert!(bad.is_err(), "wrong password must be rejected");
 
     u.username = Some("it_sha256_empty".into());
-    driver_for(Engine::MySql)
-        .unwrap()
-        .connect(&u, ConnectSecrets { password: None })
-        .await
-        .expect("sha256_password with empty password");
+    driver_for(Engine::MySql).unwrap().connect(&u, ConnectSecrets { password: None }).await.expect("sha256_password with empty password");
 
     exec(&*rc, "DROP USER 'it_sha256'@'%', 'it_sha256_empty'@'%'").await;
 }
