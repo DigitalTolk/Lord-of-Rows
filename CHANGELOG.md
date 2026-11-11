@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+- Fix: drag and drop inside the app (moving connections into groups, reordering tabs) did not work on macOS.
+
+## 0.1.0
 - Drivers: PostgreSQL, MySQL, MariaDB, SQLite, Redis.
 - Desktop UI with a familiar workflow: launcher, connection rail, per-connection tabs, SQL editor, grid, structure, ER, monitor, palette.
 - Staged editing with SQL review and conflict detection; PK-ordered paging.

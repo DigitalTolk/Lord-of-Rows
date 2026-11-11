@@ -42,6 +42,10 @@ pub fn build_window<R: Runtime, M: Manager<R>>(manager: &M, label: &str) -> taur
         .inner_size(1400.0, 900.0)
         .min_inner_size(900.0, 600.0)
         .on_navigation(is_app_url)
+        // Tauri's native file-drop handler swallows every drag event on macOS/Windows, which
+        // breaks HTML5 drag-and-drop inside the app (moving connections into groups, reordering
+        // tabs). The app never accepts dropped files (imports use the file dialog), so turn it off.
+        .disable_drag_drop_handler()
         .build()
 }
 
