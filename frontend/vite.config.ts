@@ -10,5 +10,5 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 6000,
   },
-  test: { environment: 'jsdom' },
+  test: { environment: 'jsdom', css: { include: [/index\.css/] } },
 });

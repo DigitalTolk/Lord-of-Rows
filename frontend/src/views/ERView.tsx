@@ -114,7 +114,11 @@ export function ERView({ tab }: { tab: Tab }) {
     clone.setAttribute('width', String(bb.width + 40));
     clone.setAttribute('height', String(bb.height + 40));
     (clone.querySelector('g') as SVGGElement).setAttribute('transform', '');
-    const text = new XMLSerializer().serializeToString(clone);
+    // Standalone SVG/PNG can't see the app's CSS variables: inline the current theme's values.
+    const css = getComputedStyle(document.documentElement);
+    const bg = `rgb(${css.getPropertyValue('--bg').trim()})`;
+    clone.style.background = bg;
+    const text = new XMLSerializer().serializeToString(clone).replace(/var\(--([\w-]+)\)/g, (m, n: string) => css.getPropertyValue(`--${n}`).trim() || m);
     if (!png) {
       await navigator.clipboard.writeText(text);
       toast('info', 'SVG copied to clipboard');
@@ -126,7 +130,7 @@ export function ERView({ tab }: { tab: Tab }) {
       c.width = (bb.width + 40) * 2;
       c.height = (bb.height + 40) * 2;
       const ctx = c.getContext('2d')!;
-      ctx.fillStyle = '#fff';
+      ctx.fillStyle = bg;
       ctx.fillRect(0, 0, c.width, c.height);
       ctx.scale(2, 2);
       ctx.drawImage(img, 0, 0);

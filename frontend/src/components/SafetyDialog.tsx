@@ -60,7 +60,7 @@ export function SafetyDialog({ pending }: { pending: PendingConfirm }) {
         </>
       }
     >
-      {pending.production && <div className="mb-3 rounded bg-danger px-3 py-2 font-bold text-white">{t('safety.productionBanner')}</div>}
+      {pending.production && <div className="mb-3 rounded bg-danger-solid px-3 py-2 font-bold text-on-solid">{t('safety.productionBanner')}</div>}
       <FindingList findings={d.findings} />
       {pending.sqlPreview && <pre className="mb-3 max-h-64 overflow-auto rounded border border-border bg-panel p-2 font-mono text-xs">{pending.sqlPreview}</pre>}
       <p className="mb-3 text-xs text-muted">{t('safety.explainer')}</p>

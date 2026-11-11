@@ -8,7 +8,7 @@ import { ask } from '../components/ask';
 import { ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
-import { monaco, registerSqlCompletion, setCompletionSource } from '../lib/monaco';
+import { monaco, registerSqlCompletion, setCompletionSource, useEditorTheme } from '../lib/monaco';
 import { family } from '../lib/sqlgen';
 import type { StatementResult } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
@@ -26,6 +26,7 @@ export function QueryView({ tab }: { tab: Tab }) {
   const [error, setError] = useState<string | null>(null);
   const [split, setSplit] = useState(0.5);
   const isRedis = s?.config.engine === 'redis';
+  const editorTheme = useEditorTheme();
 
   // Feed schema metadata into autocomplete.
   useEffect(() => {
@@ -184,7 +185,6 @@ export function QueryView({ tab }: { tab: Tab }) {
     window.addEventListener('mouseup', up);
   };
 
-  const dark = document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('hc');
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
@@ -222,7 +222,7 @@ export function QueryView({ tab }: { tab: Tab }) {
           <Editor
             defaultLanguage={isRedis ? 'redis' : 'sql'}
             defaultValue={tab.sql ?? ''}
-            theme={dark ? 'vs-dark' : 'vs'}
+            theme={editorTheme}
             onMount={onMount}
             options={{
               fontSize: Number(settings['editor.fontSize'] ?? 13),

@@ -43,14 +43,14 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
     };
   }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/40">
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex max-h-[90vh] flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-[0_20px_60px_rgb(0_0_0/0.25)] outline-none ${wide ? 'w-[min(980px,95vw)]' : 'w-[min(660px,95vw)]'}`}
+        className={`flex max-h-[90vh] flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-[0_20px_60px_rgb(var(--shadow)/0.25)] outline-none ${wide ? 'w-[min(980px,95vw)]' : 'w-[min(660px,95vw)]'}`}
       >
         <div className="flex h-11 shrink-0 items-center justify-between px-4">
           <h2 id={titleId} className="text-[1.05rem] font-semibold">{title}</h2>
@@ -66,9 +66,9 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
 const envColors: Record<EnvironmentKind, string> = {
   local: 'bg-ok/15 text-ok border-ok/40',
   development: 'bg-accent/15 text-accent border-accent/40',
-  testing: 'bg-accent/15 text-accent border-accent/40',
+  testing: 'bg-purple/15 text-purple border-purple/40',
   staging: 'bg-warn/15 text-warn border-warn/40',
-  production: 'bg-danger text-white border-danger font-bold',
+  production: 'bg-danger-solid text-on-solid border-danger-solid font-bold',
   custom: 'bg-panel text-muted border-border',
 };
 

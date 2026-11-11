@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import './i18n';
 import './index.css';
 import App from './App';
+import { bootTheme } from './lib/theme';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Block drag-and-drop navigation (dropping a file would otherwise navigate the webview).
@@ -14,6 +15,8 @@ window.addEventListener('contextmenu', (e) => {
   const el = e.target as HTMLElement;
   if (!el.closest('input, textarea, .monaco-editor')) e.preventDefault();
 });
+
+bootTheme();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
