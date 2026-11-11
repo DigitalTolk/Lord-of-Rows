@@ -43,7 +43,8 @@ function normalizeTls(tls: TlsConfig): TlsConfig {
  */
 interface EngineFormSpec {
   /** 'file': a database file path instead of host/port/user/password. */
-  kind: 'network' | 'file';
+  /** 'cloud': endpoint URL / region / access keys (DynamoDB). */
+  kind: 'network' | 'file' | 'cloud';
   socket: boolean;
   ssl: boolean;
   ssh: boolean;
@@ -60,6 +61,9 @@ export function formSpec(engine: Engine): EngineFormSpec {
     case 'sqlite':
     case 'duck_db':
       return { ...net, kind: 'file', socket: false, ssl: false, ssh: false, bootstrap: true };
+    case 'dynamo_db':
+      // host = optional endpoint URL, database = region, username = access key id / profile:NAME, password = secret key.
+      return { ...net, kind: 'cloud', socket: false, ssl: false, ssh: false, bootstrap: false, databaseLabel: 'Region', databasePlaceholder: 'us-east-1', defaultSsl: 'verify_identity' };
     case 'redis':
       // Most Redis servers have no TLS, and a plaintext Redis doesn't answer a TLS hello: PREFERRED
       // would wait for its probe timeout on every connect. TLS stays one click away.
@@ -76,7 +80,7 @@ export function blankConnection(engine: Engine = 'postgres'): ConnectionConfig {
     id: '00000000-0000-0000-0000-000000000000',
     name: '',
     engine,
-    host: file ? null : '127.0.0.1',
+    host: file || spec.kind === 'cloud' ? null : '127.0.0.1',
     port: null,
     database: null,
     username: null,
@@ -234,6 +238,7 @@ export function ConnectionDialog() {
 
   const spec = formSpec(cfg.engine);
   const isFile = spec.kind === 'file';
+  const isCloud = spec.kind === 'cloud';
   const set = <K extends keyof ConnectionConfig>(k: K, v: ConnectionConfig[K]) => setCfg((c) => (c ? { ...c, [k]: v } : c));
   const setTls = (patch: Partial<TlsConfig>) => setCfg((c) => (c ? { ...c, tls: { ...c.tls, ...patch } } : c));
   const autoName = cfg.name.trim() || (isFile ? (cfg.database ?? '').split('/').pop() || ENGINE_LABELS[cfg.engine] : `${cfg.database || ENGINE_LABELS[cfg.engine]}${cfg.host ? ' @ ' + cfg.host : ''}`);
@@ -385,6 +390,25 @@ export function ConnectionDialog() {
             <Field label={t('conn.file')} wide>
               <input className="input font-mono" value={cfg.database ?? ''} placeholder="/path/to/database.sqlite" onChange={(e) => set('database', e.target.value || null)} />
             </Field>
+          ) : isCloud ? (
+            <>
+              <Field label="Endpoint URL" wide>
+                <input className="input font-mono" aria-label="Endpoint URL" value={cfg.host ?? ''} placeholder="empty = AWS · http://localhost:4566 for LocalStack" onChange={(e) => set('host', e.target.value.trim() || null)} spellCheck={false} />
+              </Field>
+              <Field label="Region" wide>
+                <input className="input" aria-label="Region" value={cfg.database ?? ''} placeholder="us-east-1" onChange={(e) => set('database', e.target.value.trim() || null)} spellCheck={false} />
+              </Field>
+              <Field label="Access key ID" wide>
+                <input className="input font-mono" aria-label="Access key ID" value={cfg.username ?? ''} placeholder="empty = default AWS credential chain · profile:NAME" onChange={(e) => set('username', e.target.value.trim() || null)} autoComplete="off" spellCheck={false} />
+              </Field>
+              <Field label="Secret key">
+                <input className="input" aria-label="Secret access key" type="password" value={password} placeholder={!isNew && !askEveryTime ? 'unchanged' : ''} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+              </Field>
+              <select className="input col-span-2" aria-label="Password storage" value={pwMode} onChange={(e) => setPwMode(e.target.value as 'keychain' | 'ask')}>
+                <option value="keychain">Store in keychain</option>
+                <option value="ask">Ask every time</option>
+              </select>
+            </>
           ) : (
             <>
               {spec.socket ? (
@@ -436,7 +460,7 @@ export function ConnectionDialog() {
             </>
           )}
 
-          {!isFile && (
+          {!isFile && !isCloud && (
             <Field label={spec.databaseLabel} wide={!spec.bootstrap}>
               <input className="input" value={cfg.database ?? ''} placeholder={spec.databasePlaceholder} onChange={(e) => set('database', e.target.value || null)} />
             </Field>

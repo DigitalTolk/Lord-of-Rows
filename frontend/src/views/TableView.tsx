@@ -37,6 +37,8 @@ export function TableView({ tab }: { tab: Tab }) {
   const hist = useRef(new History<StagedState>());
   const [mode, setMode] = useState<'data' | 'structure'>('data');
   const isKeyValue = s?.config.engine === 'redis';
+  // DynamoDB browses with Scan: no server-side ordering, and the count may only be an estimate.
+  const isDynamo = s?.config.engine === 'dynamo_db';
   const editable = !!s?.capabilities.inline_edit && !s.config.read_only && !isKeyValue;
   const keyCols = desc?.primary_key ?? [];
   const pending = pendingCount(staged);
@@ -48,7 +50,7 @@ export function TableView({ tab }: { tab: Tab }) {
     try {
       const d = desc ?? (await api.describeTable(s.session_id, target).catch(() => null));
       // Without an explicit sort, order by primary key so paging is stable.
-      const order: [string, SortDir][] = sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
+      const order: [string, SortDir][] = isDynamo ? [] : sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
       const [r, c] = await Promise.all([
         api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order, filters: applied }),
         api.countRows(s.session_id, target, applied).catch(() => null),
@@ -63,7 +65,7 @@ export function TableView({ tab }: { tab: Tab }) {
     } finally {
       setLoading(false);
     }
-  }, [s, target, page, pageSize, sort, applied, desc]);
+  }, [s, target, page, pageSize, sort, applied, desc, isDynamo]);
 
   useEffect(() => {
     void load();
@@ -271,7 +273,7 @@ export function TableView({ tab }: { tab: Tab }) {
           staged={staged}
           editable={editable}
           sort={sort}
-          onSort={sortBy}
+          onSort={isDynamo ? undefined : sortBy}
           onEdit={onEdit}
           onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
           onSelectRows={setSelRows}
@@ -286,7 +288,10 @@ export function TableView({ tab }: { tab: Tab }) {
         </div>
         {mode === 'data' && (
           <>
-            <span className="text-muted">{count != null ? `${count.toLocaleString()} ${t('common.rows')}` : ''}{applied.length ? ' (filtered)' : ''}</span>
+            <span className="text-muted">
+              {count != null ? `${count.toLocaleString()} ${t('common.rows')}` : isDynamo && !applied.length && desc?.estimated_rows != null ? `≈ ${desc.estimated_rows.toLocaleString()} ${t('common.rows')} (estimate)` : ''}
+              {applied.length ? ' (filtered)' : ''}
+            </span>
             {loading && <Spinner />}
             <div className="ml-auto flex items-center gap-1">
               <button className="icon-btn h-6 w-6" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Previous page"><Icon name="chevronRight" size={14} className="rotate-180" /></button>
