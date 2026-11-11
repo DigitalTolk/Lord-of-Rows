@@ -122,7 +122,9 @@ describe('redis key browser', () => {
       await clickSel(b, 'button[aria-label="Preview pending changes"]');
       await until(async () => (await pageText(b)).includes('HDEL "e2e60:h" f1'), 'command preview');
       assert.ok((await pageText(b)).includes('SELECT 0'), 'preview selects the database first');
-      await clickSel(b, 'button[aria-label="Commit pending changes"]');
+      // Commit from the preview popover (a dialog: the helpers search inside it while it is open).
+      await clickText(b, 'Commit', { exact: true });
+      await until(() => b.execute(() => !document.querySelector('[role=dialog]')), 'preview closed');
       await until(async () => !(await panelText()).includes('f1'), 'field removed after commit');
       assert.ok((await panelText()).includes('f2'));
     }));

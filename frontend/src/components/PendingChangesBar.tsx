@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { displayCombo } from '../lib/keys';
 import { selectTab, useTableWs } from '../lib/tableWorkspace';
@@ -20,6 +20,10 @@ export function PendingChangesBar() {
   const [preview, setPreview] = useState<{ sql: string; loading: boolean; error?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const close = useCallback(() => setPreview(null), []);
+  // The preview belongs to one tab: switching tabs closes it (no stale statements for another tab).
+  useEffect(() => {
+    setPreview(null);
+  }, [tabId]);
   if (!tabId) return null;
   const n = ws.pending;
   const disabled = n === 0 || !ws.actions || busy;
