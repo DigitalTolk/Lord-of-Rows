@@ -216,7 +216,9 @@ async fn mysql_streaming() {
 #[tokio::test]
 async fn mariadb_streaming() {
     let Some(host) = it_host("DBS_IT_MARIADB_HOST") else { return };
-    let c = connect(&cfg(Engine::MariaDb, Some(&host), Some("dbs_test"))).await;
+    let mut conf = cfg(Engine::MariaDb, Some(&host), Some("dbs_test"));
+    conf.port = std::env::var("DBS_IT_MARIADB_PORT").ok().and_then(|p| p.parse().ok());
+    let c = connect(&conf).await;
     scenario(&*c, &mysql_big).await;
 }
 
