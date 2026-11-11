@@ -73,7 +73,9 @@ jobs:
       - name: Test PKI
         run: docker compose build dev sshd && docker compose run --rm --no-deps dev tests/certs/gen.sh
       - name: Start services
-        run: docker compose up -d postgres mysql mariadb redis sshd
+        run: docker compose up -d postgres mysql mariadb redis sshd dynamodb
+      - name: Load demo fixtures
+        run: tests/fixtures/load.sh
       - name: Build app + run all tests
         run: |
           docker compose run --rm dev sh -c '
