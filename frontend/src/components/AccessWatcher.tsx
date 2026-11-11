@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import { durationLabel, expiringSoon, isInFlight, managedState, pollDelay, requestPhase } from '../lib/access';
-import { approvalListeners, canApprove, expiredListeners, readyListeners, useAccess } from '../lib/accessStore';
+import { approvalListeners, canApprove, expiredListeners, handleDeepLink, readyListeners, useAccess } from '../lib/accessStore';
+import { ask } from './ask';
 import { setAppBadge } from '../lib/windows';
 import { useApp } from '../store';
 
@@ -37,6 +38,25 @@ export function AccessWatcher() {
     return () => {
       readyListeners.delete(onReady);
       expiredListeners.delete(onExpired);
+    };
+  }, [t]);
+
+  // lordoftherows://access links: on start-up and whenever one arrives.
+  useEffect(() => {
+    const run = () => void handleDeepLink((host) => ask.confirm(t('access.addProviderTitle'), t('access.addProviderConfirm', { host }))).catch((e) => useApp.getState().toast('error', e instanceof Error ? e.message : String(e)));
+    run();
+    let off: (() => void) | undefined;
+    let live = true;
+    import('@tauri-apps/api/event')
+      .then(({ listen }) => listen('access-deep-link', run))
+      .then((u) => {
+        if (live) off = u;
+        else u();
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+      off?.();
     };
   }, [t]);
 

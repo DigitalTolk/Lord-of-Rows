@@ -17,6 +17,7 @@
 pub mod loopback;
 pub mod manage;
 pub mod providers;
+pub mod rollout;
 #[cfg(any(test, feature = "test-util"))]
 pub mod testing;
 

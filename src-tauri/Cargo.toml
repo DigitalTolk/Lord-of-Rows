@@ -28,6 +28,7 @@ dbs-import.workspace = true
 dbs-access.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8"
+tauri-plugin-deep-link = "2.6"
 tokio.workspace = true
 tokio-util.workspace = true
 serde.workspace = true

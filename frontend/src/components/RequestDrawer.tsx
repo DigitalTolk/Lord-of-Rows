@@ -24,7 +24,7 @@ const DOT: Record<TimelineStep['state'], string> = {
  * → saved → expires), the provisioning log, reveals left and the connection details with
  * copy buttons (never the password). Approvers get requester, reason and scope.
  */
-export function RequestDrawer({ request, mode, onClose, actions }: { request: AccessRequest; mode: 'mine' | 'approval'; onClose: () => void; actions?: React.ReactNode }) {
+export function RequestDrawer({ request, mode, onClose, actions, onConnect }: { request: AccessRequest; mode: 'mine' | 'approval'; onClose: () => void; actions?: React.ReactNode; onConnect?: (r: AccessRequest) => void }) {
   const { t } = useTranslation();
   const pid = useAccess((s) => s.providerId);
   const [r, setR] = useState<AccessRequestView | AccessRequest>(request);
@@ -82,6 +82,9 @@ export function RequestDrawer({ request, mode, onClose, actions }: { request: Ac
         <button className="btn" onClick={onClose}>{t('common.close')}</button>
         {mode === 'mine' && (
           <button className="btn" onClick={() => { useAccess.setState({ detail: null, sheet: { draft: draftFrom(r) } }); }}>{t('access.requestAgain')}</button>
+        )}
+        {mode === 'mine' && phase === 'ready' && onConnect && (
+          <button className="btn btn-primary" onClick={() => { onClose(); onConnect(r); }}><Icon name="power" size={14} /> {'connection_id' in r && r.connection_id && !r.connection_expired ? t('access.open') : t('access.connect')}</button>
         )}
       </>
     )}>

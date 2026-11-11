@@ -41,6 +41,8 @@ interface AccessStore {
   rejecting: AccessRequest | null;
   /** Approval being sent (buttons disabled). */
   acting: string | null;
+  /** A deep-linked request to show once signed in. */
+  linkRequest: string | null;
 
   loadProviders(): Promise<void>;
   selectProvider(id: string): Promise<void>;
@@ -80,6 +82,7 @@ export const useAccess = create<AccessStore>((set, get) => ({
   detail: null,
   rejecting: null,
   acting: null,
+  linkRequest: null,
 
   async loadProviders() {
     try {
@@ -198,6 +201,11 @@ export const useAccess = create<AccessStore>((set, get) => ({
       await api.accessSignIn(id);
       await get().refreshStatus();
       await Promise.allSettled([get().refreshRequests(), get().refreshApprovals()]);
+      const linked = get().linkRequest;
+      if (linked) {
+        set({ linkRequest: null });
+        await showLinkedRequest(id, linked);
+      }
       void get().loadProviders();
     } catch (e) {
       const cancelled = !!e && typeof e === 'object' && 'kind' in e && (e as { kind: string }).kind === 'cancelled';
@@ -279,4 +287,52 @@ export function accessCommands(t: (k: string) => string): { id: string; label: s
 /** A managed connection could not be opened (access ended / credentials rejected): offer a new request. */
 export function offerRequestAgain(m: ManagedBy, name: string, message: string, t: (k: string, o?: Record<string, unknown>) => string) {
   useApp.getState().toast('error', `${t('access.connectFailedManaged', { name })}\n${message}`, { label: t('access.requestAgainCta'), run: () => void requestAgainFor(m) });
+}
+
+async function showLinkedRequest(providerId: string, requestId: string) {
+  try {
+    const r = await api.accessGetRequest(providerId, requestId);
+    useAccess.setState({ detail: { request: r, mode: 'mine' } });
+  } catch (e) {
+    useApp.getState().toast('error', useAccess.getState().fail(e));
+  }
+}
+
+const hostOf = (u: string) => {
+  try {
+    return new URL(u).host;
+  } catch {
+    return u;
+  }
+};
+
+/**
+ * Handles a pending `lordoftherows://access?provider=…&request=…` link: opens the Access tab
+ * on that provider (an unknown provider is added only after `confirm`), and shows the request
+ * once signed in. Never connects by itself.
+ */
+export async function handleDeepLink(confirm: (host: string) => Promise<boolean>) {
+  let link;
+  try {
+    link = await api.accessTakeDeepLink();
+  } catch {
+    return; // nothing pending, or not running in the app
+  }
+  if (!link || typeof link.provider_url !== 'string' || !link.provider_url) return;
+  const st = () => useAccess.getState();
+  if (st().providers === null) await st().loadProviders();
+  let pid = link.provider_id ?? st().providers?.find((p) => p.base_url === link.provider_url)?.id ?? null;
+  if (!pid) {
+    const host = hostOf(link.provider_url);
+    if (!(await confirm(host))) return;
+    await st().addProvider(link.kind, host, link.provider_url);
+    pid = st().providerId;
+  } else if (pid !== st().providerId) await st().selectProvider(pid);
+  else if (!st().status) await st().refreshStatus();
+  if (!pid) return;
+  openAccessView();
+  if (link.request_id) {
+    if (st().status?.signed_in) await showLinkedRequest(pid, link.request_id);
+    else useAccess.setState({ linkRequest: link.request_id });
+  }
 }

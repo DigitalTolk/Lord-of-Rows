@@ -189,6 +189,8 @@ export const api = {
   accessConnect: (providerId: string, requestId: string) => call<T.AccessConnectOutcome>('access_connect', { providerId, requestId }),
   /** Ends managed connections whose access time is over; resolves to their ids. */
   accessSweep: () => call<string[]>('access_sweep'),
+  /** The last lordoftherows://access link (taken once). */
+  accessTakeDeepLink: () => call<T.AccessDeepLink | null>('access_take_deep_link'),
   pluginList: () => call<T.PluginInfo[]>('plugin_list'),
   pluginInspect: (grant: string) => call<T.PluginPreview>('plugin_inspect', { grant }),
   pluginInstall: (grant: string, wasmSha256: string, confirmUntrusted: boolean) => call<T.PluginInfo>('plugin_install', { grant, wasmSha256, confirmUntrusted }),

@@ -346,7 +346,9 @@ export interface AccessProviderKind { kind: string; label: string; default_name:
 export interface AccessCapabilities { approvals: boolean; create_database: boolean; cancel: boolean; targets: boolean; decided_history: boolean }
 /** One page of a cursor-paged list (`next` = cursor of the next page). */
 export interface AccessPage<T> { items: T[]; next?: string | null }
-export interface AccessProviderInfo { id: string; kind: string; name: string; base_url: string; capabilities: AccessCapabilities; has_session: boolean }
+export interface AccessProviderInfo { id: string; kind: string; name: string; base_url: string; capabilities: AccessCapabilities; has_session: boolean; /** Preconfigured by the organisation (read-only). */ managed?: boolean }
+/** A `lordoftherows://access` link, matched to a configured provider when possible. */
+export interface AccessDeepLink { provider_url: string; request_id?: string | null; kind: string; provider_id?: string | null }
 export interface AccessUser { id: string; email: string; name: string; role: string; can_approve: boolean; /** e.g. 'no_approver' */ request_blocked?: string | null }
 export interface AccessStatus { signed_in: boolean; user?: AccessUser | null; signing_in: boolean; error?: DbError | null }
 export type AccessLevel = 'read_only' | 'read_write';

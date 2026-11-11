@@ -1450,6 +1450,10 @@
     "cmdShow": "Zugriffsanträge anzeigen",
     "cmdApprovals": "Genehmigungen anzeigen",
     "connectFailedManaged": "{{name}} konnte nicht geöffnet werden: Der Zugriff ist eventuell abgelaufen oder widerrufen.",
-    "requestAgainCta": "Zugriff erneut beantragen"
+    "requestAgainCta": "Zugriff erneut beantragen",
+    "managedByOrg": "Von deiner Organisation verwaltet",
+    "managedHint": "Dieser Anbieter wird von deiner Organisation eingerichtet; seine Adresse kann hier nicht geändert oder entfernt werden.",
+    "addProviderTitle": "Zugriffsanbieter hinzufügen?",
+    "addProviderConfirm": "Ein Link möchte Zugriffsanträge bei {{host}} öffnen, der noch nicht eingerichtet ist. Als Zugriffsanbieter hinzufügen? Du wirst zur Anmeldung aufgefordert; es wird nichts automatisch verbunden."
   }
 }

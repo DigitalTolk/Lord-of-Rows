@@ -28,6 +28,8 @@ pub fn run() {
     let builder = builder.menu(windows::app_menu);
     builder
         .plugin(tauri_plugin_dialog::init())
+        // `lordoftherows://access?...` links (see access.rs); the webview gets no plugin permissions.
+        .plugin(tauri_plugin_deep_link::init())
         // Signature verification uses `plugins.updater.pubkey`; no updater permissions are granted to the webview.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updater::UpdaterState::default())
@@ -67,6 +69,26 @@ pub fn run() {
                 import_preview: Mutex::new(None),
                 access: Default::default(),
             });
+            *app.state::<AppState>().access.managed.lock().unwrap() = access::load_managed_providers(&dir);
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    for u in urls {
+                        access::on_deep_link(&handle, u.as_str());
+                    }
+                }
+                app.deep_link().on_open_url(move |event| {
+                    for u in event.urls() {
+                        access::on_deep_link(&handle, u.as_str());
+                    }
+                });
+                // macOS registers the scheme from the bundle's Info.plist; elsewhere at runtime.
+                #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+                if let Err(e) = app.deep_link().register_all() {
+                    tracing::warn!("could not register the lordoftherows:// scheme: {e}");
+                }
+            }
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
             // Every window (main and "New Window") is built by `windows::build_window`.
@@ -129,6 +151,7 @@ pub fn run() {
             access::access_connect_check,
             access::access_connect,
             access::access_sweep,
+            access::access_take_deep_link,
             commands::open_session,
             commands::close_session,
             commands::ping_session,

@@ -1450,6 +1450,10 @@
     "cmdShow": "Show access requests",
     "cmdApprovals": "Show approvals",
     "connectFailedManaged": "Couldn't open {{name}}: its access may have ended or been revoked.",
-    "requestAgainCta": "Request access again"
+    "requestAgainCta": "Request access again",
+    "managedByOrg": "Managed by your organization",
+    "managedHint": "This provider is set up by your organization; its address can't be changed or removed here.",
+    "addProviderTitle": "Add access provider?",
+    "addProviderConfirm": "A link asks to open access requests at {{host}}, which is not set up yet. Add it as an access provider? You will be asked to sign in; nothing connects on its own."
   }
 }

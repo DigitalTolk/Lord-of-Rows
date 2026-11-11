@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use dbs_access::manage::{self, ConnectCheck, ConnectOutcome, RequestView, Stores};
+use dbs_access::rollout::{self, DeepLink};
 use dbs_access::{
     AccessError, AccessProvider, AccessRequest, AccessRequestInput, AccessUser, Capabilities, ProviderConfig, ProviderKindInfo, Resource, TargetList,
 };
@@ -40,14 +41,47 @@ pub struct AccessState {
     pub(crate) known_passwords: Mutex<HashSet<Uuid>>,
     /// Serialises "Connect" so two clicks can never fetch a secret twice.
     connect_lock: tokio::sync::Mutex<()>,
+    /// Providers preconfigured by the organisation (read-only; see `load_managed_providers`).
+    pub(crate) managed: Mutex<Vec<ProviderConfig>>,
+    /// The last `lordoftherows://access` link, until the UI takes it.
+    pending_link: Mutex<Option<DeepLink>>,
 }
 
 fn stores(st: &AppState) -> Stores<'_> {
     Stores { store: &st.store, secrets: st.secrets.as_ref(), session: &st.session_secrets, known_passwords: Some(&st.access.known_passwords) }
 }
 
-fn providers(st: &AppState) -> Vec<ProviderConfig> {
+/// Providers the user added (app metadata).
+fn stored(st: &AppState) -> Vec<ProviderConfig> {
     st.store.get_setting(KEY_PROVIDERS).ok().flatten().and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default()
+}
+
+/// All providers: the user's, with organisation-managed ones merged in by URL (a user
+/// entry with a managed URL keeps its id and session, and becomes managed).
+fn providers(st: &AppState) -> Vec<ProviderConfig> {
+    let managed = st.access.managed.lock().unwrap().clone();
+    let mut out = stored(st);
+    for m in managed {
+        match out.iter_mut().find(|p| p.base_url == m.base_url) {
+            Some(p) => {
+                p.name = m.name;
+                p.kind = m.kind;
+            }
+            None => out.insert(0, m),
+        }
+    }
+    out
+}
+
+fn is_managed(st: &AppState, cfg: &ProviderConfig) -> bool {
+    st.access.managed.lock().unwrap().iter().any(|m| m.base_url == cfg.base_url)
+}
+
+fn not_managed(st: &AppState, cfg: &ProviderConfig) -> R<()> {
+    if is_managed(st, cfg) {
+        return Err(DbError::new(ErrorKind::Permission, "This provider is managed by your organization and can't be changed here"));
+    }
+    Ok(())
 }
 
 fn save_providers(st: &AppState, list: &[ProviderConfig]) -> R<()> {
@@ -113,6 +147,8 @@ pub struct ProviderView {
     capabilities: Capabilities,
     /// A session token is saved (it may still turn out to be expired).
     has_session: bool,
+    /// Preconfigured by the organisation: can't be edited or removed in the app.
+    managed: bool,
 }
 
 #[tauri::command]
@@ -130,7 +166,7 @@ fn list_views(st: &AppState) -> R<Vec<ProviderView>> {
         .into_iter()
         .map(|c| {
             let caps = dbs_access::build_provider(&c, None).map(|p| p.capabilities()).unwrap_or_default();
-            Ok(ProviderView { has_session: token(st, c.id)?.is_some(), capabilities: caps, config: c })
+            Ok(ProviderView { has_session: token(st, c.id)?.is_some(), capabilities: caps, managed: is_managed(st, &c), config: c })
         })
         .collect()
 }
@@ -150,7 +186,10 @@ pub fn access_providers_add(st: State<'_, AppState>, provider: NewProvider) -> R
 fn add_provider(st: &AppState, p: NewProvider) -> R<ProviderConfig> {
     check_len(&p.base_url, 2048, "URL")?;
     let cfg = ProviderConfig { id: Uuid::new_v4(), kind: p.kind, name: p.name, base_url: p.base_url }.validated()?;
-    let mut list = providers(st);
+    if providers(st).iter().any(|x| x.base_url == cfg.base_url) {
+        return Err(DbError::invalid("This provider is already added"));
+    }
+    let mut list = stored(st);
     if list.len() >= 20 {
         return Err(DbError::invalid("too many access providers"));
     }
@@ -170,12 +209,16 @@ pub fn access_providers_update(st: State<'_, AppState>, id: Uuid, name: String, 
 fn update_provider(st: &AppState, id: Uuid, name: String, base_url: String) -> R<ProviderConfig> {
     check_len(&base_url, 2048, "URL")?;
     let old = provider_config(st, id)?;
+    not_managed(st, &old)?;
     let new = ProviderConfig { name, base_url, ..old.clone() }.validated()?;
+    if new.base_url != old.base_url && providers(st).iter().any(|x| x.base_url == new.base_url) {
+        return Err(DbError::invalid("This provider is already added"));
+    }
     if new.base_url != old.base_url && token(st, id)?.is_some() {
         forget_token(st, id)?;
         audit(st, Category::CredentialDeleted, Outcome::Success, None, |e| e.detail = Some("access provider token (URL changed)".into()));
     }
-    let list: Vec<ProviderConfig> = providers(st).into_iter().map(|p| if p.id == id { new.clone() } else { p }).collect();
+    let list: Vec<ProviderConfig> = stored(st).into_iter().map(|p| if p.id == id { new.clone() } else { p }).collect();
     save_providers(st, &list)?;
     audit(st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some("access provider changed".into()));
     Ok(new)
@@ -185,6 +228,7 @@ fn update_provider(st: &AppState, id: Uuid, name: String, base_url: String) -> R
 /// Connections it created keep working until their access ends.
 #[tauri::command]
 pub async fn access_providers_remove(st: State<'_, AppState>, id: Uuid) -> R<()> {
+    not_managed(&st, &provider_config(&st, id)?)?;
     if let Ok((_, p)) = signed_in(&st, id) {
         let _ = p.sign_out().await;
     }
@@ -192,11 +236,79 @@ pub async fn access_providers_remove(st: State<'_, AppState>, id: Uuid) -> R<()>
 }
 
 fn remove_provider(st: &AppState, id: Uuid) -> R<()> {
+    not_managed(st, &provider_config(st, id)?)?;
     forget_token(st, id)?;
-    let list: Vec<ProviderConfig> = providers(st).into_iter().filter(|p| p.id != id).collect();
+    let list: Vec<ProviderConfig> = stored(st).into_iter().filter(|p| p.id != id).collect();
     save_providers(st, &list)?;
     audit(st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some("access provider removed".into()));
     Ok(())
+}
+
+// ---------------------------------------------------------------- company rollout
+
+/// Where an organisation can deploy `providers.json` (read-only for users), in priority order.
+fn managed_paths(app_data: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut v = Vec::new();
+    if cfg!(target_os = "macos") {
+        v.push("/Library/Application Support/Lord of the Rows/providers.json".into());
+    } else if cfg!(target_os = "windows") {
+        if let Ok(pd) = std::env::var("PROGRAMDATA") {
+            v.push(std::path::Path::new(&pd).join("Lord of the Rows").join("providers.json"));
+        }
+    } else {
+        v.push("/etc/lord-of-the-rows/providers.json".into());
+    }
+    v.push(app_data.join("providers.json"));
+    v
+}
+
+/// Reads the managed provider files (system first, then the user's app data folder).
+pub fn load_managed_providers(app_data: &std::path::Path) -> Vec<ProviderConfig> {
+    let mut sources = Vec::new();
+    for path in managed_paths(app_data) {
+        let Ok(text) = std::fs::read_to_string(&path) else { continue };
+        let (list, errors) = rollout::parse_managed(&text);
+        for e in errors {
+            tracing::warn!("{}: {e}", path.display());
+        }
+        sources.push(list);
+    }
+    rollout::merge_managed(sources)
+}
+
+/// Handles a `lordoftherows://access?...` link: validates it, keeps it until the UI takes
+/// it (`access_take_deep_link`) and pokes the UI. Nothing is added or connected here.
+pub fn on_deep_link(app: &tauri::AppHandle, url: &str) {
+    use tauri::{Emitter, Manager};
+    match rollout::parse_deep_link(url) {
+        Ok(link) => {
+            if let Some(st) = app.try_state::<AppState>() {
+                *st.access.pending_link.lock().unwrap() = Some(link);
+            }
+            let _ = app.emit("access-deep-link", ());
+        }
+        Err(e) => tracing::warn!("ignored deep link: {e}"),
+    }
+}
+
+#[derive(Serialize)]
+pub struct DeepLinkView {
+    #[serde(flatten)]
+    link: DeepLink,
+    /// The configured (or managed) provider with this URL, if any.
+    provider_id: Option<Uuid>,
+}
+
+/// The pending deep link (taken once).
+#[tauri::command]
+pub fn access_take_deep_link(st: State<'_, AppState>) -> Option<DeepLinkView> {
+    take_link(&st)
+}
+
+fn take_link(st: &AppState) -> Option<DeepLinkView> {
+    let link = st.access.pending_link.lock().unwrap().take()?;
+    let provider_id = providers(st).into_iter().find(|p| p.base_url == link.provider_url).map(|p| p.id);
+    Some(DeepLinkView { link, provider_id })
 }
 
 // ---------------------------------------------------------------- session
@@ -581,5 +693,55 @@ mod tests {
         set_token(&st, p.id, "tok2").unwrap();
         assert_eq!(token(&st, p.id).unwrap().as_deref(), Some("tok2"));
         assert_eq!(reads.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn managed_providers_are_merged_and_locked() {
+        let st = crate::commands::tests::test_state();
+        let mine = add_provider(&st, new("passhub", "https://mine.example.com")).unwrap();
+        let shared = add_provider(&st, new("passhub", "https://access.example.com")).unwrap();
+        let (managed, _) = rollout::parse_managed(
+            r#"[{"kind":"passhub","name":"Company access","url":"https://access.example.com"},{"kind":"passhub","name":"Second","url":"https://second.example.com"}]"#,
+        );
+        *st.access.managed.lock().unwrap() = managed;
+        let views = list_views(&st).unwrap();
+        let by_url = |u: &str| views.iter().find(|v| v.config.base_url == u).unwrap();
+        // A user entry with a managed URL keeps its id (and session) and becomes managed.
+        assert_eq!(by_url("https://access.example.com").config.id, shared.id);
+        assert!(by_url("https://access.example.com").managed);
+        assert_eq!(by_url("https://access.example.com").config.name, "Company access");
+        assert!(by_url("https://second.example.com").managed);
+        assert_eq!(by_url("https://second.example.com").config.id, rollout::managed_id("https://second.example.com"));
+        assert!(!by_url("https://mine.example.com").managed);
+        // Managed ones can't be changed, removed or added twice; others still can.
+        assert_eq!(remove_provider(&st, shared.id).unwrap_err().kind, ErrorKind::Permission);
+        assert!(update_provider(&st, rollout::managed_id("https://second.example.com"), "x".into(), "https://x.example.com".into()).is_err());
+        assert!(add_provider(&st, new("passhub", "https://second.example.com/")).is_err());
+        update_provider(&st, mine.id, "Mine".into(), "https://mine.example.com".into()).unwrap();
+        remove_provider(&st, mine.id).unwrap();
+        // File-only providers are never written to the user's list.
+        assert!(stored(&st).iter().all(|p| p.base_url != "https://second.example.com"));
+    }
+
+    #[test]
+    fn managed_file_paths_and_loading() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("providers.json"), r#"[{"kind":"passhub","name":"Company access","url":"https://access.example.com"}]"#).unwrap();
+        let list = load_managed_providers(dir.path());
+        assert!(list.iter().any(|p| p.name == "Company access"));
+        assert!(managed_paths(dir.path()).last().unwrap().ends_with("providers.json"));
+    }
+
+    #[test]
+    fn deep_link_is_taken_once_and_matched_to_a_provider() {
+        let st = crate::commands::tests::test_state();
+        let p = add_provider(&st, new("passhub", "https://access.example.com")).unwrap();
+        *st.access.pending_link.lock().unwrap() =
+            Some(rollout::parse_deep_link("lordoftherows://access?provider=https%3A%2F%2Faccess.example.com&request=r1").unwrap());
+        let v = take_link(&st).unwrap();
+        assert_eq!((v.provider_id, v.link.request_id.as_deref()), (Some(p.id), Some("r1")));
+        assert!(take_link(&st).is_none());
+        *st.access.pending_link.lock().unwrap() = Some(rollout::parse_deep_link("lordoftherows://access?provider=https%3A%2F%2Fnew.example.com").unwrap());
+        assert_eq!(take_link(&st).unwrap().provider_id, None, "unknown provider: the UI must ask first");
     }
 }

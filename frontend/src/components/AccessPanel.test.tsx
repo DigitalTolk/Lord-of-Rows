@@ -507,4 +507,13 @@ describe('AccessPanel', () => {
       useAccess.setState({ detail: null });
     });
   });
+
+  it('a provider managed by the organisation can be used but not edited or removed', async () => {
+    state.providers = [{ ...PROVIDER, managed: true }];
+    await show();
+    expect(screen.getByText('Managed by your organization')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Edit provider' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove provider' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Sign in to Company access/ })).toBeTruthy();
+  });
 });

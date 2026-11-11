@@ -104,6 +104,33 @@ launcher's **Access** tab (and Settings → Access) connects to it:
 Connections go directly to the database host (e.g. over your VPN); no tunnel is created.
 New providers implement the `AccessProvider` trait in `crates/dbs-access/src/providers/`.
 
+### Rolling out to a team
+
+**Preconfigured providers.** An organisation can deploy a `providers.json` that the app reads
+at start-up (for example with device management):
+
+| Where | File |
+|---|---|
+| macOS, all users | `/Library/Application Support/Lord of the Rows/providers.json` |
+| Linux, all users | `/etc/lord-of-the-rows/providers.json` |
+| Windows, all users | `%ProgramData%\Lord of the Rows\providers.json` |
+| One user | `providers.json` in the app's data folder |
+
+```json
+[{ "kind": "passhub", "name": "Company access", "url": "https://access.example.com" }]
+```
+
+Entries are validated like providers added in the app (`https://` only, except for a server
+on the same computer) and merged by URL; the system-wide file wins. They are shown as
+"Managed by your organization" and can't be edited or removed in the app. Invalid entries are
+skipped (logged).
+
+**Links.** `lordoftherows://access?provider=<url-encoded provider URL>&request=<request id>`
+opens the Access tab on that provider and shows the request (with Connect if it is ready).
+A link to a provider that isn't set up asks before adding it; links never sign in, add or
+connect anything by themselves. The scheme is registered by the installed app (macOS bundle;
+Linux and Windows at start-up).
+
 ## Layout
 
 ```

@@ -1522,6 +1522,10 @@
     "cmdShow": "Mostrar solicitudes de acceso",
     "cmdApprovals": "Mostrar aprobaciones",
     "connectFailedManaged": "No se pudo abrir {{name}}: puede que su acceso haya terminado o se haya revocado.",
-    "requestAgainCta": "Solicitar acceso de nuevo"
+    "requestAgainCta": "Solicitar acceso de nuevo",
+    "managedByOrg": "Gestionado por tu organización",
+    "managedHint": "Tu organización configura este proveedor; su dirección no se puede cambiar ni quitar aquí.",
+    "addProviderTitle": "¿Añadir proveedor de acceso?",
+    "addProviderConfirm": "Un enlace quiere abrir solicitudes de acceso en {{host}}, que aún no está configurado. ¿Añadirlo como proveedor de acceso? Se te pedirá iniciar sesión; nada se conecta por sí solo."
   }
 }

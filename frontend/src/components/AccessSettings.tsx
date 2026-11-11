@@ -26,6 +26,7 @@ export function AccessSettingsSection() {
           {(providers ?? []).map((p) => (
             <li key={p.id} className={`flex items-center gap-2 rounded border px-2 py-1.5 text-sm ${p.id === provider?.id ? 'border-accent' : 'border-border'}`}>
               <span className="font-medium">{p.name}</span>
+              {p.managed && <span className="rounded-full border border-border px-1.5 text-[0.68rem] text-muted">{t('access.managedByOrg')}</span>}
               <span className="truncate text-xs text-muted">{p.base_url}</span>
               {p.id === provider?.id ? (
                 <span className="ms-auto text-xs text-muted">{status?.signed_in ? t('access.signedInAs', { email: status.user?.email ?? '' }) : t('access.notSignedIn')}</span>
@@ -38,8 +39,14 @@ export function AccessSettingsSection() {
       )}
       {provider && !adding && (
         <>
-          <h3 className="label">{t('access.editProvider')}</h3>
-          <ProviderForm key={provider.id} edit />
+          {provider.managed ? (
+            <p className="text-sm text-muted">{t('access.managedHint')}</p>
+          ) : (
+            <>
+              <h3 className="label">{t('access.editProvider')}</h3>
+              <ProviderForm key={provider.id} edit />
+            </>
+          )}
           <div className="flex gap-2">
             {status?.signed_in ? (
               <button className="btn h-7" onClick={() => void useAccess.getState().signOut()}>{t('access.signOut')}</button>

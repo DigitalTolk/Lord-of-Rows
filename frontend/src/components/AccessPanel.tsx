@@ -217,9 +217,15 @@ function SignedOut() {
         )}
         <p className="text-xs text-muted">
           {t('access.signInVia', { host: hostOf(provider?.base_url ?? '') })}{' '}
-          <button className="text-accent underline-offset-2 hover:underline" aria-expanded={editing} onClick={() => { setEditing((v) => !v); setAdding(false); }}>{t('access.editProvider')}</button>
-          {' · '}
-          <button className="text-accent underline-offset-2 hover:underline" onClick={() => void remove()}>{t('access.removeProvider')}</button>
+          {provider?.managed ? (
+            <span data-managed-provider>{t('access.managedByOrg')}</span>
+          ) : (
+            <>
+              <button className="text-accent underline-offset-2 hover:underline" aria-expanded={editing} onClick={() => { setEditing((v) => !v); setAdding(false); }}>{t('access.editProvider')}</button>
+              {' · '}
+              <button className="text-accent underline-offset-2 hover:underline" onClick={() => void remove()}>{t('access.removeProvider')}</button>
+            </>
+          )}
           {' · '}
           <button className="text-accent underline-offset-2 hover:underline" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setEditing(false); }}>{t('access.addAnother')}</button>
         </p>
@@ -815,6 +821,7 @@ function AccessDialogs() {
           request={detail.request}
           mode={detail.mode}
           onClose={close}
+          onConnect={(r) => void connectRequest(r, t)}
           actions={
             detail.mode === 'approval' && detail.actionable ? (
               <>
