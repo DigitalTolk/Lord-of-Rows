@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ErrorBox, Spinner, Toolbar } from '../components/ui';
 import { api } from '../lib/ipc';
 import type { TableDescription } from '../lib/types';
+import { fmtNumber } from '../lib/format';
 import { errMsg, useApp, type Tab } from '../store';
 
 const W = 220;
@@ -121,7 +122,7 @@ export function ERView({ tab }: { tab: Tab }) {
     const text = new XMLSerializer().serializeToString(clone).replace(/var\(--([\w-]+)\)/g, (m, n: string) => css.getPropertyValue(`--${n}`).trim() || m);
     if (!png) {
       await navigator.clipboard.writeText(text);
-      toast('info', 'SVG copied to clipboard');
+      toast('info', t('er.svgCopied'));
       return;
     }
     const img = new Image();
@@ -136,7 +137,7 @@ export function ERView({ tab }: { tab: Tab }) {
       ctx.drawImage(img, 0, 0);
       c.toBlob(async (b) => {
         if (b) await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
-        toast('info', 'PNG copied to clipboard');
+        toast('info', t('er.pngCopied'));
       });
     };
     img.src = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
@@ -144,7 +145,7 @@ export function ERView({ tab }: { tab: Tab }) {
 
   const save = async () => {
     await api.saveDocument('er_layout', layoutId, `${s?.config.name} ${s?.activeSchema ?? ''}`, pos);
-    toast('ok', 'Layout saved');
+    toast('ok', t('er.layoutSaved'));
   };
 
   if (!s) return <div className="p-4 text-muted">{t('status.disconnected')}</div>;
@@ -153,17 +154,17 @@ export function ERView({ tab }: { tab: Tab }) {
       <Toolbar>
         <span className="font-semibold">{t('er.title')} — {s.activeSchema}</span>
         <input className="input w-48" placeholder={t('common.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} aria-label={t('common.filter')} />
-        {focus && <button className="btn" onClick={() => setFocus(null)}>Show all (focused: {focus})</button>}
+        {focus && <button className="btn" onClick={() => setFocus(null)}>{t('er.showAll', { table: focus })}</button>}
         <button className="btn" onClick={() => setPos(autoLayout(tables))}>{t('er.autoLayout')}</button>
         <button className="btn" onClick={() => setView({ x: 0, y: 0, k: Math.min(1, 1200 / Math.max(1, Math.sqrt(tables.length) * (W + 80))) })}>{t('er.fit')}</button>
         <button className="btn" onClick={save}>{t('er.saveLayout')}</button>
         <button className="btn" onClick={() => exportSvg(false)}>{t('er.exportSvg')}</button>
         <button className="btn" onClick={() => exportSvg(true)}>{t('er.exportPng')}</button>
-        {busy && <Spinner />}
-        <span className="ml-auto text-xs text-muted">{visible.length} tables · drag to pan · wheel to zoom</span>
+        {busy && <Spinner label={t('er.loading')} />}
+        <span className="ms-auto text-xs text-muted">{t('er.tableCount', { count: visible.length, formatted: fmtNumber(visible.length) })} · {t('er.navHint')}</span>
       </Toolbar>
       <ErrorBox error={error} />
-      <svg ref={svg} role="img" aria-label="Entity relationship diagram" className="min-h-0 flex-1 cursor-grab select-none bg-bg" onMouseDown={(e) => onDown(e)} onMouseMove={onMove} onMouseUp={() => (drag.current = null)} onMouseLeave={() => (drag.current = null)} onWheel={onWheel}>
+      <svg ref={svg} style={{ direction: 'ltr' }} role="img" aria-label={t('er.diagramLabel')} className="min-h-0 flex-1 cursor-grab select-none bg-bg" onMouseDown={(e) => onDown(e)} onMouseMove={onMove} onMouseUp={() => (drag.current = null)} onMouseLeave={() => (drag.current = null)} onWheel={onWheel}>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="rgb(var(--muted))" /></marker>
         </defs>
@@ -200,7 +201,7 @@ export function ERView({ tab }: { tab: Tab }) {
                     <text x={W - 8} y={13} fontSize={10} textAnchor="end" fill="rgb(var(--muted))" fontFamily="monospace">{c.data_type.slice(0, 16)}{c.nullable ? '' : ' *'}</text>
                   </g>
                 ))}
-                {tb.columns.length > 30 && <text x={8} y={HEAD + 30 * ROW + 13} fontSize={11} fill="rgb(var(--muted))">… {tb.columns.length - 30} more</text>}
+                {tb.columns.length > 30 && <text x={8} y={HEAD + 30 * ROW + 13} fontSize={11} fill="rgb(var(--muted))">{t('er.moreColumns', { count: tb.columns.length - 30 })}</text>}
               </g>
             );
           })}

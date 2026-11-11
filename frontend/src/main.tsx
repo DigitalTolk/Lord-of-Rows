@@ -20,7 +20,7 @@ bootTheme();
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary label="the application">
+    <ErrorBoundary>
       <App />
     </ErrorBoundary>
   </React.StrictMode>,

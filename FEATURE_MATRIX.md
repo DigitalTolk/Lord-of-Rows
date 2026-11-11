@@ -88,7 +88,20 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Auto-check on startup is opt-in (no network when off) | TESTED | vitest `updates.test.ts` |
 | Check now / release notes / download progress / install / restart prompt / failure recovery / `app_updated` audit events | IMPLEMENTED_UNVERIFIED | no end-to-end run against a real signed release + update server yet |
 
+## Localisation & accessibility
+
+| Feature | Status | Evidence |
+|---|---|---|
+| UI strings in `src/i18n/en.json` (i18next plurals, no hardcoded English in views/components) | TESTED (UT) except connection dialog | vitest `locales.test.ts` (every en key referenced from source). `ConnectionDialog.tsx` still has ~25 hardcoded labels (being redesigned on another branch) |
+| German, Spanish, Arabic translations; key/plural-form/placeholder parity with English | TESTED (UT) | vitest `locales.test.ts` (per locale: missing, extra, empty, placeholders; CLDR plural categories via `Intl.PluralRules`). Translations are AI-produced and not yet reviewed by native speakers |
+| Language picker (System default + each language), persisted, `<html lang dir>` sync | TESTED (UT) | vitest `locales.test.ts` (system mapping), `a11y.test.tsx` (`dir=rtl`/`lang=ar`) |
+| RTL layout (Arabic) with logical Tailwind utilities; Monaco, data grid, SQL/JSON blocks pinned LTR | IMPLEMENTED_UNVERIFIED | axe passes in Arabic (jsdom, no layout); not yet looked at in the real webview |
+| Locale-aware numbers/dates/bytes (`Intl`, active language) | TESTED (UT) | vitest `format.test.ts` (en/de/es); not every call site is covered |
+| Automated a11y: axe-core (serious/critical) on launcher, connection dialog, shell + query tab, every Settings section, confirm + safety dialogs, command palette, Arabic | TESTED (jsdom) | vitest `a11y.test.tsx`; colour contrast via token tests in `theme.test.ts` (axe contrast cannot run in jsdom) |
+| Keyboard: tree (`role=tree`, arrows), tab bar (roving tabindex, arrows, Delete), rail (arrows), context menus (Shift+F10), dialog focus trap + focus return, keyboard sidebar resize | TESTED (UT) | vitest `a11y.test.tsx` keyboard suite; see `docs/ACCESSIBILITY.md` |
+| Screen reader (VoiceOver/NVDA) | NOT_STARTED | manual checklist in `docs/ACCESSIBILITY.md` |
+
 ## Not started (spec items)
 
 Plugin system, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
-CI pipelines, localization beyond English (architecture in place), accessibility audit with assistive tech.
+CI pipelines, accessibility audit with assistive tech (manual screen-reader pass).

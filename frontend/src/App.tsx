@@ -4,13 +4,14 @@ import { AskHost } from './components/ask';
 import { useConfirm } from './components/confirm';
 import { ConnectionDialog } from './components/ConnectionDialog';
 import { SafetyDialog } from './components/SafetyDialog';
-import { CommandPalette, StatusBar, TabBar, TopBar } from './components/Shell';
+import { CommandPalette, panelDomId, StatusBar, TabBar, tabDomId, TopBar } from './components/Shell';
 import { Welcome } from './components/Welcome';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
 import { Sidebar } from './components/Sidebar';
 import { api } from './lib/ipc';
+import { applyLanguage, LANGUAGE_SETTING, parseLanguagePref } from './i18n';
 import { applyThemeClasses, cachedThemePref, cacheThemePref, onOsThemeChange, osTheme, parseThemePref, resolveTheme, THEME_SETTING } from './lib/theme';
 import { DEFAULT_KEYS, displayCombo, eventCombo, matches, type KeyAction } from './lib/keys';
 import { errMsg, useApp, type Tab } from './store';
@@ -62,6 +63,15 @@ function useTheme() {
   }, [pref]);
 }
 
+/** Applies the persisted UI language (and <html lang/dir>) once settings have loaded. */
+function useLanguage() {
+  const raw = useApp((s) => s.settings[LANGUAGE_SETTING]);
+  const loaded = useApp((s) => !!s.info);
+  useEffect(() => {
+    if (loaded) applyLanguage(parseLanguagePref(raw));
+  }, [raw, loaded]);
+}
+
 /** Periodic health check with bounded auto-reconnect is surfaced in the status bar. */
 function useHealth() {
   useEffect(() => {
@@ -88,6 +98,7 @@ export default function App() {
   const [sidebarW, setSidebarW] = useState(280);
   const [error, setError] = useState<string | null>(null);
   useTheme();
+  useLanguage();
   useHealth();
 
   useEffect(() => {
@@ -124,7 +135,7 @@ export default function App() {
       const cur = tabs.findIndex((x) => x.id === st.activeTab);
       let handled = true;
       if (is('palette') || is('quickOpen')) useApp.setState({ paletteOpen: !st.paletteOpen });
-      else if (is('newQuery')) st.openTab({ kind: 'query', title: 'Query', sessionId: s?.session_id, sql: '' });
+      else if (is('newQuery')) st.openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' });
       else if (is('closeTab') && st.activeTab) st.closeTab(st.activeTab);
       else if (is('reopenTab')) st.reopenClosedTab();
       else if (is('nextTab') && tabs.length) useApp.setState({ activeTab: tabs[(cur + 1) % tabs.length].id });
@@ -147,13 +158,26 @@ export default function App() {
   const activeSession = active?.sessionId ? st.sessions[active.sessionId] : st.activeSession ? st.sessions[st.activeSession] : undefined;
   const focus = !!st.settings['workspace.focus'];
 
+  const clampW = (w: number) => Math.min(600, Math.max(180, w));
+  const rtl = () => document.documentElement.dir === 'rtl';
   const resize = (e: React.MouseEvent) => {
     const startX = e.clientX;
     const startW = sidebarW;
-    const move = (m: MouseEvent) => setSidebarW(Math.min(600, Math.max(180, startW + m.clientX - startX)));
+    // In RTL the sidebar sits on the right, so dragging left widens it.
+    const sign = rtl() ? -1 : 1;
+    const move = (m: MouseEvent) => setSidebarW(clampW(startW + sign * (m.clientX - startX)));
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
+  };
+  const resizeKey = (e: React.KeyboardEvent) => {
+    const grow = rtl() ? 'ArrowLeft' : 'ArrowRight';
+    const shrink = rtl() ? 'ArrowRight' : 'ArrowLeft';
+    const step = e.shiftKey ? 40 : 10;
+    if (e.key === grow) setSidebarW((w) => clampW(w + step));
+    else if (e.key === shrink) setSidebarW((w) => clampW(w - step));
+    else return;
+    e.preventDefault();
   };
 
   const hasSessions = Object.keys(st.sessions).length > 0;
@@ -170,7 +194,7 @@ export default function App() {
         <div className="relative min-h-0 flex-1">
           <Welcome />
           {hasSessions && (
-            <button className="btn absolute right-4 top-4" onClick={() => useApp.setState({ launcher: false })}>Back to workspace</button>
+            <button className="btn absolute end-4 top-4" onClick={() => useApp.setState({ launcher: false })}>{t('shell.backToWorkspace')}</button>
           )}
         </div>
       ) : (
@@ -180,8 +204,19 @@ export default function App() {
             {!focus && hasSessions && <ConnectionRail />}
             {sidebar && !focus && sidebarSession && (
               <>
-                <div style={{ width: sidebarW }} className="min-h-0 shrink-0 border-r border-border"><Sidebar sessionId={sidebarSession} /></div>
-                <div role="separator" aria-orientation="vertical" aria-label="Resize sidebar" className="-ml-[3px] w-[5px] shrink-0 cursor-col-resize hover:bg-accent/40" onMouseDown={resize} />
+                <div style={{ width: sidebarW }} className="min-h-0 shrink-0 border-e border-border"><Sidebar sessionId={sidebarSession} /></div>
+                <div
+                  role="separator"
+                  tabIndex={0}
+                  aria-orientation="vertical"
+                  aria-label={t('shell.resizeSidebar')}
+                  aria-valuemin={180}
+                  aria-valuemax={600}
+                  aria-valuenow={sidebarW}
+                  className="-ms-[3px] w-[5px] shrink-0 cursor-col-resize hover:bg-accent/40 focus-visible:bg-accent/60"
+                  onMouseDown={resize}
+                  onKeyDown={resizeKey}
+                />
               </>
             )}
             <main className="flex min-w-0 flex-1 flex-col">
@@ -189,7 +224,7 @@ export default function App() {
               <div className="min-h-0 flex-1">
                 {/* Keep views mounted so editor state survives tab switches. */}
                 {st.tabs.map((tab) => (
-                  <div key={tab.id} role="tabpanel" hidden={tab.id !== active?.id} className="h-full">
+                  <div key={tab.id} id={panelDomId(tab.id)} role="tabpanel" aria-labelledby={tabDomId(tab.id)} hidden={tab.id !== active?.id} className="h-full">
                     <ErrorBoundary label={tab.title}>
                       <View tab={tab} />
                     </ErrorBoundary>
@@ -198,10 +233,10 @@ export default function App() {
                 {!active && (
                   <div className="flex h-full flex-col items-center justify-center gap-2 text-muted">
                     <Icon name="table" size={40} strokeWidth={1.2} />
-                    <p>Select a table in the sidebar, or open a new SQL query.</p>
+                    <p>{t('shell.emptyHint')}</p>
                     <div className="mt-1 flex gap-2">
-                      <button className="btn" onClick={() => st.openTab({ kind: 'query', title: 'Query', sessionId: st.activeSession, sql: '' })}><Icon name="sql" size={14} /> New query <span className="kbd">{displayCombo(DEFAULT_KEYS.newQuery)}</span></button>
-                      <button className="btn" onClick={() => useApp.setState({ paletteOpen: true })}><Icon name="search" size={14} /> Open anything <span className="kbd">{displayCombo(DEFAULT_KEYS.palette)}</span></button>
+                      <button className="btn" onClick={() => st.openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: st.activeSession, sql: '' })}><Icon name="sql" size={14} /> {t('query.newTab')} <span className="kbd" aria-hidden>{displayCombo(DEFAULT_KEYS.newQuery)}</span></button>
+                      <button className="btn" onClick={() => useApp.setState({ paletteOpen: true })}><Icon name="search" size={14} /> {t('shell.openAnything')} <span className="kbd" aria-hidden>{displayCombo(DEFAULT_KEYS.palette)}</span></button>
                     </div>
                   </div>
                 )}
@@ -215,9 +250,10 @@ export default function App() {
       {st.paletteOpen && <CommandPalette />}
       {pending && <SafetyDialog pending={pending} />}
       <AskHost />
-      <div aria-live="polite" className="pointer-events-none fixed bottom-8 right-4 z-50 flex flex-col gap-1">
+      {/* Live region stays mounted so screen readers announce toasts added later. */}
+      <div role="log" aria-live="polite" aria-relevant="additions" aria-label={t('shell.notifications')} className="pointer-events-none fixed bottom-8 end-4 z-50 flex flex-col gap-1">
         {st.toasts.map((x) => (
-          <div key={x.id} role={x.kind === 'error' ? 'alert' : 'status'} className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="mr-1.5 text-ok">●</span>}{x.text}</div>
+          <div key={x.id} role={x.kind === 'error' ? 'alert' : undefined} dir="auto" className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="me-1.5 text-ok" aria-hidden>●</span>}{x.text}</div>
         ))}
       </div>
     </div>

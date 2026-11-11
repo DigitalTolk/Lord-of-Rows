@@ -19,12 +19,13 @@ const riskColor: Record<string, string> = {
 };
 
 function FindingList({ findings }: { findings: Finding[] }) {
+  const { t } = useTranslation();
   return (
     <ul className="mb-3 space-y-1">
       {findings.map((f, i) => (
         <li key={i} className="rounded border border-border bg-panel p-2 text-sm">
-          <span className={`mr-2 font-semibold uppercase ${riskColor[f.risk] ?? ''}`}>{f.risk}</span>
-          #{f.statement + 1}: {f.reason}
+          <span className={`me-2 font-semibold uppercase ${riskColor[f.risk] ?? ''}`}>{t(`safety.risk.${f.risk}`, { defaultValue: f.risk })}</span>
+          {t('safety.statementN', { n: f.statement + 1 })}: <span dir="auto">{f.reason}</span>
         </li>
       ))}
     </ul>
@@ -62,7 +63,7 @@ export function SafetyDialog({ pending }: { pending: PendingConfirm }) {
     >
       {pending.production && <div className="mb-3 rounded bg-danger-solid px-3 py-2 font-bold text-on-solid">{t('safety.productionBanner')}</div>}
       <FindingList findings={d.findings} />
-      {pending.sqlPreview && <pre className="mb-3 max-h-64 overflow-auto rounded border border-border bg-panel p-2 font-mono text-xs">{pending.sqlPreview}</pre>}
+      {pending.sqlPreview && <pre dir="ltr" className="mb-3 max-h-64 overflow-auto rounded border border-border bg-panel p-2 font-mono text-xs">{pending.sqlPreview}</pre>}
       <p className="mb-3 text-xs text-muted">{t('safety.explainer')}</p>
       {needsTyped && (
         <label className="block">

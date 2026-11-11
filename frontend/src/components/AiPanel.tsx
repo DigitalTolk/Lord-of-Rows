@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { AiAnswer, AiPreview, AiTask, TableTarget } from '../lib/types';
 import { errMsg, type OpenSession } from '../store';
+import { fmtNumber } from '../lib/format';
 import { ErrorBox, Spinner } from './ui';
 import { Icon } from './icons';
 
@@ -96,10 +97,10 @@ export function AiPanel({ session, sources, onInsert, onClose }: { session?: Ope
   const shown = available.filter((o) => !tableFilter || o.name.toLowerCase().includes(tableFilter.toLowerCase()));
 
   return (
-    <aside aria-label={t('ai.title')} className="flex h-full min-h-0 w-[380px] shrink-0 flex-col border-l border-border bg-panel text-[0.92rem]">
+    <aside aria-label={t('ai.title')} className="flex h-full min-h-0 w-[380px] shrink-0 flex-col border-s border-border bg-panel text-[0.92rem]">
       <div className="flex h-[32px] shrink-0 items-center gap-2 border-b border-border px-2">
         <span className="font-semibold">{t('ai.title')}</span>
-        <button className="icon-btn ml-auto h-6 w-6" onClick={onClose} aria-label={t('common.close')}><Icon name="x" size={13} /></button>
+        <button className="icon-btn ms-auto h-6 w-6" onClick={onClose} aria-label={t('common.close')}><Icon name="x" size={13} /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
         <label className="label" htmlFor="ai-task">{t('ai.task')}</label>
@@ -145,8 +146,8 @@ export function AiPanel({ session, sources, onInsert, onClose }: { session?: Ope
         {preview && (
           <section aria-label={t('ai.previewTitle')} className="mb-2 rounded border border-warn/50 bg-warn/5 p-2">
             <div className="mb-1 text-xs font-semibold">{t('ai.previewTitle')}</div>
-            <p className="mb-1 text-xs text-muted">{t('ai.previewInfo', { bytes: preview.bytes.toLocaleString(), model: preview.model, endpoint: preview.base_url })}</p>
-            <pre data-testid="ai-preview" className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-1 font-mono text-[0.75rem]">{preview.text}</pre>
+            <p className="mb-1 text-xs text-muted">{t('ai.previewInfo', { bytes: fmtNumber(preview.bytes), model: preview.model, endpoint: preview.base_url })}</p>
+            <pre data-testid="ai-preview" dir="auto" className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-bg p-1 font-mono text-[0.75rem]">{preview.text}</pre>
             <div className="mt-2 flex gap-2">
               <button className="btn btn-primary h-7 flex-1" onClick={doSend} disabled={!!busy}>{busy === 'send' ? <Spinner label={t('ai.sending')} /> : t('ai.send')}</button>
               <button className="btn h-7" onClick={() => setPreview(null)} disabled={!!busy}>{t('common.cancel')}</button>
@@ -157,10 +158,10 @@ export function AiPanel({ session, sources, onInsert, onClose }: { session?: Ope
         {answer && (
           <section aria-label={t('ai.answer')} className="rounded border border-border p-2">
             <div className="mb-1 flex items-center text-xs text-muted">
-              <span>{t('ai.answerFrom', { model: answer.model, ms: answer.duration_ms })}</span>
+              <span>{t('ai.answerFrom', { model: answer.model, ms: fmtNumber(answer.duration_ms) })}</span>
             </div>
             {/* Plain text only: model output is never rendered as HTML. */}
-            <pre data-testid="ai-answer" className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-[0.85rem]">{answer.text}</pre>
+            <pre data-testid="ai-answer" dir="auto" className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-[0.85rem]">{answer.text}</pre>
             {answer.truncated && <p className="mt-1 text-xs text-warn">{t('ai.truncated')}</p>}
             {answer.sql && (
               <>

@@ -79,6 +79,26 @@ describe('palette contrast (WCAG AA)', () => {
       expect(contrast(p['on-solid'], p['danger-solid'])).toBeGreaterThanOrEqual(4.5);
     });
   }
+  // Alpha-blended fills used by badges, alerts and the focus ring (Tailwind `/15`, `/10`, `/0.7`).
+  const blend = (fg: number[], bg: number[], a: number) => fg.map((v, i) => Math.round(v * a + bg[i] * (1 - a)));
+  for (const [name, p] of Object.entries(themes)) {
+    it(`${name}: focus ring has 3:1 non-text contrast on every surface (WCAG 1.4.11)`, () => {
+      const alpha = 1; // index.css draws the ring in the solid accent token
+      for (const surface of ['bg', 'panel', 'raised']) {
+        expect(contrast(blend(p.accent, p[surface], alpha), p[surface]), `focus on ${surface}`).toBeGreaterThanOrEqual(3);
+      }
+    });
+    it(`${name}: tinted badges and alerts keep text readable`, () => {
+      for (const surface of ['bg', 'panel', 'raised']) {
+        for (const tone of ['ok', 'accent', 'purple', 'warn']) {
+          expect(contrast(p[tone], blend(p[tone], p[surface], 0.15)), `${tone} badge on ${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
+        expect(contrast(p.danger, blend(p.danger, p[surface], 0.1)), `error box on ${surface}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(p.fg, blend(p.accent, p[surface], 0.15)), `selected row on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
+      expect(contrast(p.muted, p.hover), 'muted on hover').toBeGreaterThanOrEqual(4.5);
+    });
+  }
   it('surfaces are distinguishable in light and dark', () => {
     for (const p of [themes.light, themes.dark]) {
       expect(contrast(p.bg, p.hover)).toBeGreaterThan(1.1);

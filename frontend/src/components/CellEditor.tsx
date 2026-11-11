@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ColumnMeta, Value } from '../lib/types';
 import { editableText, parseInput } from '../lib/value';
+import { fmtNumber } from '../lib/format';
 import { Dialog, ErrorBox } from './ui';
 
 type Mode = 'text' | 'json-tree' | 'hex' | 'image';
+const MODE_LABEL: Record<Mode, string> = { text: 'cell.modes.text', 'json-tree': 'cell.modes.jsonTree', hex: 'cell.modes.hex', image: 'cell.modes.image' };
 
 /** Large-value editor: long text, JSON (raw + tree), binary (hex / image preview), XML, dates. */
 export function CellEditor({ column, value, readOnly, onSave, onClose }: { column: ColumnMeta; value: Value; readOnly?: boolean; onSave: (v: Value) => void; onClose: () => void }) {
@@ -40,7 +42,7 @@ export function CellEditor({ column, value, readOnly, onSave, onClose }: { colum
       footer={
         <>
           {!readOnly && (
-            <label className="mr-auto flex items-center gap-2 text-sm">
+            <label className="me-auto flex items-center gap-2 text-sm">
               <input type="checkbox" checked={isNull} onChange={(e) => setIsNull(e.target.checked)} /> NULL
             </label>
           )}
@@ -52,18 +54,18 @@ export function CellEditor({ column, value, readOnly, onSave, onClose }: { colum
     >
       <div className="mb-2 flex gap-1" role="tablist">
         {(['text', ...(isJson ? ['json-tree'] : []), ...(isBytes ? ['hex'] : []), ...(imgSrc ? ['image'] : [])] as Mode[]).map((m) => (
-          <button key={m} role="tab" aria-selected={mode === m} className={`btn ${mode === m ? 'btn-primary' : ''}`} onClick={() => setMode(m)}>{m}</button>
+          <button key={m} role="tab" aria-selected={mode === m} className={`btn ${mode === m ? 'btn-primary' : ''}`} onClick={() => setMode(m)}>{t(MODE_LABEL[m])}</button>
         ))}
         {isJson && !readOnly && (
-          <button className="btn ml-auto" onClick={() => parsed !== undefined && setText(JSON.stringify(parsed, null, 2))}>{t('query.format')}</button>
+          <button className="btn ms-auto" onClick={() => parsed !== undefined && setText(JSON.stringify(parsed, null, 2))}>{t('query.format')}</button>
         )}
       </div>
       {mode === 'text' && (
-        <textarea className="input h-[50vh] font-mono" value={isNull ? '' : text} disabled={isNull} readOnly={readOnly} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+        <textarea dir="ltr" aria-label={t('cell.value', { name: column.name })} className="input h-[50vh] font-mono" value={isNull ? '' : text} disabled={isNull} readOnly={readOnly} onChange={(e) => setText(e.target.value)} spellCheck={false} />
       )}
-      {mode === 'json-tree' && <div className="h-[50vh] overflow-auto rounded border border-border p-2 font-mono text-sm">{parsed !== undefined ? <JsonNode k={null} v={parsed} /> : <ErrorBox error={jsonErr} />}</div>}
+      {mode === 'json-tree' && <div dir="ltr" className="h-[50vh] overflow-auto rounded border border-border p-2 font-mono text-sm">{parsed !== undefined ? <JsonNode k={null} v={parsed} /> : <ErrorBox error={jsonErr} />}</div>}
       {mode === 'hex' && value.t === 'bytes' && <HexView hex={value.v.hex} truncated={value.v.truncated} len={value.v.len} />}
-      {mode === 'image' && imgSrc && <img src={imgSrc} alt={`${column.name} preview`} className="max-h-[50vh] max-w-full object-contain" />}
+      {mode === 'image' && imgSrc && <img src={imgSrc} alt={t('cell.imagePreview', { name: column.name })} className="max-h-[50vh] max-w-full object-contain" />}
       {isJson && mode === 'text' && <ErrorBox error={jsonErr && !isNull ? jsonErr : null} />}
     </Dialog>
   );
@@ -77,7 +79,7 @@ function JsonNode({ k, v, depth = 0 }: { k: string | null; v: unknown; depth?: n
   const entries = Array.isArray(v) ? v.map((x, i) => [String(i), x] as const) : Object.entries(v as object);
   return (
     <div style={{ paddingLeft: depth * 12 }}>
-      <button className="text-left" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button className="text-start" aria-expanded={open} onClick={() => setOpen(!open)}>
         {open ? '▾' : '▸'} {label}
         <span className="text-muted">{Array.isArray(v) ? `[${entries.length}]` : `{${entries.length}}`}</span>
       </button>
@@ -87,6 +89,7 @@ function JsonNode({ k, v, depth = 0 }: { k: string | null; v: unknown; depth?: n
 }
 
 function HexView({ hex, truncated, len }: { hex: string; truncated: boolean; len: number }) {
+  const { t } = useTranslation();
   const lines = [];
   for (let i = 0; i < Math.min(hex.length, 16 * 2 * 512); i += 32) {
     const chunk = hex.slice(i, i + 32);
@@ -96,8 +99,8 @@ function HexView({ hex, truncated, len }: { hex: string; truncated: boolean; len
   }
   return (
     <div>
-      <pre className="h-[50vh] overflow-auto rounded border border-border p-2 font-mono text-xs">{lines.join('\n')}</pre>
-      <p className="mt-1 text-xs text-muted">{len} bytes{truncated ? ' (preview truncated)' : ''}</p>
+      <pre dir="ltr" className="h-[50vh] overflow-auto rounded border border-border p-2 font-mono text-xs">{lines.join('\n')}</pre>
+      <p className="mt-1 text-xs text-muted">{t('cell.bytes', { count: len, formatted: fmtNumber(len) })}{truncated ? ` ${t('cell.previewTruncated')}` : ''}</p>
     </div>
   );
 }

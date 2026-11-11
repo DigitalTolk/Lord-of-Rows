@@ -139,7 +139,14 @@ export function DataGrid(p: GridProps) {
       case 'ArrowLeft': e.preventDefault(); return move(0, mod ? -visibleCols.length : -1);
       case 'PageDown': e.preventDefault(); return move(20, 0);
       case 'PageUp': e.preventDefault(); return move(-20, 0);
-      case 'Tab': e.preventDefault(); return move(0, e.shiftKey ? -1 : 1);
+      case 'Tab': {
+        // Tab walks cells but lets focus leave the grid at the first/last column (no keyboard trap).
+        const c = sel.c1 + (e.shiftKey ? -1 : 1);
+        if (c < 0 || c >= visibleCols.length) return;
+        e.preventDefault();
+        setSel({ r0: sel.r1, c0: c, r1: sel.r1, c1: c });
+        return;
+      }
       case 'Enter':
       case 'F2':
         if (canEditRow(sel.r1)) {
@@ -190,12 +197,12 @@ export function DataGrid(p: GridProps) {
     sel && r >= Math.min(sel.r0, sel.r1) && r <= Math.max(sel.r0, sel.r1) && vc >= Math.min(sel.c0, sel.c1) && vc <= Math.max(sel.c0, sel.c1);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div dir="ltr" className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
         tabIndex={0}
         role="grid"
-        aria-label={p.ariaLabel ?? 'Data grid'}
+        aria-label={p.ariaLabel ?? t('grid.label')}
         aria-rowcount={total + 1}
         aria-colcount={visibleCols.length}
         onKeyDown={onKey}
@@ -281,11 +288,11 @@ export function DataGrid(p: GridProps) {
                       title={isNull(v) ? 'NULL' : displayValue(v).slice(0, 500)}
                     >
                       {isEditing ? (
-                        <InlineEditor initial={editableText(v)} onDone={(text) => commitEdit(r, ci, text)} onCancel={() => setEditing(null)} />
+                        <InlineEditor label={t('grid.editCell')} initial={editableText(v)} onDone={(text) => commitEdit(r, ci, text)} onCancel={() => setEditing(null)} />
                       ) : isNull(v) ? (
                         <span className="cell-null">NULL</span>
                       ) : v.t === 'text' && v.v === '' ? (
-                        <span className="text-muted/60" aria-label="empty string">''</span>
+                        <span className="text-muted/60" aria-label={t('grid.emptyString')}>''</span>
                       ) : (
                         displayValue(v)
                       )}
@@ -316,8 +323,8 @@ export function DataGrid(p: GridProps) {
             <>
               <MenuItem onClick={() => { setHidden((h) => new Set([...h, p.columns[menu.col!].name])); setMenu(null); }}>{t('grid.hideColumn')}</MenuItem>
               <MenuItem onClick={() => { setHidden(new Set()); setMenu(null); }}>{t('grid.showAll')}</MenuItem>
-              <MenuItem onClick={() => { setFrozen(visibleCols.indexOf(menu.col!) + 1); setMenu(null); }}>Freeze up to here</MenuItem>
-              <MenuItem onClick={() => { setFrozen(0); setMenu(null); }}>Unfreeze columns</MenuItem>
+              <MenuItem onClick={() => { setFrozen(visibleCols.indexOf(menu.col!) + 1); setMenu(null); }}>{t('grid.freeze')}</MenuItem>
+              <MenuItem onClick={() => { setFrozen(0); setMenu(null); }}>{t('grid.unfreeze')}</MenuItem>
             </>
           ) : (
             <>
@@ -340,12 +347,13 @@ function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: (
   return <button role="menuitem" className="menu-item" onClick={onClick}>{children}</button>;
 }
 
-function InlineEditor({ initial, onDone, onCancel }: { initial: string; onDone: (t: string) => void; onCancel: () => void }) {
+function InlineEditor({ label, initial, onDone, onCancel }: { label: string; initial: string; onDone: (t: string) => void; onCancel: () => void }) {
   const [v, setV] = useState(initial);
   return (
     <input
       className="h-full w-full bg-raised px-0 font-mono outline outline-2 outline-accent"
       autoFocus
+      aria-label={label}
       value={v}
       onChange={(e) => setV(e.target.value)}
       onBlur={() => onDone(v)}

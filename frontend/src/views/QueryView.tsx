@@ -12,6 +12,7 @@ import { api, IpcError } from '../lib/ipc';
 import { monaco, registerSqlCompletion, setCompletionSource, useEditorTheme } from '../lib/monaco';
 import { family } from '../lib/sqlgen';
 import { displayValue } from '../lib/value';
+import { fmtNumber } from '../lib/format';
 import type { StatementResult } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
 
@@ -96,11 +97,11 @@ export function QueryView({ tab }: { tab: Tab }) {
         }
         const r = await api.runSql({ session_id: s.session_id, sql, query_id: queryId, confirm_token: token, typed_confirmation: typed ?? null });
         setResults(r.results);
-        setMessages([`Completed in ${r.duration_ms} ms`]);
+        setMessages([t('query.completed', { ms: fmtNumber(r.duration_ms) })]);
         // Refresh the object tree after DDL.
         if (ev.statements.some((x) => ['CREATE', 'ALTER', 'DROP', 'RENAME'].includes(x.verb))) void useApp.getState().loadObjects(s.session_id, s.activeSchema);
       } catch (e) {
-        const msg = e instanceof IpcError ? `${e.err.message}${e.err.code ? ` [${e.err.code}]` : ''}${e.err.hint ? `\nHint: ${e.err.hint}` : ''}` : errMsg(e);
+        const msg = e instanceof IpcError ? `${e.err.message}${e.err.code ? ` [${e.err.code}]` : ''}${e.err.hint ? `\n${t('query.hint', { hint: e.err.hint })}` : ''}` : errMsg(e);
         setError(msg);
         // Highlight "at character N" positions.
         const m = /at character (\d+)/.exec(msg);
@@ -112,7 +113,7 @@ export function QueryView({ tab }: { tab: Tab }) {
         setRunning(null);
       }
     },
-    [s, isRedis],
+    [s, isRedis, t],
   );
 
   const cancel = () => {
@@ -158,7 +159,7 @@ export function QueryView({ tab }: { tab: Tab }) {
     const name = await ask.text(t('query.saveSnippet'), t('query.snippetName'));
     if (!name) return;
     await api.saveSnippet({ id: '', name, sql: editorRef.current?.getValue() ?? '', folder: null, favorite: false, connection_id: s?.config.id ?? null, updated: '' });
-    toast('ok', 'Snippet saved');
+    toast('ok', t('query.snippetSaved'));
   };
 
   // AI panel inputs: only what the user is looking at; the panel decides what to send.
@@ -211,14 +212,15 @@ export function QueryView({ tab }: { tab: Tab }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
-        <button className="btn btn-primary h-6 px-2" onClick={() => run('selection')} disabled={!s || !!running} title="Run selection or current statement (⌘/Ctrl+Enter)"><Icon name="play" size={12} fill="currentColor" /> {t('query.run')}</button>
-        <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
+        <button className="btn btn-primary h-6 px-2" onClick={() => run('selection')} disabled={!s || !!running} title={`${t('query.runSelection')} (⌘/Ctrl+Enter)`}><Icon name="play" size={12} fill="currentColor" /> {t('query.run')}</button>
+        <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title={`${t('query.runAll')} (⌘/Ctrl+Shift+Enter)`}>{t('query.runAll')}</button>
         <button className="icon-btn h-6 w-6" onClick={cancel} disabled={!running} title={`${t('query.cancel')} (⌘/Ctrl+.)`} aria-label={t('query.cancel')}><Icon name="stop" size={13} /></button>
         {running && <Spinner label={t('query.running')} />}
+        <span className="sr-only" role="status" aria-live="polite">{running ? '' : error ? t('query.failed') : messages[0] ?? ''}</span>
         {!isRedis && (
           <>
-            <span className="mx-1 h-4 border-l border-border" />
-            <button className="btn btn-ghost h-6 px-2" onClick={fmt} title="⌘/Ctrl+Alt+F">{t('query.format')}</button>
+            <span className="mx-1 h-4 border-s border-border" />
+            <button className="btn btn-ghost h-6 px-2" onClick={fmt} title={`${t('query.format')} (⌘/Ctrl+Alt+F)`}>{t('query.format')}</button>
             {s?.capabilities.explain && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(false)}>{t('query.explain')}</button>}
             {s?.capabilities.explain_analyze && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(true)}>{t('query.explainAnalyze')}</button>}
             <button className="btn btn-ghost h-6 px-2" onClick={minify}>{t('query.minify')}</button>
@@ -227,25 +229,25 @@ export function QueryView({ tab }: { tab: Tab }) {
         {aiEnabled && !isRedis && (
           <button className={`btn btn-ghost h-6 px-2 ${aiOpen ? 'bg-accent/15' : ''}`} onClick={() => setAiOpen((x) => !x)} aria-pressed={aiOpen} title={t('ai.toggle')}><Icon name="bolt" size={13} /> {t('ai.button')}</button>
         )}
-        <button className="btn btn-ghost ml-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
+        <button className="btn btn-ghost ms-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
         {s ? <span className="text-[0.82rem] text-muted">{s.config.name}{s.activeSchema ? ` · ${s.activeSchema}` : ''}</span> : <span className="text-warn">{t('status.disconnected')}</span>}
       </div>
       {!s && (
         <div role="alert" className="flex shrink-0 items-center gap-2 border-b border-warn/40 bg-warn/10 px-3 py-1.5 text-[0.92rem]">
-          <span>This query tab isn’t connected to a database.</span>
+          <span>{t('query.notConnected')}</span>
           {Object.values(sessions).length > 0 ? (
-            <select className="input h-6 w-auto py-0" aria-label="Choose connection" value="" onChange={(e) => e.target.value && updateTab(tab.id, { sessionId: e.target.value })}>
-              <option value="">Choose connection…</option>
+            <select className="input h-6 w-auto py-0" aria-label={t('query.chooseConnection')} value="" onChange={(e) => e.target.value && updateTab(tab.id, { sessionId: e.target.value })}>
+              <option value="">{t('query.chooseConnectionOption')}</option>
               {Object.values(sessions).map((x) => <option key={x.session_id} value={x.session_id}>{x.config.name}</option>)}
             </select>
           ) : (
-            <button className="btn btn-primary h-6" onClick={() => useApp.setState({ launcher: true })}>Open a connection</button>
+            <button className="btn btn-primary h-6" onClick={() => useApp.setState({ launcher: true })}>{t('query.openConnection')}</button>
           )}
         </div>
       )}
       <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
+        <div dir="ltr" style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
           <Editor
             defaultLanguage={isRedis ? 'redis' : 'sql'}
             defaultValue={tab.sql ?? ''}
@@ -262,11 +264,12 @@ export function QueryView({ tab }: { tab: Tab }) {
               automaticLayout: true,
               scrollBeyondLastLine: false,
               accessibilitySupport: 'auto',
+              ariaLabel: t('query.editorLabel'),
               fixedOverflowWidgets: true,
             }}
           />
         </div>
-        <div role="separator" aria-orientation="horizontal" aria-label="Resize editor" tabIndex={0} className="h-1.5 shrink-0 cursor-row-resize bg-border hover:bg-accent"
+        <div role="separator" aria-orientation="horizontal" aria-label={t('query.resizeEditor')} aria-valuemin={15} aria-valuemax={85} aria-valuenow={Math.round(split * 100)} tabIndex={0} className="h-1.5 shrink-0 cursor-row-resize bg-border hover:bg-accent"
           onMouseDown={startDrag}
           onKeyDown={(e) => { if (e.key === 'ArrowUp') setSplit((x) => Math.max(0.15, x - 0.05)); if (e.key === 'ArrowDown') setSplit((x) => Math.min(0.85, x + 0.05)); }} />
         <div className="min-h-0 flex-1">

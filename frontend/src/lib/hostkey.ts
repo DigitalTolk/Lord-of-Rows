@@ -1,4 +1,5 @@
 import { ask } from '../components/ask';
+import i18n from '../i18n';
 import { IpcError } from './ipc';
 
 /**
@@ -12,10 +13,10 @@ export async function withHostKeyTrust<T>(run: (trust?: string) => Promise<T>): 
   } catch (e) {
     if (e instanceof IpcError && e.err.code === 'HOST_KEY_UNKNOWN' && e.err.hint) {
       const ok = await ask.confirm(
-        'Trust this SSH host?',
-        `${e.err.message}\n\nOnly continue if this fingerprint matches the one your server administrator gave you:\n\n${e.err.hint}`,
+        i18n.t('ssh.trustTitle'),
+        i18n.t('ssh.trustBody', { message: e.err.message, fingerprint: e.err.hint }),
       );
-      if (!ok) throw new IpcError({ kind: 'ssh', message: 'SSH host key not trusted; connection cancelled.' });
+      if (!ok) throw new IpcError({ kind: 'ssh', message: i18n.t('ssh.notTrusted') });
       return run(e.err.hint);
     }
     throw e;

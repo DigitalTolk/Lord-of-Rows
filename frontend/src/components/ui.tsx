@@ -1,8 +1,9 @@
-import { cloneElement, isValidElement, useEffect, useId, useRef, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { EnvironmentKind } from '../lib/types';
 
 export function Dialog({ title, onClose, children, footer, wide }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
+  const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const closeRef = useRef(onClose);
@@ -11,7 +12,7 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     const el = ref.current;
-    const focusable = () => Array.from(el?.querySelectorAll<HTMLElement>('button,input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? []).filter((x) => !x.hasAttribute('disabled'));
+    const focusable = () => Array.from(el?.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? []).filter((x) => !x.hasAttribute('disabled'));
     const pick = () => (el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>('input:not([type=checkbox]):not([disabled]),textarea,select') ?? focusable()[0] ?? el)?.focus();
     pick();
     // WebKit can move focus back to the clicked opener after this effect; re-apply once painted.
@@ -54,7 +55,7 @@ export function Dialog({ title, onClose, children, footer, wide }: { title: stri
       >
         <div className="flex h-11 shrink-0 items-center justify-between px-4">
           <h2 id={titleId} className="text-[1.05rem] font-semibold">{title}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}>✕</button>
+          <button className="icon-btn" aria-label={t('common.close')} title={t('common.close')} onClick={onClose}><span aria-hidden>✕</span></button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-2.5">{footer}</div>}
@@ -98,10 +99,11 @@ function withId(children: ReactNode, id: string): ReactNode {
 }
 
 export function Spinner({ label }: { label?: string }) {
+  const { t } = useTranslation();
   return (
     <span role="status" className="inline-flex items-center gap-2 text-muted">
       <span className="h-3 w-3 animate-spin rounded-full border-2 border-muted border-t-transparent" aria-hidden />
-      {label && <span>{label}</span>}
+      {label ? <span>{label}</span> : <span className="sr-only">{t('common.loading')}</span>}
     </span>
   );
 }
@@ -118,3 +120,61 @@ export function ErrorBox({ error }: { error: string | null | undefined }) {
 export function Toolbar({ children }: { children: ReactNode }) {
   return <div role="toolbar" className="flex min-h-[38px] flex-wrap items-center gap-1.5 border-b border-border bg-panel px-2 py-1">{children}</div>;
 }
+
+/**
+ * Popup menu (context menus, dropdowns). Moves focus to the first item, supports
+ * Arrow/Home/End/Escape/Tab, closes on outside click and returns focus to the opener.
+ * Children should be `role="menuitem"` buttons (and separators).
+ */
+export function MenuPopup({ x, y, onClose, className = 'w-48', label, children }: { x?: number; y?: number; onClose: () => void; className?: string; label?: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const prev = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    el?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus();
+    const onDown = (e: MouseEvent) => {
+      if (el && !el.contains(e.target as Node)) closeRef.current();
+    };
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown, true);
+      // Return focus to the opener unless the chosen action moved it somewhere meaningful.
+      const a = document.activeElement;
+      if (prev && prev.isConnected && (!a || a === document.body || !a.isConnected)) prev.focus();
+    };
+  }, []);
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const list = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? []);
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    const go = (n: number) => {
+      e.preventDefault();
+      list[(n + list.length) % list.length]?.focus();
+    };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(list.length - 1);
+    else if (e.key === 'Escape' || e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    }
+  };
+  const style = x != null && y != null && typeof window !== 'undefined' ? { left: Math.max(0, Math.min(x, window.innerWidth - 220)), top: Math.max(0, Math.min(y, window.innerHeight - 40)) } : undefined;
+  return (
+    <div ref={ref} role="menu" aria-label={label} className={`fixed z-50 rounded-lg border border-border bg-raised p-1 shadow-xl ${className}`} style={style} onKeyDown={onKeyDown}>
+      {children}
+    </div>
+  );
+}
+
+/** Position for a keyboard-opened context menu (Shift+F10 / ContextMenu key): just below the element. */
+export function menuAnchor(el: Element): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + 8, y: r.bottom };
+}
+
+/** True for the keys that open a context menu from the keyboard. */
+export const isContextMenuKey = (e: { key: string; shiftKey: boolean }) => e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10');

@@ -10,6 +10,7 @@ import { addRow, buildChanges, emptyStaged, History, pendingCount, setCell, setI
 import { api } from '../lib/ipc';
 import type { ExportFormat, FilterCondition, FilterOp, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
 import { parseInput } from '../lib/value';
+import { fmtNumber } from '../lib/format';
 import { errMsg, useApp, type Tab } from '../store';
 
 const OPS: [FilterOp, string][] = [['eq', '='], ['ne', '≠'], ['lt', '<'], ['le', '≤'], ['gt', '>'], ['ge', '≥'], ['contains', 'contains'], ['starts_with', 'starts with'], ['ends_with', 'ends with'], ['is_null', 'is NULL'], ['is_not_null', 'is not NULL'], ['in', 'in (a,b,c)']];
@@ -125,10 +126,10 @@ export function TableView({ tab }: { tab: Tab }) {
       }
       const r = await api.applyChanges(s.session_id, target, changes, token);
       if (!r.committed) {
-        setError(t('grid.conflict', { n: r.conflicts.length }));
+        setError(t('grid.conflict', { count: r.conflicts.length, n: r.conflicts.length, formatted: fmtNumber(r.conflicts.length) }));
         return;
       }
-      toast('ok', t('grid.committed', { n: r.rows_affected }));
+      toast('ok', t('grid.committed', { count: r.rows_affected, n: r.rows_affected, formatted: fmtNumber(r.rows_affected) }));
       await load();
     } catch (e) {
       setError(errMsg(e));
@@ -141,7 +142,7 @@ export function TableView({ tab }: { tab: Tab }) {
     const data = (rows.length ? rows.filter((r) => r < rs.rows.length).map((r) => rs.rows[r]) : rs.rows).map((r) => ci.map((i) => r[i]));
     try {
       await copyAs(ci.map((i) => columns[i]), data, fmt, target.table);
-      toast('info', `Copied ${data.length} row(s)`);
+      toast('info', t('table.copiedRows', { count: data.length, formatted: fmtNumber(data.length) }));
     } catch (e) {
       toast('error', errMsg(e));
     }
@@ -154,7 +155,7 @@ export function TableView({ tab }: { tab: Tab }) {
     if (!f) return;
     try {
       const r = await api.exportTable(s.session_id, target, applied, f.grant, { format, header: true, formula_guard: true }, false);
-      toast('ok', t('io.exported', { n: r.rows, path: r.path }));
+      toast('ok', t('io.exported', { count: r.rows, formatted: fmtNumber(r.rows), path: r.path }));
     } catch (e) {
       toast('error', errMsg(e));
     }
@@ -207,27 +208,27 @@ export function TableView({ tab }: { tab: Tab }) {
   if (!s) return <div className="p-4 text-muted">{t('status.disconnected')}</div>;
   return (
     <div className="flex h-full min-h-0 flex-col" onKeyDown={onKeyDown}>
-      <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border bg-panel px-2">
-        <button className="icon-btn" title="Refresh (⌘/Ctrl+R)" aria-label={t('common.refresh')} onClick={() => load()}><Icon name="refresh" size={15} /></button>
+      <div role="toolbar" aria-label={t('table.toolbar')} className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border bg-panel px-2">
+        <button className="icon-btn" title={`${t('common.refresh')} (⌘/Ctrl+R)`} aria-label={t('common.refresh')} onClick={() => load()}><Icon name="refresh" size={15} /></button>
         {editable && (
           <>
-            <span className="mx-1 h-4 border-l border-border" />
+            <span className="mx-1 h-4 border-s border-border" aria-hidden />
             <button className="icon-btn" title={t('grid.addRow')} aria-label={t('grid.addRow')} onClick={() => change(addRow(staged))}><Icon name="plus" size={16} /></button>
             <button className="icon-btn" title={t('grid.duplicateRow')} aria-label={t('grid.duplicateRow')} onClick={duplicateSelected} disabled={!selRows.length}><Icon name="copy" size={15} /></button>
             <button className="icon-btn" title={t('grid.deleteRows')} aria-label={t('grid.deleteRows')} onClick={() => change(toggleDelete(staged, selRows.filter((r) => r < (rs?.rows.length ?? 0))))} disabled={!selRows.length || keyCols.length === 0}><Icon name="trash" size={15} /></button>
-            <span className="mx-1 h-4 border-l border-border" />
-            <button className="icon-btn" title="Undo (⌘/Ctrl+Z)" aria-label={t('grid.undo')} onClick={() => { const p = hist.current.undo(staged); if (p) setStaged(p); }}>↶</button>
-            <button className="icon-btn" title="Redo (⌘/Ctrl+Shift+Z)" aria-label={t('grid.redo')} onClick={() => { const n = hist.current.redo(staged); if (n) setStaged(n); }}>↷</button>
+            <span className="mx-1 h-4 border-s border-border" aria-hidden />
+            <button className="icon-btn" title={`${t('grid.undo')} (⌘/Ctrl+Z)`} aria-label={t('grid.undo')} onClick={() => { const p = hist.current.undo(staged); if (p) setStaged(p); }}>↶</button>
+            <button className="icon-btn" title={`${t('grid.redo')} (⌘/Ctrl+Shift+Z)`} aria-label={t('grid.redo')} onClick={() => { const n = hist.current.redo(staged); if (n) setStaged(n); }}>↷</button>
           </>
         )}
         {pending > 0 && (
-          <div className="ml-2 flex items-center gap-1.5" aria-live="polite">
-            <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn">{t('grid.pending', { n: pending })}</span>
+          <div className="ms-2 flex items-center gap-1.5" aria-live="polite">
+            <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn">{t('grid.pending', { count: pending, n: pending, formatted: fmtNumber(pending) })}</span>
             <button className="btn h-6" onClick={() => change(emptyStaged())}>{t('grid.discard')}</button>
             <button className="btn btn-primary h-6" onClick={startReview} title="⌘/Ctrl+S">{t('grid.commit')}…</button>
           </div>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           <button className={`icon-btn ${filters.length ? 'bg-accent/15 text-accent' : ''}`} title={t('grid.filterAdd')} aria-label={t('grid.filterAdd')} onClick={() => setFilters(filters.length ? [] : [{ column: columns[0]?.name ?? '', op: 'eq', text: '' }])}><Icon name="filter" size={15} /></button>
           <select className="input h-7 w-auto" aria-label={t('common.export')} value="" onChange={(e) => e.target.value && exportAll(e.target.value as ExportFormat)}>
             <option value="">{t('common.export')}…</option>
@@ -241,21 +242,21 @@ export function TableView({ tab }: { tab: Tab }) {
         <div className="space-y-1 border-b border-border bg-panel p-2">
           {filters.map((f, i) => (
             <div key={i} className="flex gap-1">
-              <select className="input w-48" aria-label="Column" value={f.column} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, column: e.target.value } : x)))}>
+              <select className="input w-48" aria-label={t('table.filterColumn')} value={f.column} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, column: e.target.value } : x)))}>
                 {columns.map((c) => <option key={c.name}>{c.name}</option>)}
               </select>
-              <select className="input w-36" aria-label="Operator" value={f.op} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, op: e.target.value as FilterOp } : x)))}>
-                {OPS.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
+              <select className="input w-36" aria-label={t('table.filterOperator')} value={f.op} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, op: e.target.value as FilterOp } : x)))}>
+                {OPS.map(([o, l]) => <option key={o} value={o}>{/^[a-z]/.test(l) ? t(`table.ops.${o}`) : l}</option>)}
               </select>
               {!['is_null', 'is_not_null'].includes(f.op) && (
                 <input className="input" aria-label={t('grid.filterValue')} placeholder={t('grid.filterValue')} value={f.text} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
               )}
-              <button className="btn" aria-label="Remove filter" onClick={() => setFilters(filters.filter((_, j) => j !== i))}>✕</button>
+              <button className="btn" aria-label={t('table.removeFilter')} onClick={() => setFilters(filters.filter((_, j) => j !== i))}>✕</button>
             </div>
           ))}
           <div className="flex gap-1">
             <button className="btn btn-primary" onClick={applyFilters}>{t('common.apply')}</button>
-            <button className="btn" onClick={() => { setFilters([]); setApplied([]); }}>Clear</button>
+            <button className="btn" onClick={() => { setFilters([]); setApplied([]); }}>{t('table.clearFilters')}</button>
           </div>
         </div>
       )}
@@ -276,24 +277,24 @@ export function TableView({ tab }: { tab: Tab }) {
           onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
           onSelectRows={setSelRows}
           onCopy={(r, c) => copy(r, c)}
-          ariaLabel={`Table ${header}`}
+          ariaLabel={t('table.gridLabel', { table: header })}
         />
       ) : null}
       <div className="flex h-[30px] shrink-0 items-center gap-2 border-t border-border bg-panel px-2 text-[0.88rem]">
-        <div className="seg" role="tablist" aria-label="View">
-          <button role="tab" aria-selected={mode === 'data'} onClick={() => setMode('data')}>Data</button>
-          <button role="tab" aria-selected={mode === 'structure'} onClick={() => setMode('structure')}>Structure</button>
+        <div className="seg" role="tablist" aria-label={t('table.viewMode')}>
+          <button role="tab" aria-selected={mode === 'data'} onClick={() => setMode('data')}>{t('table.data')}</button>
+          <button role="tab" aria-selected={mode === 'structure'} onClick={() => setMode('structure')}>{t('tree.openStructure')}</button>
         </div>
         {mode === 'data' && (
           <>
-            <span className="text-muted">{count != null ? `${count.toLocaleString()} ${t('common.rows')}` : ''}{applied.length ? ' (filtered)' : ''}</span>
-            {loading && <Spinner />}
-            <div className="ml-auto flex items-center gap-1">
-              <button className="icon-btn h-6 w-6" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Previous page"><Icon name="chevronRight" size={14} className="rotate-180" /></button>
-              <span className="tabular-nums text-muted">{page * pageSize + 1}–{page * pageSize + (rs?.rows.length ?? 0)}{count != null ? ` of ${count.toLocaleString()}` : ''}</span>
-              <button className="icon-btn h-6 w-6" disabled={pages != null ? page + 1 >= pages : (rs?.rows.length ?? 0) < pageSize} onClick={() => setPage(page + 1)} aria-label="Next page"><Icon name="chevronRight" size={14} /></button>
+            <span className="text-muted" aria-live="polite">{count != null ? t(applied.length ? 'table.rowCountFiltered' : 'table.rowCount', { count, formatted: fmtNumber(count) }) : ''}</span>
+            {loading && <Spinner label={t('common.loading')} />}
+            <div className="ms-auto flex items-center gap-1">
+              <button className="icon-btn h-6 w-6" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label={t('table.prevPage')}><Icon name="chevronRight" size={14} className="rotate-180 rtl:rotate-0" /></button>
+              <span className="tabular-nums text-muted">{count != null ? t('table.rangeOf', { from: fmtNumber(page * pageSize + 1), to: fmtNumber(page * pageSize + (rs?.rows.length ?? 0)), total: fmtNumber(count) }) : t('table.range', { from: fmtNumber(page * pageSize + 1), to: fmtNumber(page * pageSize + (rs?.rows.length ?? 0)) })}</span>
+              <button className="icon-btn h-6 w-6" disabled={pages != null ? page + 1 >= pages : (rs?.rows.length ?? 0) < pageSize} onClick={() => setPage(page + 1)} aria-label={t('table.nextPage')}><Icon name="chevronRight" size={14} className="rtl:rotate-180" /></button>
               <select className="input h-6 w-auto py-0 text-[0.85rem]" aria-label={t('grid.pageSize')} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
-                {[100, 500, 1000, 5000, 10000, 50000].map((n) => <option key={n} value={n}>{n} / page</option>)}
+                {[100, 500, 1000, 5000, 10000, 50000].map((n) => <option key={n} value={n}>{t('table.perPage', { n: fmtNumber(n) })}</option>)}
               </select>
             </div>
           </>
@@ -311,8 +312,8 @@ export function TableView({ tab }: { tab: Tab }) {
             </>
           }
         >
-          <p className="mb-2 text-sm text-muted">These statements run in one transaction. Updates and deletes include the originally loaded values, so rows changed by someone else are not overwritten.</p>
-          <pre className="max-h-[60vh] overflow-auto rounded border border-border bg-panel p-2 font-mono text-xs">{review.statements.map((x) => x + ';').join('\n')}</pre>
+          <p className="mb-2 text-sm text-muted">{t('table.reviewNote')}</p>
+          <pre dir="ltr" className="max-h-[60vh] overflow-auto rounded border border-border bg-panel p-2 font-mono text-xs">{review.statements.map((x) => x + ';').join('\n')}</pre>
         </Dialog>
       )}
     </div>

@@ -15,6 +15,7 @@ const P: Record<string, string> = {
   db: 'M12 4c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3zM4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
   chevronDown: 'M6 9l6 6 6-6',
   chevronRight: 'M9 6l6 6-6 6',
+  chevronLeft: 'M15 6l-6 6 6 6',
   x: 'M6 6l12 12M18 6L6 18',
   key: 'M14 10a4 4 0 1 0-3.5 4l1.5 1.5h2v2h2v2h3v-3l-5.1-5.1',
   bolt: 'M13 3L5 14h6l-1 7 8-11h-6z',

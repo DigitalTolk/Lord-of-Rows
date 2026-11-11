@@ -14,13 +14,13 @@
   --border: 220 220 226;
   --fg: 28 28 30;
   --muted: 104 104 112;
-  --accent: 10 100 224;
+  --accent: 8 90 204;
   --accent-solid: 10 100 224;
-  --danger: 200 36 36;
+  --danger: 186 32 32;
   --danger-solid: 200 36 36;
-  --warn: 156 90 0;
-  --ok: 20 122 60;
-  --purple: 116 66 220;      /* views, 'testing' env */
+  --warn: 138 78 0;
+  --ok: 16 106 52;
+  --purple: 106 58 206;      /* views, 'testing' env */
   --select: 10 112 245;
   --on-solid: 255 255 255;
   --overlay: 0 0 0;          /* modal backdrop tint */
@@ -38,8 +38,8 @@
   --hover: 58 58 64;
   --border: 66 66 73;
   --fg: 236 236 240;
-  --muted: 160 160 170;
-  --accent: 100 164 255;
+  --muted: 170 170 180;
+  --accent: 118 174 255;
   --accent-solid: 32 104 220;
   --danger: 255 122 114;
   --danger-solid: 190 40 40;
@@ -88,7 +88,7 @@ body {
 }
 input, textarea, pre, [role='gridcell'], .selectable { user-select: text; -webkit-user-select: text; }
 
-:focus-visible { outline: 2px solid rgb(var(--accent) / 0.7); outline-offset: 1px; border-radius: 4px; }
+:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 1px; border-radius: 4px; }
 :root.hc :focus-visible { outline: 3px solid rgb(var(--accent)); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

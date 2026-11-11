@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ask } from '../components/ask';
 import { ErrorBox, Field, Spinner, Toolbar } from '../components/ui';
 import { api, IpcError } from '../lib/ipc';
+import { fmtBytes } from '../lib/format';
 import { errMsg, useApp, type Tab } from '../store';
 
 export function BackupView({ tab }: { tab: Tab }) {
@@ -31,8 +32,8 @@ export function BackupView({ tab }: { tab: Tab }) {
     setError(null);
     try {
       const r = await api.runBackup(s.session_id, f.grant, { scope, tables: tables.split(',').map((x) => x.trim()).filter(Boolean), compress });
-      setLog([`${r.tool}: ${(r.bytes / 1024 / 1024).toFixed(2)} MB → ${f.display_path}`, r.verified ? `✓ ${t('backup.verified')}` : `⚠ ${t('backup.notVerified')}`, ...r.notes]);
-      toast('ok', 'Backup complete');
+      setLog([`${r.tool}: ${fmtBytes(r.bytes)} → ${f.display_path}`, r.verified ? `✓ ${t('backup.verified')}` : `⚠ ${t('backup.notVerified')}`, ...r.notes]);
+      toast('ok', t('backup.complete'));
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -57,8 +58,8 @@ export function BackupView({ tab }: { tab: Tab }) {
           if (typed === null) return;
         }
         const r = await api.runRestore(s.session_id, f.grant, e.err.hint, typed);
-        setLog([`${r.tool}: restored ${f.display_path}`, ...r.notes]);
-        toast('ok', 'Restore complete');
+        setLog([`${r.tool}: ${t('backup.restored', { path: f.display_path })}`, ...r.notes]);
+        toast('ok', t('backup.restoreComplete'));
       }
     } catch (e) {
       setError(errMsg(e));
@@ -77,22 +78,22 @@ export function BackupView({ tab }: { tab: Tab }) {
               <option value="full">{t('backup.full')}</option><option value="schema_only">{t('backup.schemaOnly')}</option><option value="data_only">{t('backup.dataOnly')}</option>
             </select>
           </Field>
-          <Field label={t('backup.tables')}><input className="input" value={tables} onChange={(e) => setTables(e.target.value)} placeholder="table_a, table_b" /></Field>
-          <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={compress} onChange={(e) => setCompress(e.target.checked)} />Compress</label>
+          <Field label={t('backup.tables')}><input className="input" value={tables} onChange={(e) => setTables(e.target.value)} placeholder={t('backup.tablesPlaceholder')} /></Field>
+          <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={compress} onChange={(e) => setCompress(e.target.checked)} />{t('backup.compress')}</label>
           <div className="flex gap-2">
             <button className="btn btn-primary" onClick={backup} disabled={busy}>{t('backup.run')}</button>
             <button className="btn text-danger" onClick={restore} disabled={busy || s.config.read_only}>{t('backup.restore')}</button>
-            {busy && <Spinner />}
+            {busy && <Spinner label={t('backup.working')} />}
           </div>
           <ErrorBox error={error} />
-          <p className="mt-3 text-xs text-muted">SQL exports are logical snapshots, not physical backups. Use your database's native backup tooling (and test restores) for disaster recovery.</p>
+          <p className="mt-3 text-xs text-muted">{t('backup.logicalNote')}</p>
         </div>
         <div>
           <h3 className="mb-1 font-semibold">{t('backup.tools')}</h3>
           <ul className="mb-4 text-sm">
             {tools.map((x) => <li key={x.tool} className="font-mono">{x.tool}: {x.path ? <span className="text-ok">{x.version ?? x.path}</span> : <span className="text-warn">{t('backup.missing')}</span>}</li>)}
           </ul>
-          {log.length > 0 && <pre className="whitespace-pre-wrap rounded border border-border bg-panel p-2 font-mono text-xs">{log.join('\n')}</pre>}
+          {log.length > 0 && <pre role="status" className="whitespace-pre-wrap rounded border border-border bg-panel p-2 font-mono text-xs">{log.join('\n')}</pre>}
         </div>
       </div>
     </div>

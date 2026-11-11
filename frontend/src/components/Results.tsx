@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { ColumnMeta, ExportFormat, StatementResult, Value } from '../lib/types';
 import { displayValue } from '../lib/value';
+import { fmtNumber } from '../lib/format';
 import { errMsg, useApp } from '../store';
 import { DataGrid } from './DataGrid';
 
@@ -42,7 +43,7 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
     const rows = (rowsIdx.length ? rowsIdx.map((r) => filteredRows[r]) : filteredRows).map((r) => ci.map((i) => r[i]));
     try {
       await copyAs(ci.map((i) => rs.columns[i]), rows, format);
-      toast('info', `Copied ${rows.length} row(s)`);
+      toast('info', t('results.copied', { count: rows.length, formatted: fmtNumber(rows.length) }));
     } catch (e) {
       toast('error', errMsg(e));
     }
@@ -50,7 +51,7 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
 
   const [tab, setTab] = useState<'results' | 'messages'>('results');
   const allMessages = [
-    ...results.map((r) => `#${r.statement_index + 1} ${r.sql_excerpt.slice(0, 80)} — ${r.rows_affected != null ? t('query.rowsAffected', { n: r.rows_affected }) : r.result ? t('query.rowsReturned', { n: r.result.rows.length }) : 'OK'} (${t('query.duration', { ms: r.duration_ms })})`),
+    ...results.map((r) => `#${r.statement_index + 1} ${r.sql_excerpt.slice(0, 80)} — ${r.rows_affected != null ? t('query.rowsAffected', { count: r.rows_affected, formatted: fmtNumber(r.rows_affected) }) : r.result ? t('query.rowsReturned', { count: r.result.rows.length, formatted: fmtNumber(r.result.rows.length) }) : t('common.ok')} (${t('query.duration', { ms: fmtNumber(r.duration_ms) })})`),
     ...results.flatMap((r) => r.notices),
     ...messages,
   ];
@@ -58,57 +59,57 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[32px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2" role="tablist">
-        <button role="tab" aria-selected={tab === 'results'} className={`btn btn-ghost ${tab === 'results' ? 'font-semibold' : ''}`} onClick={() => setTab('results')}>Results</button>
-        <button role="tab" aria-selected={tab === 'messages'} className={`btn btn-ghost ${tab === 'messages' ? 'font-semibold' : ''}`} onClick={() => setTab('messages')}>{t('query.messages')} ({allMessages.length})</button>
+        <button role="tab" aria-selected={tab === 'results'} className={`btn btn-ghost ${tab === 'results' ? 'font-semibold' : ''}`} onClick={() => setTab('results')}>{t('results.title')}</button>
+        <button role="tab" aria-selected={tab === 'messages'} className={`btn btn-ghost ${tab === 'messages' ? 'font-semibold' : ''}`} onClick={() => setTab('messages')}>{t('query.messages')} ({fmtNumber(allMessages.length)})</button>
         {tab === 'results' && withRows.length > 1 && (
-          <select className="input ml-2 w-auto" aria-label="Result set" value={idx} onChange={(e) => setIdx(Number(e.target.value))}>
+          <select className="input ms-2 w-auto" aria-label={t('results.resultSet')} value={idx} onChange={(e) => setIdx(Number(e.target.value))}>
             {withRows.map((r, i) => <option key={i} value={i}>{t('query.statement', { n: r.statement_index + 1 })}: {r.sql_excerpt.slice(0, 40)}</option>)}
           </select>
         )}
         {tab === 'results' && rs && (
           <>
-            <div className="seg ml-2" role="radiogroup" aria-label="View">
+            <div className="seg ms-2" role="radiogroup" aria-label={t('results.view')}>
               {(['grid', 'json', 'text', 'record', 'chart'] as Mode[]).map((m) => (
                 <button key={m} role="radio" aria-checked={mode === m} onClick={() => setMode(m)}>{t(`query.${m}`)}</button>
               ))}
             </div>
-            <input className="input ml-2 h-6 w-48" placeholder={t('grid.searchResults')} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t('grid.searchResults')} />
+            <input className="input ms-2 h-6 w-48" placeholder={t('grid.searchResults')} value={search} onChange={(e) => setSearch(e.target.value)} aria-label={t('grid.searchResults')} />
             <select className="input h-6 w-auto py-0" aria-label={t('grid.copyAs')} value="" onChange={(e) => e.target.value && copy([], [], e.target.value as ExportFormat)}>
               <option value="">{t('grid.copyAs')}…</option>
               <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="sql_insert">SQL INSERT</option><option value="markdown">Markdown</option>
             </select>
-            <span className="ml-auto text-xs text-muted">
-              {t('query.rowsReturned', { n: filteredRows.length })} · {t('query.duration', { ms: current.duration_ms })}
-              {rs.truncated && <span className="ml-2 text-warn">{t('query.truncated', { n: rs.rows.length })}</span>}
+            <span className="ms-auto text-xs text-muted">
+              {t('query.rowsReturned', { count: filteredRows.length, formatted: fmtNumber(filteredRows.length) })} · {t('query.duration', { ms: fmtNumber(current.duration_ms) })}
+              {rs.truncated && <span className="ms-2 text-warn">{t('query.truncated', { count: rs.rows.length, formatted: fmtNumber(rs.rows.length) })}</span>}
             </span>
           </>
         )}
       </div>
       {tab === 'messages' ? (
-        <pre className="min-h-0 flex-1 overflow-auto p-2 font-mono text-xs" aria-live="polite">{allMessages.join('\n')}</pre>
+        <pre dir="ltr" className="min-h-0 flex-1 overflow-auto p-2 font-mono text-xs" aria-live="polite">{allMessages.join('\n')}</pre>
       ) : !rs ? (
         <div className="p-4 text-muted">{results.length ? allMessages.slice(0, 5).join('\n') : t('query.noResults')}</div>
       ) : mode === 'grid' ? (
-        <DataGrid columns={rs.columns} rows={filteredRows} onCopy={(r, c) => copy(r, c)} onSelectRows={(r) => r.length && setRecordRow(r[0])} ariaLabel="Query results" />
+        <DataGrid columns={rs.columns} rows={filteredRows} onCopy={(r, c) => copy(r, c)} onSelectRows={(r) => r.length && setRecordRow(r[0])} ariaLabel={t('results.gridLabel')} />
       ) : mode === 'json' ? (
-        <pre className="min-h-0 flex-1 overflow-auto p-2 font-mono text-xs">
+        <pre dir="ltr" className="min-h-0 flex-1 overflow-auto p-2 font-mono text-xs">
           {JSON.stringify(filteredRows.slice(0, 5000).map((r) => Object.fromEntries(rs.columns.map((c, i) => [c.name, r[i].t === 'null' ? null : displayValue(r[i])]))), null, 2)}
         </pre>
       ) : mode === 'text' ? (
-        <pre className="min-h-0 flex-1 overflow-auto p-2 font-mono text-xs">{textTable(rs.columns, filteredRows.slice(0, 5000))}</pre>
+        <pre dir="ltr" className="min-h-0 flex-1 overflow-auto p-2 font-mono text-xs">{textTable(rs.columns, filteredRows.slice(0, 5000))}</pre>
       ) : mode === 'record' ? (
         <div className="min-h-0 flex-1 overflow-auto p-2">
           <div className="mb-2 flex items-center gap-2">
-            <button className="btn" disabled={recordRow <= 0} onClick={() => setRecordRow((r) => r - 1)}>◀</button>
-            <span>{recordRow + 1} / {filteredRows.length}</span>
-            <button className="btn" disabled={recordRow >= filteredRows.length - 1} onClick={() => setRecordRow((r) => r + 1)}>▶</button>
+            <button className="btn" aria-label={t('results.prevRecord')} title={t('results.prevRecord')} disabled={recordRow <= 0} onClick={() => setRecordRow((r) => r - 1)}><span aria-hidden className="rtl:rotate-180">◀</span></button>
+            <span>{t('results.recordOf', { n: fmtNumber(recordRow + 1), total: fmtNumber(filteredRows.length) })}</span>
+            <button className="btn" aria-label={t('results.nextRecord')} title={t('results.nextRecord')} disabled={recordRow >= filteredRows.length - 1} onClick={() => setRecordRow((r) => r + 1)}><span aria-hidden className="rtl:rotate-180">▶</span></button>
           </div>
           <table className="w-full text-sm">
             <tbody>
               {rs.columns.map((c, i) => (
                 <tr key={i} className="border-b border-border">
-                  <th scope="row" className="w-1/4 px-2 py-1 text-left align-top text-muted">{c.name}</th>
-                  <td className="whitespace-pre-wrap break-all px-2 py-1 font-mono">{filteredRows[recordRow] ? displayValue(filteredRows[recordRow][i]) : ''}</td>
+                  <th scope="row" className="w-1/4 px-2 py-1 text-start align-top text-muted">{c.name}</th>
+                  <td dir="ltr" className="whitespace-pre-wrap break-all px-2 py-1 text-start font-mono">{filteredRows[recordRow] ? displayValue(filteredRows[recordRow][i]) : ''}</td>
                 </tr>
               ))}
             </tbody>

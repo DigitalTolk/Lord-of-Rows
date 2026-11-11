@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ColumnMeta, Value } from '../lib/types';
 import { displayValue } from '../lib/value';
+import { fmtNumber } from '../lib/format';
 
 export type ChartKind = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'kpi';
 
@@ -55,7 +57,7 @@ export function ChartView({ columns, rows, spec }: { columns: ColumnMeta[]; rows
     const v = data[0]?.[spec.y[0]];
     return (
       <div className="flex h-full flex-col items-center justify-center">
-        <div className="text-4xl font-bold tabular-nums">{v ?? '—'}</div>
+        <div className="text-4xl font-bold tabular-nums">{typeof v === 'number' ? fmtNumber(v) : v ?? '—'}</div>
         <div className="text-muted">{spec.y[0]}</div>
       </div>
     );
@@ -111,16 +113,17 @@ export function ChartView({ columns, rows, spec }: { columns: ColumnMeta[]; rows
 }
 
 export default function Chart({ columns, rows }: { columns: ColumnMeta[]; rows: Value[][] }) {
+  const { t } = useTranslation();
   const numeric = columns.filter((_, i) => rows.slice(0, 50).some((r) => num(r[i]) !== null));
   const [spec, setSpec] = useState<ChartSpec>({ kind: 'bar', x: columns[0]?.name ?? '', y: numeric.slice(0, 1).map((c) => c.name) });
   return (
     <div className="flex min-h-0 flex-1 flex-col p-2">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <select className="input w-auto" aria-label="Chart type" value={spec.kind} onChange={(e) => setSpec({ ...spec, kind: e.target.value as ChartKind })}>
-          {(['bar', 'line', 'area', 'pie', 'scatter', 'kpi'] as ChartKind[]).map((k) => <option key={k}>{k}</option>)}
+        <select className="input w-auto" aria-label={t('chart.type')} value={spec.kind} onChange={(e) => setSpec({ ...spec, kind: e.target.value as ChartKind })}>
+          {(['bar', 'line', 'area', 'pie', 'scatter', 'kpi'] as ChartKind[]).map((k) => <option key={k} value={k}>{t(`chart.kinds.${k}`)}</option>)}
         </select>
-        <label className="flex items-center gap-1">X <select className="input w-auto" value={spec.x} onChange={(e) => setSpec({ ...spec, x: e.target.value })}>{columns.map((c) => <option key={c.name}>{c.name}</option>)}</select></label>
-        <span>Y</span>
+        <label className="flex items-center gap-1">{t('chart.xAxis')} <select className="input w-auto" value={spec.x} onChange={(e) => setSpec({ ...spec, x: e.target.value })}>{columns.map((c) => <option key={c.name}>{c.name}</option>)}</select></label>
+        <span>{t('chart.yAxis')}</span>
         {numeric.map((c) => (
           <label key={c.name} className="flex items-center gap-1 text-sm">
             <input type="checkbox" checked={spec.y.includes(c.name)} onChange={(e) => setSpec({ ...spec, y: e.target.checked ? [...spec.y, c.name] : spec.y.filter((y) => y !== c.name) })} />
@@ -128,7 +131,7 @@ export default function Chart({ columns, rows }: { columns: ColumnMeta[]; rows: 
           </label>
         ))}
       </div>
-      <div className="min-h-0 flex-1">{spec.y.length ? <ChartView columns={columns} rows={rows} spec={spec} /> : <p className="text-muted">Select at least one numeric column.</p>}</div>
+      <div className="min-h-0 flex-1">{spec.y.length ? <ChartView columns={columns} rows={rows} spec={spec} /> : <p className="text-muted">{t('chart.selectNumeric')}</p>}</div>
     </div>
   );
 }
