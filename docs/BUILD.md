@@ -14,7 +14,14 @@ cd frontend && npm ci && npx vite build && cd ..
 export SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk
 ./frontend/node_modules/.bin/tauri build --target universal-apple-darwin --bundles app,dmg --config '{"build":{"beforeBuildCommand":""}}'
 ```
-Output: `target/universal-apple-darwin/release/bundle/{macos,dmg}/`. The build is **unsigned**; signing/notarization
+Output: `target/universal-apple-darwin/release/bundle/{macos,dmg}/`.
+If the DMG step fails with `hdiutil: couldn't unmount … Resource busy` (Finder/Spotlight holding the temporary
+image), build the DMG directly:
+```sh
+STAGE=$(mktemp -d); cp -R "target/universal-apple-darwin/release/bundle/macos/DB Studio.app" "$STAGE/"; ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname "DB Studio" -srcfolder "$STAGE" -ov -format UDZO "DB Studio_0.1.0_universal_unsigned.dmg"
+```
+Verified 2026-11-11: universal (x86_64 + arm64) app, 60 MB; DMG 27 MB; launches on macOS 27.2 (Apple Silicon). The build is **unsigned**; signing/notarization
 needs an Apple Developer ID (see RELEASE notes in BLOCKERS.md).
 
 ## CI
