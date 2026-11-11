@@ -299,6 +299,16 @@ describe('multiple databases', () => {
       await until(async () => /\b2000\b/.test(await resultsText(b)), 'mysql count');
     }));
 
+  test('MariaDB via URL', () =>
+    fail('mariadb', async () => {
+      await openLauncher();
+      await connectUrl('mariadb://dbs_test:dbs_test@mariadb:3306/dbs_test?ssl-mode=DISABLED');
+      await until(async () => (await pageText(b)).includes('MariaDB') || (await pageText(b)).includes('dbs_test@mariadb'), 'mariadb session');
+      await newQueryTab();
+      await runSql(b, 'select version() as v, 1 + 1 as two');
+      await until(async () => /MariaDB/.test(await resultsText(b)), 'mariadb version');
+    }));
+
   test('SQLite via URL', () =>
     fail('sqlite', async () => {
       await openLauncher();
@@ -310,7 +320,7 @@ describe('multiple databases', () => {
     fail('redis', async () => {
       await openLauncher();
       await connectUrl('redis://redis:6379/0');
-      await until(async () => b.execute(() => document.querySelectorAll('nav[aria-label="Open connections"] button[aria-current]').length >= 6), 'redis session');
+      await until(async () => b.execute(() => document.querySelectorAll('nav[aria-label="Open connections"] button[aria-current]').length >= 7), 'redis session');
       await newQueryTab();
       await runSql(b, 'SET e2e:greeting "hello world"\nGET e2e:greeting');
       await until(async () => /hello world/.test(await resultsText(b)), 'redis value');
@@ -319,7 +329,7 @@ describe('multiple databases', () => {
   test('connection rail lists every open database and keeps tabs per database', () =>
     fail('rail', async () => {
       const labels = await b.execute(() => [...document.querySelectorAll('nav[aria-label="Open connections"] button[aria-current]')].map((x) => x.getAttribute('aria-label')));
-      assert.ok(labels.length >= 6, `rail: ${labels}`);
+      assert.ok(labels.length >= 7, `rail: ${labels}`);
       await clickSel(b, 'nav[aria-label="Open connections"] button[aria-label^="E2E Postgres"]');
       await until(async () => b.execute(() => [...document.querySelectorAll('[role=tablist][aria-label="Open tabs"] [role=tab]')].some((t) => t.innerText.includes('customers'))), 'postgres tabs restored');
       const tabs = await b.execute(() => [...document.querySelectorAll('[role=tablist][aria-label="Open tabs"] [role=tab]')].map((t) => t.innerText.trim()));

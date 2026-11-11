@@ -352,6 +352,67 @@ async fn mysql_end_to_end() {
 }
 
 #[tokio::test]
+async fn mariadb_end_to_end() {
+    if !it_enabled() {
+        return;
+    }
+    let host = std::env::var("DBS_IT_MARIADB_HOST").unwrap_or("localhost".into());
+    let c = connect(&cfg(Engine::MariaDb, Some(&host), Some("dbs_test"))).await;
+    let info = c.server_info().await.unwrap();
+    assert!(info.version.contains("MariaDB"), "{info:?}");
+    exec(&*c, "DROP TABLE IF EXISTS people; CREATE TABLE people (id int PRIMARY KEY, name varchar(50) NULL)").await;
+    crud_scenario(&*c, None, "people").await;
+
+    let r = exec(
+        &*c,
+        "SELECT CAST(18446744073709551615 AS UNSIGNED) AS big, CAST('12345678901234567890.123456789' AS DECIMAL(40,9)) AS num,
+                NULL AS n, '' AS e, CAST('2024-03-01 12:34:56.789' AS DATETIME(3)) AS ts, CAST('2024-02-29' AS DATE) AS d",
+    )
+    .await;
+    let row = &first_rows(&r)[0];
+    assert_eq!(row[0], Value::BigInt("18446744073709551615".into()));
+    assert_eq!(row[1], Value::Decimal("12345678901234567890.123456789".into()));
+    assert_eq!(row[2], Value::Null);
+    assert_eq!(row[3], Value::Text("".into()));
+    assert_eq!(row[4], Value::Timestamp { iso: "2024-03-01T12:34:56.789".into(), tz: false });
+    assert_eq!(row[5], Value::Date("2024-02-29".into()));
+
+    // Procedures with BEGIN...END, multiple result sets, DDL retrieval.
+    exec(&*c, "DROP PROCEDURE IF EXISTS p2").await;
+    exec(&*c, "CREATE PROCEDURE p2() BEGIN SELECT 1 AS a; SELECT 2 AS b; END").await;
+    let r = exec(&*c, "CALL p2()").await;
+    assert!(r.iter().filter(|s| s.result.is_some()).count() >= 2, "{r:?}");
+    let objs = c.list_objects(None).await.unwrap();
+    assert!(objs.iter().any(|o| o.kind == ObjectKind::Procedure && o.name == "p2"));
+    let ddl = c.object_ddl(&ObjectRef { kind: ObjectKind::Procedure, database: None, schema: None, name: "p2".into() }).await.unwrap();
+    assert!(ddl.contains("CREATE"));
+
+    // Cancel via KILL QUERY, syntax errors, sessions, explain, USE.
+    let tok = CancellationToken::new();
+    let t2 = tok.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        t2.cancel();
+    });
+    let err = c.execute("SELECT SLEEP(30)", &ExecOptions::default(), tok).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Cancelled);
+    c.ping().await.expect("usable after cancel");
+    let err = c.execute("SELEC 1", &ExecOptions::default(), CancellationToken::new()).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Syntax);
+    assert!(!c.list_sessions().await.unwrap().is_empty());
+    assert!(!c.explain("SELECT * FROM people WHERE id = 1", false).await.unwrap().rows.is_empty());
+    c.use_schema("dbs_test").await.unwrap();
+
+    // DB-enforced read-only.
+    let mut ro = cfg(Engine::MariaDb, Some(&host), Some("dbs_test"));
+    ro.read_only = true;
+    let roc = connect(&ro).await;
+    let err = roc.execute("INSERT INTO people VALUES (99, 'nope')", &ExecOptions::default(), CancellationToken::new()).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Permission, "{err:?}");
+    exec(&*c, "DROP TABLE people; DROP PROCEDURE p2").await;
+}
+
+#[tokio::test]
 async fn sqlite_end_to_end() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("t.db");
