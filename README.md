@@ -3,6 +3,8 @@
 **Lord of the Rows** is DigitalTolk's own desktop database client, designed and built in-house
 from scratch with Tauri 2 (Rust backend) and React/TypeScript. All code, design and artwork are original.
 
+![Lord of the Rows: a customers table with a filter, the row detail panel and the object sidebar](docs/screenshots/table-workspace.png)
+
 **Status:** macOS builds are signed with DigitalTolk's Developer ID and notarized by Apple
 (universal: Apple Silicon + Intel; `scripts/release-macos.sh`). Tested end to end on Linux in Docker
 against real PostgreSQL, MySQL, MariaDB, Redis, DynamoDB Local and an SSH bastion. Windows builds
@@ -20,6 +22,51 @@ are not done yet; see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOC
 - ER diagram, monitoring, dashboards, command palette, themes
 - Production safe mode enforced in Rust; tamper-evident audit log; passwords in the OS keychain
 - Optional AI assistant (off by default; prompt preview + explicit send; see [docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md))
+
+## Screenshots
+
+All screenshots are taken from the real app (Linux build, driven over WebDriver by
+`e2e/debug/screenshots.test.mjs`) against the demo fixtures in `tests/fixtures/`.
+
+**Connection launcher**: connection groups, environment pills and the environment filter chips.
+
+![Connection launcher](docs/screenshots/launcher.png)
+
+**New connection**: the MySQL form with tag, safe mode and SSL mode.
+
+![New connection form](docs/screenshots/connection-form.png)
+
+**Table workspace**: filter bar, row detail panel, status pill, schema rail and the Items sidebar.
+
+![Table workspace](docs/screenshots/table-workspace.png)
+
+**Pending changes**: a staged cell edit (highlighted) and the preview of the exact UPDATE that Commit will run.
+
+![Pending changes preview](docs/screenshots/pending-changes.png)
+
+**Grid context menu**: copy, set value, quick filter, delete, with the *Copy Rows As* submenu open.
+
+![Grid context menu](docs/screenshots/context-menu.png)
+
+**Split SQL editor**: two queries side by side, each with its own results.
+
+![Split SQL editor](docs/screenshots/query-split.png)
+
+**Open database** (Ctrl/⌘+K): schemas in the current database, system schemas and other databases on the server.
+
+![Open database picker](docs/screenshots/open-database.png)
+
+**ER diagram** of the demo `shop` schema.
+
+![ER diagram](docs/screenshots/er-diagram.png)
+
+**Monitor**: live sessions, database and table sizes, index usage, cache hit ratio.
+
+![Monitor](docs/screenshots/monitor.png)
+
+**Light theme**
+
+![Table workspace, light theme](docs/screenshots/table-workspace-light.png)
 
 ## Layout
 
