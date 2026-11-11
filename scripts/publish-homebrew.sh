@@ -5,7 +5,9 @@
 #   scripts/publish-homebrew.sh       # GitHub release v<version> + Casks/lord-of-the-rows.rb in DigitalTolk/homebrew-tap
 #
 # Needs: gh (logged in with access to DigitalTolk), the notarized DMG.
-# Users install with:  brew install --cask digitaltolk/tap/lord-of-the-rows
+# Users install with (the tap repo is private; their GitHub SSH key is enough):
+#   brew tap digitaltolk/tap git@github.com:DigitalTolk/homebrew-tap.git
+#   brew install --cask digitaltolk/tap/lord-of-the-rows
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,8 +25,9 @@ SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
 echo "==> GitHub release $TAG"
 NOTES="Signed with DigitalTolk's Developer ID and notarized by Apple. Universal (Apple Silicon + Intel), macOS 11+.
 
-Install with Homebrew:
+Install with Homebrew (DigitalTolk GitHub access needed for the private tap):
 \`\`\`
+brew tap digitaltolk/tap git@github.com:DigitalTolk/homebrew-tap.git
 brew install --cask digitaltolk/tap/lord-of-the-rows
 \`\`\`
 or download the DMG below.
@@ -39,11 +42,11 @@ fi
 echo "==> Homebrew tap $TAP"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-gh repo clone "$TAP" "$WORK/tap" -- --depth 1 >/dev/null 2>&1 || { echo "Tap repo $TAP not found: create it first (gh repo create $TAP --public)" >&2; exit 1; }
+gh repo clone "$TAP" "$WORK/tap" -- --depth 1 >/dev/null 2>&1 || { echo "Tap repo $TAP not found: create it first (gh repo create $TAP --private)" >&2; exit 1; }
 mkdir -p "$WORK/tap/Casks"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA/" packaging/homebrew/lord-of-the-rows.rb.tmpl > "$WORK/tap/Casks/lord-of-the-rows.rb"
 if [ ! -f "$WORK/tap/README.md" ]; then
-  printf '# DigitalTolk Homebrew tap\n\n```\nbrew install --cask digitaltolk/tap/lord-of-the-rows\n```\n' > "$WORK/tap/README.md"
+  printf '# DigitalTolk Homebrew tap (private)\n\n```\nbrew tap digitaltolk/tap git@github.com:DigitalTolk/homebrew-tap.git\nbrew install --cask digitaltolk/tap/lord-of-the-rows\n```\n' > "$WORK/tap/README.md"
 fi
 (
   cd "$WORK/tap"

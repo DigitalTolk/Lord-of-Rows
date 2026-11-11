@@ -13,6 +13,7 @@ are not done yet; see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOC
 ## Install (macOS)
 
 ```
+brew tap digitaltolk/tap git@github.com:DigitalTolk/homebrew-tap.git   # once; the tap is private (DigitalTolk GitHub access needed)
 brew install --cask digitaltolk/tap/lord-of-the-rows
 ```
 
