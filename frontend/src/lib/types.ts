@@ -8,7 +8,8 @@ export type Engine =
   | 'snowflake' | 'cloudflare_d1';
 
 export type EnvironmentKind = 'local' | 'development' | 'testing' | 'staging' | 'production' | 'custom';
-export type TlsMode = 'disable' | 'verify_full' | 'verify_ca';
+// Standard SSL modes. Older saved configs may still say 'disable' / 'verify_full' (the backend reads both).
+export type TlsMode = 'preferred' | 'disabled' | 'required' | 'verify_ca' | 'verify_identity';
 
 export interface TlsConfig {
   mode: TlsMode;

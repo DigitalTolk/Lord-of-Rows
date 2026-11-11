@@ -29,11 +29,13 @@ pub struct PgConnection {
     task: tokio::task::JoinHandle<()>,
 }
 
-/// Build a native-tls connector honouring the connection's TLS settings.
-/// Certificate and hostname verification are ON unless the user explicitly
-/// chose `VerifyCa` (hostname not verified). There is no "accept any cert" mode.
+/// Build a native-tls connector honouring the connection's SSL mode:
+/// * `VerifyIdentity`: certificate chain + hostname verified.
+/// * `VerifyCa`: chain verified, hostname not verified.
+/// * `Required` / `Preferred`: encrypted, certificate NOT verified (the user's explicit choice;
+///   `Preferred` additionally falls back to plaintext, see the `ssl_mode` call in `connect`).
 pub fn build_tls(cfg: &TlsConfig) -> DbResult<Option<TlsConnector>> {
-    if cfg.mode == TlsMode::Disable {
+    if cfg.mode == TlsMode::Disabled {
         return Ok(None);
     }
     let mut b = TlsConnector::builder();
@@ -49,8 +51,15 @@ pub fn build_tls(cfg: &TlsConfig) -> DbResult<Option<TlsConnector>> {
         let id = Identity::from_pkcs8(&cert, &key).map_err(|e| DbError::new(ErrorKind::Tls, format!("invalid client identity: {e}")))?;
         b.identity(id);
     }
-    if cfg.mode == TlsMode::VerifyCa {
-        b.danger_accept_invalid_hostnames(true);
+    match cfg.mode {
+        TlsMode::VerifyIdentity | TlsMode::Disabled => {}
+        TlsMode::VerifyCa => {
+            b.danger_accept_invalid_hostnames(true);
+        }
+        TlsMode::Required | TlsMode::Preferred => {
+            b.danger_accept_invalid_certs(true);
+            b.danger_accept_invalid_hostnames(true);
+        }
     }
     b.build().map(Some).map_err(|e| DbError::new(ErrorKind::Tls, e.to_string()))
 }
@@ -130,7 +139,12 @@ impl DatabaseDriver for PgDriver {
         pc.connect_timeout(Duration::from_secs(cfg.connect_timeout_secs as u64));
         pc.keepalives(true);
         pc.keepalives_idle(Duration::from_secs(30));
-        pc.ssl_mode(if cfg.tls.mode == TlsMode::Disable { tokio_postgres::config::SslMode::Disable } else { tokio_postgres::config::SslMode::Require });
+        pc.ssl_mode(match cfg.tls.mode {
+            TlsMode::Disabled => tokio_postgres::config::SslMode::Disable,
+            // libpq `prefer`: TLS when the server offers it, plaintext otherwise.
+            TlsMode::Preferred => tokio_postgres::config::SslMode::Prefer,
+            TlsMode::Required | TlsMode::VerifyCa | TlsMode::VerifyIdentity => tokio_postgres::config::SslMode::Require,
+        });
         drop(secrets);
 
         let notices: Arc<Mutex<Vec<String>>> = Arc::default();

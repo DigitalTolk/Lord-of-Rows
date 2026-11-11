@@ -207,10 +207,16 @@ async fn connect(
         // Dial the tunnel; TLS still verifies against the real hostname.
         eff.tunnel = Some(("127.0.0.1".into(), tunnel.local_port));
     } else {
-        if cfg.tls.mode != TlsMode::Disable {
-            return Err(DbError::unsupported(
-                "TLS through an SSH tunnel for this engine (hostname verification can't be preserved). Disable TLS: the SSH tunnel already encrypts the connection",
-            ));
+        // These drivers dial 127.0.0.1 through the tunnel, so the server hostname can't be verified.
+        match cfg.tls.mode {
+            TlsMode::VerifyIdentity => {
+                return Err(DbError::unsupported(
+                    "SSL mode VERIFY-IDENTITY through an SSH tunnel for this engine (the hostname can't be verified through the tunnel). Use VERIFY-CA or REQUIRED, or PREFERRED/DISABLED: the SSH tunnel already encrypts the connection",
+                ));
+            }
+            // The tunnel already encrypts; PREFERRED means "no extra TLS" here.
+            TlsMode::Preferred => eff.tls.mode = TlsMode::Disabled,
+            TlsMode::Disabled | TlsMode::Required | TlsMode::VerifyCa => {}
         }
         eff.host = Some("127.0.0.1".into());
         eff.port = Some(tunnel.local_port);
@@ -356,18 +362,31 @@ pub fn parse_connection_url(url: String) -> R<ParsedUrl> {
     for kv in query.split('&').filter(|s| !s.is_empty()) {
         let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
         match (k, v) {
-            ("sslmode", "disable") | ("ssl-mode", "DISABLED") => cfg.tls.mode = TlsMode::Disable,
-            ("sslmode", "verify-ca") => cfg.tls.mode = TlsMode::VerifyCa,
-            // "require"/"prefer" in libpq don't verify certs; we deliberately upgrade to full verification.
-            ("sslmode", _) => cfg.tls.mode = TlsMode::VerifyFull,
+            ("sslmode" | "ssl-mode" | "ssl_mode", m) => {
+                cfg.tls.mode = match m.to_ascii_lowercase().replace('_', "-").as_str() {
+                    "disable" | "disabled" => TlsMode::Disabled,
+                    "allow" | "prefer" | "preferred" => TlsMode::Preferred,
+                    "require" | "required" => TlsMode::Required,
+                    "verify-ca" => TlsMode::VerifyCa,
+                    // verify-full / verify-identity, and anything unknown: the strictest mode.
+                    _ => TlsMode::VerifyIdentity,
+                }
+            }
+            // libpq certificate parameters (paths only; files are read at connect time).
+            ("sslrootcert", p) if !p.is_empty() => cfg.tls.ca_cert_path = Some(pct_decode(p)),
+            ("sslcert", p) if !p.is_empty() => cfg.tls.client_cert_path = Some(pct_decode(p)),
+            ("sslkey", p) if !p.is_empty() => cfg.tls.client_key_path = Some(pct_decode(p)),
             _ => {}
         }
     }
-    if scheme == "redis" && !url.contains("sslmode") {
-        cfg.tls.mode = TlsMode::Disable;
-    }
-    if cfg.host.as_deref().is_some_and(is_loopback) && !query.contains("sslmode") {
-        cfg.tls.mode = TlsMode::Disable;
+    let has_mode = ["sslmode=", "ssl-mode=", "ssl_mode="].iter().any(|k| query.contains(k));
+    if !has_mode {
+        cfg.tls.mode = match scheme.to_ascii_lowercase().as_str() {
+            "redis" => TlsMode::Disabled,
+            "rediss" => TlsMode::VerifyIdentity,
+            // libpq / MySQL client default.
+            _ => TlsMode::Preferred,
+        };
     }
     cfg.name = format!("{}@{}", cfg.database.clone().unwrap_or_default(), cfg.host.clone().unwrap_or_default());
     Ok(ParsedUrl { config: cfg, password })
@@ -805,6 +824,27 @@ pub async fn pick_file(
     let display_path = path.to_string_lossy().into_owned();
     st.grants.lock().unwrap().insert(grant.clone(), FileGrant { path, mode: if save { GrantMode::Write } else { GrantMode::Read } });
     Ok(Some(PickedFile { grant, name, display_path }))
+}
+
+/// Native "choose file" dialog for SSL key / certificate / CA files. Returns only the
+/// chosen **path** (stored in the connection config; the driver reads the file at
+/// connect time). The webview never receives file contents.
+#[tauri::command]
+pub async fn pick_cert_path(app: tauri::AppHandle, kind: String) -> R<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (title, exts): (&str, &[&str]) = match kind.as_str() {
+        "key" => ("Choose SSL client key", &["key", "pem", "p12", "pfx"]),
+        "cert" => ("Choose SSL client certificate", &["crt", "pem", "cer", "p12", "pfx"]),
+        "ca" => ("Choose SSL CA certificate", &["crt", "pem", "cer"]),
+        _ => return Err(DbError::invalid("unknown certificate kind")),
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_title(title).add_filter("Certificates and keys", exts).add_filter("All files", &["*"]).pick_file(move |p| {
+        let _ = tx.send(p);
+    });
+    let Some(fp) = rx.await.map_err(|_| DbError::internal("dialog closed"))? else { return Ok(None) };
+    let path = fp.into_path().map_err(|_| DbError::invalid("unsupported file location"))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
 }
 
 fn open_writer(g: &FileGrant, gzip: bool) -> R<Box<dyn std::io::Write + Send>> {
@@ -1351,10 +1391,27 @@ mod tests {
         assert_eq!(p.config.host.as_deref(), Some("db.example.com"));
         assert_eq!(p.config.port, Some(6543));
         assert_eq!(p.config.database.as_deref(), Some("app"));
-        assert_eq!(p.config.tls.mode, TlsMode::VerifyFull);
+        assert_eq!(p.config.tls.mode, TlsMode::Required);
         let p = parse_connection_url("mysql://root@localhost/x".into()).unwrap();
-        assert_eq!(p.config.tls.mode, TlsMode::Disable);
+        assert_eq!(p.config.tls.mode, TlsMode::Preferred);
         assert!(parse_connection_url("javascript://alert(1)".into()).is_err());
+    }
+
+    #[test]
+    fn url_ssl_modes() {
+        let mode = |u: &str| parse_connection_url(u.into()).unwrap().config.tls.mode;
+        assert_eq!(mode("postgresql://h/db?sslmode=disable"), TlsMode::Disabled);
+        assert_eq!(mode("postgresql://h/db?sslmode=prefer"), TlsMode::Preferred);
+        assert_eq!(mode("postgresql://h/db?sslmode=verify-ca"), TlsMode::VerifyCa);
+        assert_eq!(mode("postgresql://h/db?sslmode=verify-full"), TlsMode::VerifyIdentity);
+        assert_eq!(mode("postgresql://h/db?sslmode=bogus"), TlsMode::VerifyIdentity);
+        assert_eq!(mode("mysql://h/db?ssl-mode=DISABLED"), TlsMode::Disabled);
+        assert_eq!(mode("mysql://h/db?ssl-mode=REQUIRED"), TlsMode::Required);
+        assert_eq!(mode("mysql://h/db?ssl-mode=VERIFY_IDENTITY"), TlsMode::VerifyIdentity);
+        assert_eq!(mode("redis://h"), TlsMode::Disabled);
+        assert_eq!(mode("rediss://h"), TlsMode::VerifyIdentity);
+        let p = parse_connection_url("postgresql://h/db?sslmode=verify-full&sslrootcert=/certs/ca.crt".into()).unwrap();
+        assert_eq!(p.config.tls.ca_cert_path.as_deref(), Some("/certs/ca.crt"));
     }
 
     #[test]

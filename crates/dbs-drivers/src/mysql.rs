@@ -69,7 +69,8 @@ impl DatabaseDriver for MySqlDriver {
         } else {
             b = b.ip_or_hostname(cfg.host.clone().unwrap_or_default()).tcp_port(cfg.effective_port().unwrap_or(3306));
         }
-        if cfg.tls.mode != TlsMode::Disable {
+        let plain: Opts = b.clone().into();
+        if cfg.tls.mode != TlsMode::Disabled {
             let mut ssl = SslOpts::default();
             if let Some(ca) = &cfg.tls.ca_cert_path {
                 ssl = ssl.with_root_certs(vec![std::path::PathBuf::from(ca).into()]);
@@ -83,17 +84,28 @@ impl DatabaseDriver for MySqlDriver {
                 let id = mysql_async::ClientIdentity::new(std::path::PathBuf::from(cert).into());
                 ssl = ssl.with_client_identity(Some(id));
             }
-            if cfg.tls.mode == TlsMode::VerifyCa {
-                ssl = ssl.with_danger_skip_domain_validation(true);
-            }
+            ssl = match cfg.tls.mode {
+                TlsMode::VerifyIdentity | TlsMode::Disabled => ssl,
+                TlsMode::VerifyCa => ssl.with_danger_skip_domain_validation(true),
+                TlsMode::Required | TlsMode::Preferred => ssl.with_danger_accept_invalid_certs(true).with_danger_skip_domain_validation(true),
+            };
             b = b.ssl_opts(Some(ssl));
         }
-        let opts: Opts = b.into();
-        let connect = Conn::new(opts.clone());
-        let conn = tokio::time::timeout(Duration::from_secs(cfg.connect_timeout_secs as u64), connect)
-            .await
-            .map_err(|_| DbError::new(ErrorKind::Timeout, "connection timed out"))?
-            .map_err(map_err)?;
+        let timeout = Duration::from_secs(cfg.connect_timeout_secs as u64);
+        let dial = |opts: Opts| async move {
+            tokio::time::timeout(timeout, Conn::new(opts)).await.map_err(|_| DbError::new(ErrorKind::Timeout, "connection timed out"))
+        };
+        let mut opts: Opts = b.into();
+        let conn = match dial(opts.clone()).await? {
+            // PREFERRED (MySQL client default): only when the server doesn't offer TLS at all,
+            // retry in plaintext. Any other TLS failure is reported, never silently downgraded.
+            Err(mysql_async::Error::Driver(mysql_async::DriverError::NoClientSslFlagFromServer)) if cfg.tls.mode == TlsMode::Preferred => {
+                tracing::info!("server does not support TLS; SSL mode PREFERRED falls back to plaintext");
+                opts = plain;
+                dial(opts.clone()).await?.map_err(map_err)?
+            }
+            r => r.map_err(map_err)?,
+        };
         let conn_id = conn.id();
         let me = MySqlConnection { conn: Mutex::new(conn), opts, conn_id, engine: cfg.engine };
         if cfg.read_only {

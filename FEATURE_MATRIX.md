@@ -26,7 +26,11 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Passwords in OS keychain (Secret Service on Linux) | TESTED on Linux | E2E (saved → reconnect after restart) |
 | macOS Keychain / Windows Credential Manager | IMPLEMENTED_UNVERIFIED | needs native runs |
 | Connection URL import (password split out to keychain) | TESTED | UT `url_parsing...`, E2E MySQL/SQLite/Redis via URL |
-| TLS verify-full / verify-ca / custom CA / client certs | TESTED (verify-full + CA, untrusted-cert rejection) | IT postgres TLS, E2E production over TLS |
+| SSL modes PREFERRED / DISABLED / REQUIRED / VERIFY-CA / VERIFY-IDENTITY (Postgres family) | TESTED | IT `postgres_end_to_end` (each mode, CA vs no CA, hostname mismatch), E2E production over VERIFY-IDENTITY + CA |
+| SSL modes on MySQL / MariaDB (PREFERRED with no-TLS fallback, REQUIRED, VERIFY-*) | TESTED (MySQL: PREFERRED/REQUIRED encrypted, VERIFY-* reject self-signed; MariaDB: PREFERRED connects) | IT `mysql_ssl_modes`, `mariadb_ssl_preferred`, E2E `MySQL connection with SSL mode REQUIRED` |
+| SSL modes on Redis (PREFERRED falls back to plain TCP; REQUIRED/VERIFY-* via TLS) | TESTED against plaintext Redis only (DISABLED, PREFERRED fallback, REQUIRED refuses) | IT `redis_ssl_modes`; TLS-enabled Redis IMPLEMENTED_UNVERIFIED |
+| Custom CA / client certs (path chosen with native picker, `pick_cert_path`) | TESTED (CA, Postgres); client certs IMPLEMENTED_UNVERIFIED | IT postgres TLS; native picker not drivable from WebDriver (E2E sets the CA via URL `sslrootcert`) |
+| Production refuses DISABLED/PREFERRED to non-local hosts unless tunnelled | TESTED | UT `rejects_plaintext_remote_production`, E2E `plaintext production connections are refused` |
 | Plaintext refused for remote production | TESTED | UT `rejects_plaintext_remote_production`, E2E |
 | SSH tunnel: password, private key, encrypted key, agent | TESTED (agent: IMPLEMENTED_UNVERIFIED) | IT `dbs-ssh/tests/tunnel.rs` (6), E2E `15-ssh` (4) |
 | SSH strict host-key checking (unknown→confirm, changed→refuse) | TESTED | IT `changed_host_key_is_refused`, E2E decline/trust |
@@ -38,7 +42,7 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 
 | Feature | Status | Evidence |
 |---|---|---|
-| Launcher, engine picker, connection form | TESTED | E2E |
+| Launcher, engine picker, connection form (status color, tag, safe mode, Host/IP or socket, keychain / ask every time, bootstrap commands, SSL mode + keys, Over SSH) | TESTED | E2E, vitest `ConnectionDialog.test.tsx` |
 | Connection rail (multiple DBs), per-connection tabs | TESTED | E2E `connection rail…` |
 | Object tree (tables/views/functions/sequences/enums/triggers) + context menu | TESTED (tree), menu IMPLEMENTED_UNVERIFIED | E2E |
 | Active schema = default for SQL (`search_path` / `USE`) | TESTED | IT + E2E schema switch |

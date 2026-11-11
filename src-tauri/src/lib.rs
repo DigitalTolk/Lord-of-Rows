@@ -104,6 +104,7 @@ pub fn run() {
             commands::apply_changes,
             commands::copy_rows,
             commands::pick_file,
+            commands::pick_cert_path,
             commands::export_table,
             commands::export_query,
             commands::import_preview,

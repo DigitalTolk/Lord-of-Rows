@@ -65,6 +65,8 @@ export const api = {
     call<T.ApplyReport>('apply_changes', { sessionId, target, changes, confirmToken: confirmToken ?? null }),
   copyRows: (columns: T.ColumnMeta[], rows: T.Value[][], options: T.ExportOptions) => call<string>('copy_rows', { columns, rows, options }),
 
+  /** Native picker for SSL key/cert/CA files: returns the chosen path only (never contents). */
+  pickCertPath: (kind: 'key' | 'cert' | 'ca') => call<string | null>('pick_cert_path', { kind }),
   pickFile: (save: boolean, defaultName?: string, extensions: string[] = []) =>
     call<T.PickedFile | null>('pick_file', { save, defaultName: defaultName ?? null, extensions }),
   exportTable: (sessionId: string, target: T.TableTarget, filters: T.FilterCondition[], grant: string, options: T.ExportOptions, gzip: boolean) =>

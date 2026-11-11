@@ -27,7 +27,7 @@ fn cfg(engine: Engine, host: Option<&str>, db: Option<&str>) -> ConnectionConfig
         database: db.map(String::from),
         username: Some("dbs_test".into()),
         socket_path: None,
-        tls: TlsConfig { mode: TlsMode::Disable, ..Default::default() },
+        tls: TlsConfig { mode: TlsMode::Disabled, ..Default::default() },
         ssh: None,
         environment: EnvironmentKind::Testing,
         read_only: false,
@@ -271,18 +271,44 @@ async fn postgres_end_to_end() {
     assert_eq!(bad.kind, ErrorKind::Authentication, "{bad:?}");
     assert!(!bad.message.contains("wrong"));
 
-    // TLS required against a server without TLS → Tls error, never silent plaintext.
-    let mut tls = cfg(Engine::Postgres, Some(&host), Some("dbs_test"));
-    tls.tls.mode = TlsMode::VerifyFull;
-    // Server cert is signed by the test CA, which is not in the system trust store: must be rejected.
-    let e = driver_for(Engine::Postgres).unwrap().connect(&tls, pw()).await.err().expect("untrusted cert must be rejected");
+    // SSL modes against a server with TLS on (cert signed by the test CA, CN/SAN "postgres").
+    const PG_SSL: &str = "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()";
+    let pg_tls = |mode: TlsMode, ca: bool| {
+        let mut t = cfg(Engine::Postgres, Some(&host), Some("dbs_test"));
+        t.tls.mode = mode;
+        t.tls.ca_cert_path = ca.then(|| "/certs/ca.crt".into());
+        t
+    };
+    let encrypted = |r: Vec<StatementResult>| first_rows(&r)[0][0] == Value::Bool(true);
+    // DISABLED: plaintext.
+    let plain = connect(&pg_tls(TlsMode::Disabled, false)).await;
+    assert!(!encrypted(exec(&*plain, PG_SSL).await), "DISABLED must not use TLS");
+    // PREFERRED: the server offers TLS, so the session is encrypted (no CA needed).
+    let pref = connect(&pg_tls(TlsMode::Preferred, false)).await;
+    assert!(encrypted(exec(&*pref, PG_SSL).await), "PREFERRED must use TLS when available");
+    // REQUIRED: encrypted, works without the CA (certificate not verified).
+    let req = connect(&pg_tls(TlsMode::Required, false)).await;
+    assert!(encrypted(exec(&*req, PG_SSL).await), "REQUIRED must be encrypted");
+    // VERIFY-IDENTITY without the CA: the test CA isn't in the system trust store → rejected.
+    let e = driver_for(Engine::Postgres).unwrap().connect(&pg_tls(TlsMode::VerifyIdentity, false), pw()).await.err().expect("untrusted cert must be rejected");
     assert!(matches!(e.kind, ErrorKind::Tls | ErrorKind::Connection), "{e:?}");
-    // With the CA configured, verified TLS (certificate + hostname) succeeds.
+    let e = driver_for(Engine::Postgres).unwrap().connect(&pg_tls(TlsMode::VerifyCa, false), pw()).await.err().expect("VERIFY-CA without CA must fail");
+    assert!(matches!(e.kind, ErrorKind::Tls | ErrorKind::Connection), "{e:?}");
     if std::path::Path::new("/certs/ca.crt").exists() {
-        tls.tls.ca_cert_path = Some("/certs/ca.crt".into());
-        let c2 = driver_for(Engine::Postgres).unwrap().connect(&tls, pw()).await.expect("verified TLS connect");
-        let r = exec(&*c2, "SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()").await;
-        assert_eq!(first_rows(&r)[0][0], Value::Bool(true), "session must be encrypted");
+        // VERIFY-CA and VERIFY-IDENTITY with the CA configured succeed and are encrypted.
+        for mode in [TlsMode::VerifyCa, TlsMode::VerifyIdentity] {
+            let c2 = driver_for(Engine::Postgres).unwrap().connect(&pg_tls(mode, true), pw()).await.unwrap_or_else(|e| panic!("{mode:?}: {e:?}"));
+            assert!(encrypted(exec(&*c2, PG_SSL).await), "{mode:?} session must be encrypted");
+        }
+        // VERIFY-IDENTITY checks the hostname: connecting by IP (not in the certificate) fails,
+        // while VERIFY-CA (chain only) accepts it.
+        if let Ok(ip) = tokio::net::lookup_host(format!("{host}:5432")).await.map(|mut a| a.next().unwrap().ip().to_string()) {
+            let mut by_ip = pg_tls(TlsMode::VerifyIdentity, true);
+            by_ip.host = Some(ip.clone());
+            assert!(driver_for(Engine::Postgres).unwrap().connect(&by_ip, pw()).await.is_err(), "hostname mismatch must be rejected");
+            by_ip.tls.mode = TlsMode::VerifyCa;
+            connect(&by_ip).await;
+        }
     }
 
     exec(&*c, "DROP SCHEMA it CASCADE").await;
@@ -534,4 +560,77 @@ async fn mysql_sha256_password_auth() {
         .expect("sha256_password with empty password");
 
     exec(&*rc, "DROP USER 'it_sha256'@'%', 'it_sha256_empty'@'%'").await;
+}
+
+/// `SHOW STATUS LIKE 'Ssl_cipher'` value (empty = plaintext session).
+async fn mysql_cipher(c: &dyn DatabaseConnection) -> String {
+    let r = exec(c, "SHOW SESSION STATUS LIKE 'Ssl_cipher'").await;
+    match &first_rows(&r)[0][1] {
+        Value::Text(s) => s.clone(),
+        Value::Null => String::new(),
+        other => format!("{other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn mysql_ssl_modes() {
+    if !it_enabled() {
+        return;
+    }
+    // MySQL 8.4 auto-generates a self-signed server certificate.
+    let host = std::env::var("DBS_IT_MYSQL_HOST").unwrap_or("localhost".into());
+    let with = |mode: TlsMode| {
+        let mut c = cfg(Engine::MySql, Some(&host), Some("dbs_test"));
+        c.tls.mode = mode;
+        c
+    };
+    let plain = connect(&with(TlsMode::Disabled)).await;
+    assert_eq!(mysql_cipher(&*plain).await, "", "DISABLED must not use TLS");
+    for mode in [TlsMode::Preferred, TlsMode::Required] {
+        let c = driver_for(Engine::MySql).unwrap().connect(&with(mode), pw()).await.unwrap_or_else(|e| panic!("{mode:?}: {e:?}"));
+        assert!(!mysql_cipher(&*c).await.is_empty(), "{mode:?} session must be encrypted");
+    }
+    // The self-signed certificate isn't trusted: verification must fail, never downgrade.
+    for mode in [TlsMode::VerifyIdentity, TlsMode::VerifyCa] {
+        let e = driver_for(Engine::MySql).unwrap().connect(&with(mode), pw()).await.err().unwrap_or_else(|| panic!("{mode:?} must reject an untrusted cert"));
+        assert!(matches!(e.kind, ErrorKind::Tls | ErrorKind::Connection), "{mode:?}: {e:?}");
+    }
+}
+
+#[tokio::test]
+async fn mariadb_ssl_preferred() {
+    if !it_enabled() {
+        return;
+    }
+    // MariaDB may or may not have TLS configured: PREFERRED must connect either way
+    // (exercising the no-TLS fallback when the server doesn't offer it).
+    let host = std::env::var("DBS_IT_MARIADB_HOST").unwrap_or("localhost".into());
+    let mut c = cfg(Engine::MariaDb, Some(&host), Some("dbs_test"));
+    c.tls.mode = TlsMode::Preferred;
+    let conn = connect(&c).await;
+    let cipher = mysql_cipher(&*conn).await;
+    eprintln!("MariaDB PREFERRED session cipher: {cipher:?}");
+    assert!(!conn.server_info().await.unwrap().version.is_empty());
+}
+
+#[tokio::test]
+async fn redis_ssl_modes() {
+    if !it_enabled() {
+        return;
+    }
+    // The test Redis has no TLS: DISABLED works, PREFERRED falls back to plain TCP,
+    // REQUIRED fails (never silently plaintext).
+    let host = std::env::var("DBS_IT_REDIS_HOST").unwrap_or("localhost".into());
+    let with = |mode: TlsMode| {
+        let mut c = cfg(Engine::Redis, Some(&host), Some("0"));
+        c.username = None;
+        c.connect_timeout_secs = 5;
+        c.tls.mode = mode;
+        c
+    };
+    for mode in [TlsMode::Disabled, TlsMode::Preferred] {
+        let c = driver_for(Engine::Redis).unwrap().connect(&with(mode), ConnectSecrets::default()).await.unwrap_or_else(|e| panic!("{mode:?}: {e:?}"));
+        c.ping().await.unwrap();
+    }
+    assert!(driver_for(Engine::Redis).unwrap().connect(&with(TlsMode::Required), ConnectSecrets::default()).await.is_err(), "REQUIRED must not fall back");
 }
