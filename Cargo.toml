@@ -10,6 +10,7 @@ members = [
   "crates/dbs-io",
   "crates/dbs-schema",
   "crates/dbs-ssh",
+  "crates/dbs-plugins",
   "src-tauri",
 ]
 
@@ -29,6 +30,7 @@ dbs-drivers = { path = "crates/dbs-drivers" }
 dbs-io = { path = "crates/dbs-io" }
 dbs-schema = { path = "crates/dbs-schema" }
 dbs-ssh = { path = "crates/dbs-ssh" }
+dbs-plugins = { path = "crates/dbs-plugins" }
 
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
@@ -43,3 +45,16 @@ hex = "0.4"
 tracing = "0.1"
 tokio-util = "0.7"
 futures-util = "0.3"
+
+# Plugins run in wasmtime's Pulley interpreter; unoptimised it is ~50x slower,
+# which makes dev builds and tests crawl. Optimise just the wasm runtime crates.
+[profile.dev.package.pulley-interpreter]
+opt-level = 3
+[profile.dev.package.wasmtime]
+opt-level = 3
+[profile.dev.package.wasmtime-internal-cranelift]
+opt-level = 3
+[profile.dev.package.cranelift-codegen]
+opt-level = 3
+[profile.dev.package.regalloc2]
+opt-level = 3

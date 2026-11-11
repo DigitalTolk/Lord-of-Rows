@@ -211,3 +211,16 @@ export interface Document<T = unknown> { kind: string; id: string; name: string;
 
 export interface AppInfo { version: string; os: string; arch: string; secret_backend: string; supported_engines: Engine[]; all_engines: Engine[] }
 export interface PickedFile { grant: string; name: string; display_path: string }
+
+export type PluginCapability = 'format_sql' | 'export_format' | 'read_query_results' | 'read_schema';
+export type PluginSigner = { kind: 'unsigned' } | { kind: 'verified'; public_key: string; fingerprint: string };
+export interface PluginSettingSpec { key: string; label: string; type: 'bool' | 'string' | 'number'; default: unknown }
+export interface PluginManifest {
+  id: string; name: string; version: string; api_version: number; min_app_version: string; description: string; author: string;
+  capabilities: PluginCapability[]; export?: { label: string; extension: string } | null; settings?: PluginSettingSpec[];
+}
+export interface PluginInfo {
+  id: string; version: string; manifest: PluginManifest; signer: PluginSigner; wasm_sha256: string; enabled: boolean;
+  grants: PluginCapability[]; settings: Record<string, unknown>; last_error?: string | null; installed: string; updated: string; incompatible?: string | null;
+}
+export interface PluginPreview { manifest: PluginManifest; signer: PluginSigner; wasm_sha256: string; installed_version?: string | null; signer_changed: boolean; incompatible?: string | null }

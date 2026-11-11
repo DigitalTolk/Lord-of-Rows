@@ -9,6 +9,7 @@ import { ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
 import { monaco, registerSqlCompletion, setCompletionSource } from '../lib/monaco';
+import { formatters, usePlugins } from '../lib/plugins';
 import { family } from '../lib/sqlgen';
 import type { StatementResult } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
@@ -26,6 +27,11 @@ export function QueryView({ tab }: { tab: Tab }) {
   const [error, setError] = useState<string | null>(null);
   const [split, setSplit] = useState(0.5);
   const isRedis = s?.config.engine === 'redis';
+  const { plugins: installed, loaded: pluginsLoaded, load: loadPlugins } = usePlugins();
+  const pluginFormatters = formatters(installed);
+  useEffect(() => {
+    if (!pluginsLoaded) void loadPlugins();
+  }, [pluginsLoaded, loadPlugins]);
 
   // Feed schema metadata into autocomplete.
   useEffect(() => {
@@ -122,6 +128,18 @@ export function QueryView({ tab }: { tab: Tab }) {
       toast('error', errMsg(e));
     }
   };
+  // Runs in the backend wasm sandbox; the plugin only ever sees this text.
+  const fmtWithPlugin = async (id: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    try {
+      const out = await api.pluginFormatSql(id, ed.getValue());
+      ed.executeEdits('plugin-format', [{ range: ed.getModel()!.getFullModelRange(), text: out }]);
+    } catch (e) {
+      toast('error', errMsg(e));
+      void loadPlugins(); // a failing plugin is disabled by the backend
+    }
+  };
   const minify = () => {
     const ed = editorRef.current;
     if (!ed) return;
@@ -196,6 +214,15 @@ export function QueryView({ tab }: { tab: Tab }) {
           <>
             <span className="mx-1 h-4 border-l border-border" />
             <button className="btn btn-ghost h-6 px-2" onClick={fmt} title="⌘/Ctrl+Alt+F">{t('query.format')}</button>
+            {pluginFormatters.length === 1 && (
+              <button className="btn btn-ghost h-6 px-2" onClick={() => fmtWithPlugin(pluginFormatters[0].id)} title={`Plugin ${pluginFormatters[0].id}`}>Format with {pluginFormatters[0].manifest.name}</button>
+            )}
+            {pluginFormatters.length > 1 && (
+              <select className="input h-6 w-auto py-0" aria-label="Format with plugin" value="" onChange={(e) => e.target.value && fmtWithPlugin(e.target.value)}>
+                <option value="">Format with…</option>
+                {pluginFormatters.map((p) => <option key={p.id} value={p.id}>Format with {p.manifest.name}</option>)}
+              </select>
+            )}
             {s?.capabilities.explain && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(false)}>{t('query.explain')}</button>}
             {s?.capabilities.explain_analyze && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(true)}>{t('query.explainAnalyze')}</button>}
             <button className="btn btn-ghost h-6 px-2" onClick={minify}>{t('query.minify')}</button>

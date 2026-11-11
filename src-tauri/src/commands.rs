@@ -23,7 +23,7 @@ fn engine_name(e: Engine) -> String {
     serde_json::to_value(e).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
 }
 
-fn audit(st: &AppState, cat: Category, outcome: Outcome, cfg: Option<&ConnectionConfig>, f: impl FnOnce(&mut NewEvent)) {
+pub(crate) fn audit(st: &AppState, cat: Category, outcome: Outcome, cfg: Option<&ConnectionConfig>, f: impl FnOnce(&mut NewEvent)) {
     let mut ev = NewEvent { category: Some(cat), outcome: Some(outcome), ..Default::default() };
     if let Some(c) = cfg {
         ev.connection_id = Some(c.id.to_string());
@@ -797,8 +797,8 @@ fn open_writer(g: &FileGrant, gzip: bool) -> R<Box<dyn std::io::Write + Send>> {
 
 #[derive(Serialize)]
 pub struct ExportReport {
-    rows: u64,
-    path: String,
+    pub(crate) rows: u64,
+    pub(crate) path: String,
 }
 
 #[tauri::command]

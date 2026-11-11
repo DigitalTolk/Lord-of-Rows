@@ -4,6 +4,7 @@
 
 mod backup;
 mod commands;
+mod plugins;
 mod state;
 
 use std::collections::HashMap;
@@ -54,6 +55,7 @@ pub fn run() {
                 running: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
                 known_hosts: dir.join("known_hosts"),
+                plugins: plugins::PluginHost::new(dir.join("plugins"))?,
             });
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
@@ -123,6 +125,15 @@ pub fn run() {
             commands::backup_tools,
             commands::run_backup,
             commands::run_restore,
+            plugins::plugin_list,
+            plugins::plugin_inspect,
+            plugins::plugin_install,
+            plugins::plugin_remove,
+            plugins::plugin_set_enabled,
+            plugins::plugin_set_grants,
+            plugins::plugin_set_settings,
+            plugins::plugin_format_sql,
+            plugins::plugin_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running DB Studio");

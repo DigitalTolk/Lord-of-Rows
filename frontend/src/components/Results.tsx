@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
+import { exporters, usePlugins } from '../lib/plugins';
 import type { ColumnMeta, ExportFormat, StatementResult, Value } from '../lib/types';
 import { displayValue } from '../lib/value';
 import { errMsg, useApp } from '../store';
@@ -48,6 +49,22 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
     }
   };
 
+  const pluginExporters = exporters(usePlugins((x) => x.plugins));
+  // Rows are passed explicitly by the user's action; the plugin never queries the database.
+  const exportViaPlugin = async (id: string) => {
+    const p = pluginExporters.find((x) => x.id === id);
+    if (!rs || !p?.manifest.export) return;
+    try {
+      const f = await api.pickFile(true, `results.${p.manifest.export.extension}`, [p.manifest.export.extension]);
+      if (!f) return;
+      const r = await api.pluginExport(id, f.grant, rs.columns, filteredRows);
+      toast('ok', `Exported ${r.rows} row(s) with ${p.manifest.name}`);
+    } catch (e) {
+      toast('error', errMsg(e));
+      void usePlugins.getState().load();
+    }
+  };
+
   const [tab, setTab] = useState<'results' | 'messages'>('results');
   const allMessages = [
     ...results.map((r) => `#${r.statement_index + 1} ${r.sql_excerpt.slice(0, 80)} — ${r.rows_affected != null ? t('query.rowsAffected', { n: r.rows_affected }) : r.result ? t('query.rowsReturned', { n: r.result.rows.length }) : 'OK'} (${t('query.duration', { ms: r.duration_ms })})`),
@@ -77,6 +94,12 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
               <option value="">{t('grid.copyAs')}…</option>
               <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="sql_insert">SQL INSERT</option><option value="markdown">Markdown</option>
             </select>
+            {pluginExporters.length > 0 && (
+              <select className="input h-6 w-auto py-0" aria-label="Export with plugin" value="" onChange={(e) => e.target.value && exportViaPlugin(e.target.value)}>
+                <option value="">Export with plugin…</option>
+                {pluginExporters.map((p) => <option key={p.id} value={p.id}>{p.manifest.export?.label} ({p.manifest.name})</option>)}
+              </select>
+            )}
             <span className="ml-auto text-xs text-muted">
               {t('query.rowsReturned', { n: filteredRows.length })} · {t('query.duration', { ms: current.duration_ms })}
               {rs.truncated && <span className="ml-2 text-warn">{t('query.truncated', { n: rs.rows.length })}</span>}

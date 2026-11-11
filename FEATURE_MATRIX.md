@@ -67,7 +67,24 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Read-only: DB-enforced session + backend block | TESTED | IT (PG/MySQL/SQLite) + E2E |
 | Tamper-evident audit log (hash chain), viewer, verify, export, purge | TESTED | UT `dbs-audit`, E2E audit |
 
+## Plugins (spec §24)
+
+Tested natively on macOS arm64 (`cargo test -p dbs-plugins`), not in the Docker matrix yet.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Wasm sandbox (wasmtime/Pulley interpreter, no imports/WASI, fresh instance per call) | TESTED | UT `dbs-plugins` (imports rejected, echo, example plugin) |
+| CPU (fuel) and memory limits; trap/OOB pointer/bad UTF-8 contained | TESTED | UT infinite loop, memory hog, OOB pointers, trap |
+| Manifest validation (id, semver, API version, capabilities, settings), compatibility check | TESTED | UT `manifest_validation`, `compatibility_check` |
+| `.dbsplugin` zip validation (traversal, extra/duplicate entries, size caps, zip bomb) | TESTED | UT `zip_path_traversal…`, `oversized_entries_rejected` |
+| ed25519 signatures (verified fingerprint vs unsigned; tamper/escalation detected) | TESTED | UT `signature_verifies_and_detects_tampering` |
+| Capability gating (declared **and** granted) | TESTED | UT `capability_gating` |
+| Registry (store migration v2), install/upgrade/remove, grants, enable/disable, settings, audit | IMPLEMENTED_UNVERIFIED | UT `plugin_registry` for the store only; Tauri commands not exercised by E2E yet |
+| Settings → Plugins UI, "Format with <plugin>", "Export with plugin…" | IMPLEMENTED_UNVERIFIED | vitest for menu filtering only; not driven by E2E yet |
+| Example plugin `examples/plugins/uppercase-keywords` | TESTED | UT `example_plugin_formats_sql` |
+| `read_schema` capability | IMPLEMENTED_UNVERIFIED | runtime + gating only; no UI entry point yet |
+
 ## Not started (spec items)
 
-Plugin system, AI assistant, auto-updater, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
+AI assistant, auto-updater, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
 CI pipelines, localization beyond English (architecture in place), accessibility audit with assistive tech.

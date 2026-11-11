@@ -49,6 +49,7 @@ pub enum Category {
     SecurityPolicyChanged,
     PluginInstalled,
     PluginPermissionChanged,
+    PluginRemoved,
     AppUpdated,
     AuditExported,
     AuditPurged,

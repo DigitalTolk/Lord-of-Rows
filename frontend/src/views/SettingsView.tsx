@@ -4,9 +4,10 @@ import { ask } from '../components/ask';
 import { Field, Toolbar } from '../components/ui';
 import { api } from '../lib/ipc';
 import { DEFAULT_KEYS, type KeyAction } from '../lib/keys';
+import { PluginsSettings } from './PluginsSettings';
 import { errMsg, useApp } from '../store';
 
-const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'keys', 'a11y'] as const;
+const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'keys', 'plugins', 'a11y'] as const;
 
 export function SettingsView() {
   const { t } = useTranslation();
@@ -123,6 +124,7 @@ export function SettingsView() {
               </tbody>
             </table>
           )}
+          {section === 'plugins' && <PluginsSettings />}
           {section === 'a11y' && (
             <label className="flex items-center gap-2"><input type="checkbox" checked={get('a11y.reduceMotion', false)} onChange={(e) => set('a11y.reduceMotion', e.target.checked)} />{t('settings.reducedMotion')}</label>
           )}
