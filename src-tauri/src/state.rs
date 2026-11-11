@@ -44,6 +44,8 @@ pub struct AppState {
     pub ai_guard: dbs_ai::PromptGuard,
     pub sessions: Mutex<HashMap<Uuid, Arc<Session>>>,
     pub running: Mutex<HashMap<String, CancellationToken>>,
+    /// Flow-control state of streaming runs, keyed like `running`.
+    pub stream_acks: Mutex<HashMap<String, Arc<crate::commands::StreamAcks>>>,
     pub grants: Mutex<HashMap<String, FileGrant>>,
     /// App-managed SSH known_hosts (separate from ~/.ssh/known_hosts).
     pub known_hosts: PathBuf,

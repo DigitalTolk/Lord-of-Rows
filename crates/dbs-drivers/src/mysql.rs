@@ -313,6 +313,73 @@ impl MySqlConnection {
         }
         Ok(out)
     }
+
+    /// Streaming counterpart of [`Self::run_script`] using `query_iter`: rows are
+    /// read one at a time and pushed to `sink` (which applies backpressure).
+    async fn stream_script(&self, sql: &str, sink: &mut RowSink) -> DbResult<()> {
+        let stmts = dbs_safety::split_statements(sql, Dialect::MySql);
+        let n = stmts.len();
+        let mut c = self.conn.lock().await;
+        for (idx, st) in stmts.iter().enumerate() {
+            let label = |mut e: DbError| {
+                if n > 1 && e.kind != ErrorKind::Cancelled {
+                    e.message = format!("statement {} failed: {}", idx + 1, e.message);
+                }
+                e
+            };
+            let t = Instant::now();
+            let mut res = c.query_iter(st.text.as_str()).await.map_err(|e| label(map_err(e)))?;
+            // A statement (e.g. CALL) may produce several result sets. The summary of
+            // the last one is held back so warnings can be attached to it.
+            let mut pending: Option<StatementSummary> = None;
+            loop {
+                let cols: Vec<mysql_async::Column> = res.columns().as_deref().map(|c| c.to_vec()).unwrap_or_default();
+                if let Some(p) = pending.take() {
+                    sink.end_statement(p).await?;
+                }
+                if !cols.is_empty() {
+                    let meta = cols
+                        .iter()
+                        .map(|c| ColumnMeta {
+                            name: c.name_str().into_owned(),
+                            type_name: type_name(c),
+                            nullable: Some(!c.flags().contains(ColumnFlags::NOT_NULL_FLAG)),
+                            table: Some(c.org_table_str().into_owned()).filter(|s| !s.is_empty()),
+                        })
+                        .collect();
+                    sink.begin_result(idx, excerpt(&st.text), meta).await?;
+                }
+                while let Some(mut row) = res.next().await.map_err(|e| label(map_err(e)))? {
+                    if sink.is_full() {
+                        sink.mark_truncated();
+                        continue; // drain without decoding
+                    }
+                    let vals = (0..cols.len()).map(|i| decode(row.take(i).unwrap_or(mysql_async::Value::NULL), &cols[i])).collect();
+                    sink.push_row(vals).await?;
+                }
+                pending = Some(StatementSummary {
+                    statement_index: idx,
+                    sql_excerpt: excerpt(&st.text),
+                    rows_affected: if cols.is_empty() { Some(res.affected_rows()) } else { None },
+                    duration_ms: elapsed_ms(t),
+                    notices: vec![],
+                });
+                if res.is_empty() {
+                    break;
+                }
+            }
+            drop(res);
+            if let Some(mut p) = pending {
+                if c.get_warnings() > 0 {
+                    if let Ok(w) = c.query::<(String, u32, String), _>("SHOW WARNINGS LIMIT 50").await {
+                        p.notices = w.into_iter().map(|(lvl, code, msg)| format!("{lvl} {code}: {msg}")).collect();
+                    }
+                }
+                sink.end_statement(p).await?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -528,6 +595,10 @@ impl DatabaseConnection for MySqlConnection {
 
     async fn execute(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken) -> DbResult<Vec<StatementResult>> {
         guarded(self.run_script(sql, opts.max_rows), cancel, opts.timeout_ms, || self.kill_query()).await
+    }
+
+    async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
+        guarded(self.stream_script(sql, &mut sink), cancel, opts.timeout_ms, || self.kill_query()).await
     }
 
     async fn execute_params(&self, stmt: &GeneratedStatement) -> DbResult<u64> {

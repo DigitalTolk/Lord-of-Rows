@@ -316,6 +316,65 @@ impl PgConnection {
         })
     }
 
+    /// Streaming counterpart of [`Self::run_one`]: rows go to `sink` as they arrive
+    /// from the `RowStream` (bounded by the sink's backpressure).
+    async fn stream_one(&self, idx: usize, text: &str, sink: &mut RowSink) -> DbResult<()> {
+        let t = Instant::now();
+        let stmt = match self.client.prepare(text).await {
+            Ok(s) => s,
+            Err(e) => {
+                let code = e.as_db_error().map(|d| d.code().code().to_string());
+                if code.as_deref() == Some("0A000") {
+                    // Simple protocol has no row stream; materialise (capped) and replay.
+                    let r = self.run_simple(idx, text, sink.max_rows(), t).await?;
+                    return sink.replay(vec![r]).await;
+                }
+                return Err(map_pg_err(e));
+            }
+        };
+        if stmt.columns().is_empty() {
+            let n = self.client.execute(&stmt, &[]).await.map_err(map_pg_err)?;
+            return sink
+                .end_statement(StatementSummary {
+                    statement_index: idx,
+                    sql_excerpt: excerpt(text),
+                    rows_affected: Some(n),
+                    duration_ms: elapsed_ms(t),
+                    notices: self.take_notices(),
+                })
+                .await;
+        }
+        let columns: Vec<ColumnMeta> =
+            stmt.columns().iter().map(|c| ColumnMeta { name: c.name().into(), type_name: c.type_().name().into(), nullable: None, table: None }).collect();
+        let ncol = columns.len();
+        let stream = self.client.query_raw(&stmt, std::iter::empty::<PgParam>()).await.map_err(map_pg_err)?;
+        pin_mut!(stream);
+        sink.begin_result(idx, excerpt(text), columns).await?;
+        while let Some(r) = stream.next().await {
+            let r = r.map_err(map_pg_err)?;
+            if sink.is_full() {
+                // Past the cap: drain without decoding so the connection stays in sync.
+                sink.mark_truncated();
+                continue;
+            }
+            let mut row = Vec::with_capacity(ncol);
+            for i in 0..ncol {
+                row.push(r.try_get::<_, PgAny>(i).map(|v| v.0).unwrap_or_else(|e| Value::Other { type_name: "error".into(), text: e.to_string() }));
+            }
+            sink.push_row(row).await?;
+        }
+        let affected = stream.rows_affected();
+        let verb = text.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+        sink.end_statement(StatementSummary {
+            statement_index: idx,
+            sql_excerpt: excerpt(text),
+            rows_affected: if matches!(verb.as_str(), "INSERT" | "UPDATE" | "DELETE" | "MERGE" | "WITH") { affected } else { None },
+            duration_ms: elapsed_ms(t),
+            notices: self.take_notices(),
+        })
+        .await
+    }
+
     fn default_schema(s: Option<&str>) -> String {
         s.filter(|s| !s.is_empty()).unwrap_or("public").to_string()
     }
@@ -678,6 +737,23 @@ impl DatabaseConnection for PgConnection {
                 }
             }
             Ok(out)
+        };
+        guarded(fut, cancel, opts.timeout_ms, || self.send_cancel()).await
+    }
+
+    async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
+        let stmts = dbs_safety::split_statements(sql, Dialect::Postgres);
+        let n = stmts.len();
+        let fut = async {
+            for (i, s) in stmts.iter().enumerate() {
+                if let Err(mut e) = self.stream_one(i, &s.text, &mut sink).await {
+                    if n > 1 && e.kind != ErrorKind::Cancelled {
+                        e.message = format!("statement {} failed: {}", i + 1, e.message);
+                    }
+                    return Err(e);
+                }
+            }
+            Ok(())
         };
         guarded(fut, cancel, opts.timeout_ms, || self.send_cancel()).await
     }

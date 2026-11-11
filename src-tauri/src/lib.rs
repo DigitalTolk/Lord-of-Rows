@@ -58,6 +58,7 @@ pub fn run() {
                 ai_guard: dbs_ai::PromptGuard::new(state::random_key()),
                 sessions: Mutex::new(HashMap::new()),
                 running: Mutex::new(HashMap::new()),
+                stream_acks: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
                 known_hosts: dir.join("known_hosts"),
             });
@@ -93,6 +94,8 @@ pub fn run() {
             commands::object_ddl,
             commands::evaluate_sql,
             commands::run_sql,
+            commands::run_sql_stream,
+            commands::ack_query_stream,
             commands::cancel_query,
             commands::split_sql,
             commands::explain_sql,

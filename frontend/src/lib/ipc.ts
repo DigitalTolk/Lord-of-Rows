@@ -1,8 +1,9 @@
 // Typed wrappers around Tauri IPC. All privileged work happens in Rust; this
 // module only marshals arguments. Errors are rethrown as DbError objects.
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import type * as T from './types';
 import { hydrate } from './hydrate';
+import type { StreamMsg } from './stream';
 
 export class IpcError extends Error {
   constructor(public err: T.DbError) {
@@ -53,6 +54,10 @@ export const api = {
   splitSql: (engine: T.Engine, sql: string) => call<[number, number][]>('split_sql', { engine, sql }),
   runSql: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }) =>
     call<{ results: T.StatementResult[]; duration_ms: number }>('run_sql', { req }).then((r) => ({ ...r, results: r.results.map((s) => ({ ...s, result: hydrate(s.result) })) })),
+  /** Streaming run: same safety gate as runSql; rows arrive via `onMessage` (see lib/stream.ts). */
+  runSqlStream: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }, onMessage: (m: StreamMsg) => void) =>
+    call<{ duration_ms: number; ok: boolean }>('run_sql_stream', { req, onEvent: new Channel<StreamMsg>(onMessage) }),
+  ackQueryStream: (queryId: string, seq: number) => call<void>('ack_query_stream', { queryId, seq }),
   cancelQuery: (queryId: string) => call<boolean>('cancel_query', { queryId }),
   explainSql: (sessionId: string, sql: string, analyze: boolean, confirmToken?: string | null, typedConfirmation?: string | null) =>
     call<T.ResultSet>('explain_sql', { sessionId, sql, analyze, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }).then(hydrate),

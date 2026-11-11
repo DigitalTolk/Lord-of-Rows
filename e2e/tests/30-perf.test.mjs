@@ -45,6 +45,9 @@ test('performance budget measurements', async () => {
     await sleep(800);
     const q0 = Date.now();
     await runSql(b, "select g as id, md5(g::text) as hash, g * 1.5 as amount, now() - (g || ' seconds')::interval as ts from generate_series(1, 100000) g");
+    // Streaming: the first batch is visible (grid has data rows) long before the full set.
+    await until(async () => /Loading… [\d,.\s]+ rows|100000 rows/.test(await resultsText(b)), 'first rows displayed', 60000);
+    out.query100kFirstRowsMs = Date.now() - q0;
     await until(async () => /100000 rows/.test(await resultsText(b)), '100k rows displayed', 60000);
     out.query100kToGridMs = Date.now() - q0;
     out.rss100kMb = rssMb();

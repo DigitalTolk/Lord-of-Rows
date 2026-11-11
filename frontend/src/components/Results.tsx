@@ -15,15 +15,21 @@ export async function copyAs(columns: ColumnMeta[], rows: Value[][], format: Exp
   await navigator.clipboard.writeText(text);
 }
 
-export function Results({ results, messages }: { results: StatementResult[]; messages: string[] }) {
+/**
+ * `runId` identifies a run: the selected result set resets when it changes or a
+ * new result set starts, not on every streamed batch. Without it, every new
+ * `results` array counts as a new run.
+ */
+export function Results({ results, messages, runId }: { results: StatementResult[]; messages: string[]; runId?: string }) {
   const { t } = useTranslation();
   const toast = useApp((s) => s.toast);
   const withRows = results.filter((r) => r.result);
   // Show the last result set by default (what you see after "Run all"); reset on each new run.
   const [idx, setIdx] = useState(Math.max(0, withRows.length - 1));
+  const resetKey = runId ?? results;
   useEffect(() => {
-    setIdx(Math.max(0, results.filter((r) => r.result).length - 1));
-  }, [results]);
+    setIdx(Math.max(0, withRows.length - 1));
+  }, [resetKey, withRows.length]);
   const [mode, setMode] = useState<Mode>('grid');
   const [search, setSearch] = useState('');
   const [recordRow, setRecordRow] = useState(0);
@@ -77,8 +83,12 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
               <option value="">{t('grid.copyAs')}…</option>
               <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="sql_insert">SQL INSERT</option><option value="markdown">Markdown</option>
             </select>
-            <span className="ml-auto text-xs text-muted">
-              {t('query.rowsReturned', { n: filteredRows.length })} · {t('query.duration', { ms: current.duration_ms })}
+            <span className="ml-auto text-xs text-muted" aria-live="polite">
+              {current.streaming ? (
+                <span>{t('query.loadingRows', { n: rs.rows.length.toLocaleString() })}{search ? ` · ${t('query.rowsReturned', { n: filteredRows.length })}` : ''}</span>
+              ) : (
+                <>{t('query.rowsReturned', { n: filteredRows.length })} · {t('query.duration', { ms: current.duration_ms })}</>
+              )}
               {rs.truncated && <span className="ml-2 text-warn">{t('query.truncated', { n: rs.rows.length })}</span>}
             </span>
           </>
