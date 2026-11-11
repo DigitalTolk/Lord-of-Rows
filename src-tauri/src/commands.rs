@@ -391,6 +391,25 @@ fn pct_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Open a fixed OS privacy settings pane (no user-controlled URL).
+#[tauri::command]
+pub fn open_privacy_settings(pane: String) -> R<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let url = match pane.as_str() {
+            "local_network" => "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork",
+            _ => return Err(DbError::invalid("unknown settings pane")),
+        };
+        std::process::Command::new("/usr/bin/open").arg(url).spawn().map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pane;
+        Err(DbError::unsupported("opening privacy settings on this platform"))
+    }
+}
+
 // ---------------------------------------------------------------- sessions
 
 #[derive(Serialize)]

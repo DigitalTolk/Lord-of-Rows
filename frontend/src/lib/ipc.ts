@@ -24,6 +24,7 @@ async function call<R>(cmd: string, args?: Record<string, unknown>): Promise<R> 
 
 export const api = {
   appInfo: () => call<T.AppInfo>('app_info'),
+  openPrivacySettings: (pane: 'local_network') => call<void>('open_privacy_settings', { pane }),
 
   listConnections: () => call<T.StoredConnection[]>('list_connections'),
   saveConnection: (config: T.ConnectionConfig, password: string | null, rememberPassword = true, ssh: { password?: string | null; passphrase?: string | null } = {}) =>

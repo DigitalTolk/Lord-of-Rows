@@ -73,6 +73,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::open_privacy_settings,
             commands::list_connections,
             commands::save_connection,
             commands::delete_connection,
