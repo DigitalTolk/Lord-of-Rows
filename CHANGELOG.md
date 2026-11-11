@@ -6,7 +6,7 @@
 - Access requests, continued: Active / Pending / History filters with search and environment chips; an Approvals "Decided" tab; a request detail drawer (timeline, provisioning log, reveals left, copyable connection details); optional ticket references; one-click "Request again"; expiry banners in the workspace (15 and 5 minutes) and a graceful "Access ended" state that keeps your tabs; a Dock badge, "Review" toasts and multi-select approve for approvers; command palette entries; preconfigured providers (`providers.json`) and `lordoftherows://access` links for company rollout.
 =======
 - Import: saved passwords from another app's keychain (TablePlus) are no longer read during import, which made macOS ask once per connection. Each is read the first time you connect to that connection (one prompt), then kept in this app's keychain. Bringing passwords along is now on by default.
-- Connection list: Select mode (checkbox button next to New group) with Select all / Select all shown, ⌘A and a bulk Delete with one confirmation that counts production connections.
+- Connection list: select several connections and delete them in one go — ⌘A in the list selects all shown, ⌘-click / ⇧-click pick several or a range, the right-click menu has Select / Select all, and the bottom-bar Delete (or the selection toolbar) deletes the selection after one confirmation that counts production connections.
 >>>>>>> fix/import-keychain-prompts
 
 ## 0.1.2

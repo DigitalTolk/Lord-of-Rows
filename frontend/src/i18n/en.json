@@ -1002,7 +1002,11 @@
     "deletedMany_one": "Deleted {{count}} connection",
     "deletedMany_other": "Deleted {{count}} connections",
     "deleteManyFailed_one": "{{count}} connection could not be deleted",
-    "deleteManyFailed_other": "{{count}} connections could not be deleted"
+    "deleteManyFailed_other": "{{count}} connections could not be deleted",
+    "selectThis": "Select",
+    "selectHint": "Select connections (⌘A selects all, ⌘-click or ⇧-click to pick several)",
+    "deleteSelected_one": "Delete {{count}} selected connection",
+    "deleteSelected_other": "Delete {{count}} selected connections"
   },
   "filter": {
     "title": "Filters",

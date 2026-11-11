@@ -204,4 +204,41 @@ describe('ConnectionList', () => {
     expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull();
     expect(api.deleteConnection).not.toHaveBeenCalled();
   });
+
+  it('⌘A in the list selects every shown connection, and the context menu offers Select all', async () => {
+    await renderList();
+    fireEvent.keyDown(screen.getAllByRole('option')[0], { key: 'a', metaKey: true });
+    expect(screen.getByText('4 selected')).toBeTruthy();
+    fireEvent.keyDown(screen.getAllByRole('option')[0], { key: 'Escape' });
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull();
+
+    fireEvent.contextMenu(screen.getByRole('option', { name: /Scratch/ }), { clientX: 5, clientY: 5 });
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Select all' }));
+    expect(screen.getByText('4 selected')).toBeTruthy();
+  });
+
+  it('⌘-click starts a multi-selection with the selected row; ⇧-click picks a range', async () => {
+    await renderList('Orders');
+    fireEvent.click(screen.getByRole('option', { name: /Scratch/ }), { metaKey: true });
+    expect(screen.getByText('2 selected')).toBeTruthy();
+    expect(props.onSelect).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getAllByRole('option')[0], { key: 'Escape' });
+
+    const opts = screen.getAllByRole('option');
+    fireEvent.click(opts[0], { metaKey: true });
+    fireEvent.click(opts[opts.length - 1], { shiftKey: true });
+    expect(screen.getByText(`${opts.length} selected`)).toBeTruthy();
+  });
+
+  it('exposes the selection to the launcher Delete button', async () => {
+    const { useConnSelection } = await import('./ConnectionList');
+    await renderList();
+    expect(useConnSelection.getState().deletePicked).toBeNull();
+    fireEvent.keyDown(screen.getAllByRole('option')[0], { key: 'a', metaKey: true });
+    expect(useConnSelection.getState().count).toBe(4);
+    await act(async () => {
+      useConnSelection.getState().deletePicked!();
+    });
+    expect(await screen.findByText(/Delete 4 connections\?/)).toBeTruthy();
+  });
 });

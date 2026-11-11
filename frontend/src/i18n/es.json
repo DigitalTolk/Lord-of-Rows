@@ -1039,7 +1039,12 @@
     "deletedMany_many": "Se eliminaron {{count}} conexiones",
     "deleteManyFailed_one": "No se pudo eliminar {{count}} conexión",
     "deleteManyFailed_other": "No se pudieron eliminar {{count}} conexiones",
-    "deleteManyFailed_many": "No se pudieron eliminar {{count}} conexiones"
+    "deleteManyFailed_many": "No se pudieron eliminar {{count}} conexiones",
+    "selectThis": "Seleccionar",
+    "selectHint": "Seleccionar conexiones (⌘A selecciona todas; ⌘-clic o ⇧-clic para varias)",
+    "deleteSelected_one": "Eliminar {{count}} conexión seleccionada",
+    "deleteSelected_many": "Eliminar {{count}} conexiones seleccionadas",
+    "deleteSelected_other": "Eliminar {{count}} conexiones seleccionadas"
   },
   "filter": {
     "title": "Filtros",

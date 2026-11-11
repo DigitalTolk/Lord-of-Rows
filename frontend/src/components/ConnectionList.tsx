@@ -1,6 +1,7 @@
 import { fmtNumber } from '../lib/format';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { create } from 'zustand';
 import { api } from '../lib/ipc';
 import { buildSections, connectionSubtitle, connectionSubtitleTitle, ENV_FILTERS, isFiltering, navItems, navKey, type NavItem } from '../lib/connectionList';
 import type { ConnectionGroup, EnvironmentKind, StoredConnection } from '../lib/types';
@@ -18,6 +19,12 @@ import { managedState } from '../lib/access';
 export type ConnAction = 'connect' | 'edit' | 'duplicate' | 'favorite' | 'delete' | 'requestAgain';
 
 const DND_TYPE = 'application/x-dbs-connection';
+
+/**
+ * Bridge for the launcher's bottom-bar Delete button: while connections are
+ * picked in select mode it deletes the selection instead of the focused row.
+ */
+export const useConnSelection = create<{ count: number; deletePicked: (() => void) | null }>(() => ({ count: 0, deletePicked: null }));
 /** Our own group palette (works on light and dark backgrounds). */
 const GROUP_COLORS: [string, string][] = [
   ['blue', '#3b82f6'], ['green', '#22a55e'], ['purple', '#8b5cf6'], ['orange', '#f97316'],
@@ -108,6 +115,24 @@ export function ConnectionList({
     setSelecting(false);
     setPicked(new Set());
   };
+  /** Enters select mode with `ids` picked (⌘A, ⌘/⇧-click, context menu). */
+  const startSelecting = (ids: string[]) => {
+    setSelecting(true);
+    setPicked(new Set(ids));
+  };
+  // Last row clicked in select mode: the anchor for ⇧-click ranges.
+  const anchor = useRef<string | null>(null);
+  const pickRange = (to: string) => {
+    const from = anchor.current ?? sel ?? to;
+    // Rows on screen, in order (connections inside collapsed groups are not part of a range).
+    const rows = nav.flatMap((n) => (n.kind === 'conn' ? [n.id] : []));
+    const a = rows.indexOf(from);
+    const b = rows.indexOf(to);
+    if (a < 0 || b < 0) return togglePick(to);
+    const range = rows.slice(Math.min(a, b), Math.max(a, b) + 1);
+    setSelecting(true);
+    setPicked((p) => new Set([...(selecting ? p : []), ...range]));
+  };
   const deletePicked = async () => {
     const ids = [...picked].filter((id) => byId.has(id));
     if (ids.length === 0) return;
@@ -130,6 +155,14 @@ export function ConnectionList({
     if (done > 0) toast('ok', t('connList.deletedMany', { count: done, formatted: fmtNumber(done) }));
     exitSelecting();
   };
+  const deleteRef = useRef(deletePicked);
+  deleteRef.current = deletePicked;
+  useEffect(() => {
+    useConnSelection.setState({ count: selecting ? picked.size : 0, deletePicked: selecting && picked.size > 0 ? () => void deleteRef.current() : null });
+  }, [selecting, picked]);
+  useEffect(() => {
+    return () => useConnSelection.setState({ count: 0, deletePicked: null });
+  }, []);
 
   const groupByName = (name: string) => sections.find((s) => s.group?.name === name)?.group ?? groups.find((g) => g.name === name);
 
@@ -257,6 +290,8 @@ export function ConnectionList({
           },
         ],
       },
+      { key: 'select', label: t('connList.selectThis'), separatorBefore: true, onSelect: () => startSelecting([c.config.id]) },
+      { key: 'selectAll', label: t('connList.selectAll'), onSelect: () => startSelecting(visibleIds) },
       { key: 'delete', label: t('common.delete'), danger: true, separatorBefore: true, onSelect: () => onAction('delete', c) },
     ];
   };
@@ -299,15 +334,13 @@ export function ConnectionList({
 
   // ---- keyboard ----
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (selecting && !menu) {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        return exitSelecting();
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
-        e.preventDefault();
-        return setPicked((p) => new Set([...p, ...visibleIds]));
-      }
+    if (!menu && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      return startSelecting(visibleIds);
+    }
+    if (selecting && !menu && e.key === 'Escape') {
+      e.preventDefault();
+      return exitSelecting();
     }
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-nav]');
     if (!el || menu) return;
@@ -396,9 +429,20 @@ export function ConnectionList({
           setDropTarget(null);
         }}
         onFocus={() => setFocusKey(key)}
-        onClick={() => {
+        onClick={(e) => {
           setFocusKey(key);
-          if (selecting) return togglePick(cfg.id);
+          if (e.shiftKey) return pickRange(cfg.id);
+          if (e.metaKey || e.ctrlKey) {
+            // ⌘/Ctrl-click starts a multi-selection that includes the row already selected.
+            if (!selecting) startSelecting(sel && sel !== cfg.id ? [sel, cfg.id] : [cfg.id]);
+            else togglePick(cfg.id);
+            anchor.current = cfg.id;
+            return;
+          }
+          if (selecting) {
+            anchor.current = cfg.id;
+            return togglePick(cfg.id);
+          }
           onSelect(cfg.id);
         }}
         onDoubleClick={() => {
@@ -481,7 +525,7 @@ export function ConnectionList({
           <button
             className={`icon-btn ${selecting ? 'bg-accent/15 text-accent' : ''}`}
             aria-label={t('connList.select')}
-            title={t('connList.select')}
+            title={t('connList.selectHint')}
             aria-pressed={selecting}
             disabled={connections.length === 0}
             onClick={() => (selecting ? exitSelecting() : setSelecting(true))}

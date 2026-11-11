@@ -4,7 +4,7 @@ import { api } from '../lib/ipc';
 import type { StoredConnection } from '../lib/types';
 import { errMsg, useApp } from '../store';
 import { ask } from './ask';
-import { ConnectionList, type ConnAction } from './ConnectionList';
+import { ConnectionList, useConnSelection, type ConnAction } from './ConnectionList';
 import logo from '../assets/logo.svg';
 import { Icon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
@@ -133,7 +133,7 @@ export function Welcome() {
               <>
                 <button className="icon-btn" aria-label={t('conn.new')} title={t('conn.new')} onClick={() => useApp.setState({ connectionDialog: {} })}><Icon name="plus" /></button>
                 <button className="icon-btn" aria-label={t('common.edit')} title={t('common.edit')} disabled={!sel} onClick={() => sel && useApp.setState({ connectionDialog: { id: sel } })}><Icon name="edit" /></button>
-                <button className="icon-btn" aria-label={t('common.delete')} title={t('common.delete')} disabled={!sel} onClick={() => { const c = connections.find((x) => x.config.id === sel); if (c) void action('delete', c); }}><Icon name="trash" /></button>
+                <DeleteButton sel={sel} onDeleteOne={() => { const c = connections.find((x) => x.config.id === sel); if (c) void action('delete', c); }} />
               </>
             )}
             <span className="ms-auto text-[0.82rem] text-muted">{tab === 'connections' ? t('welcome.hint') : t('access.footer')}</span>
@@ -142,5 +142,17 @@ export function Welcome() {
         </div>
       </main>
     </div>
+  );
+}
+
+/** Bottom-bar Delete: deletes the multi-selection when connections are picked, else the selected row. */
+function DeleteButton({ sel, onDeleteOne }: { sel: string | null; onDeleteOne: () => void }) {
+  const { t } = useTranslation();
+  const { count, deletePicked } = useConnSelection();
+  const label = count > 0 ? t('connList.deleteSelected', { count }) : t('common.delete');
+  return (
+    <button className="icon-btn" aria-label={label} title={label} disabled={!deletePicked && !sel} onClick={() => (deletePicked ? deletePicked() : onDeleteOne())}>
+      <Icon name="trash" />
+    </button>
   );
 }

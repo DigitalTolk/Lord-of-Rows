@@ -1150,7 +1150,15 @@
     "deleteManyFailed_two": "تعذّر حذف اتصالين",
     "deleteManyFailed_few": "تعذّر حذف {{count}} اتصالات",
     "deleteManyFailed_many": "تعذّر حذف {{count}} اتصالًا",
-    "deleteManyFailed_other": "تعذّر حذف {{count}} اتصال"
+    "deleteManyFailed_other": "تعذّر حذف {{count}} اتصال",
+    "selectThis": "تحديد",
+    "selectHint": "تحديد الاتصالات (⌘A لتحديد الكل، ⌘ أو ⇧ مع النقر لتحديد عدة اتصالات)",
+    "deleteSelected_zero": "حذف الاتصالات المحددة",
+    "deleteSelected_one": "حذف الاتصال المحدد",
+    "deleteSelected_two": "حذف الاتصالين المحددين",
+    "deleteSelected_few": "حذف {{count}} اتصالات محددة",
+    "deleteSelected_many": "حذف {{count}} اتصالًا محددًا",
+    "deleteSelected_other": "حذف {{count}} اتصال محدد"
   },
   "filter": {
     "title": "عوامل التصفية",

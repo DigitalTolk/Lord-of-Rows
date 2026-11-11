@@ -1002,7 +1002,11 @@
     "deletedMany_one": "{{count}} Verbindung gelöscht",
     "deletedMany_other": "{{count}} Verbindungen gelöscht",
     "deleteManyFailed_one": "{{count}} Verbindung konnte nicht gelöscht werden",
-    "deleteManyFailed_other": "{{count}} Verbindungen konnten nicht gelöscht werden"
+    "deleteManyFailed_other": "{{count}} Verbindungen konnten nicht gelöscht werden",
+    "selectThis": "Auswählen",
+    "selectHint": "Verbindungen auswählen (⌘A wählt alle, ⌘- oder ⇧-Klick für mehrere)",
+    "deleteSelected_one": "{{count}} ausgewählte Verbindung löschen",
+    "deleteSelected_other": "{{count}} ausgewählte Verbindungen löschen"
   },
   "filter": {
     "title": "Filter",
