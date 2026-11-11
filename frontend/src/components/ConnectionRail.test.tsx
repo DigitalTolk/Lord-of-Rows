@@ -14,7 +14,7 @@ const session = {
   server: { engine: 'my_sql', version: '8.4.7' },
   capabilities: {},
   policy: {},
-  config: { id: 'c1', name: 'Local MySQL', engine: 'my_sql', environment: 'local', tls: { mode: 'disable' } },
+  config: { id: 'c1', name: 'Local MySQL', engine: 'my_sql', environment: 'local', tls: { mode: 'disabled' } },
   schemas: ['inventory', 'billing_archive', 'reporting'],
   objects: { inventory: [], billing_archive: [] },
   activeSchema: 'inventory',

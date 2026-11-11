@@ -2,8 +2,16 @@
 // (pending changes) and the grid context menu (Quick Filter). Keyed by tab id;
 // lives as long as the tab (TableView drops it on unmount).
 import { create } from 'zustand';
-import { fromQuickFilter, insertRowAfter, type FilterRow, type QuickFilter } from './filters';
-import type { FilterCondition } from './types';
+import { fromQuickFilter, insertRowAfter, type FilterRow, type QuickFilter, type UiOp } from './filters';
+import type { FilterCondition, FilterOp, Value } from './types';
+import { editableText } from './value';
+
+/** A condition with an already-typed value (grid Quick Filter / FK link). */
+export interface TypedFilter {
+  column: string;
+  op: FilterOp;
+  value?: Value | null;
+}
 
 /** Registered by the table view so the top toolbar can drive its staged changes. */
 export interface PendingActions {
@@ -42,6 +50,12 @@ interface WS {
    * all enabled rows. `replace: true` replaces existing rows. Returns the new row id.
    */
   addFilter(tabId: string, f: QuickFilter, opts?: { apply?: boolean; replace?: boolean }): string;
+  /**
+   * Replace the tab's filters with typed conditions and apply them immediately
+   * (no column metadata needed: values are already typed). Used by the grid's
+   * Quick Filter and foreign-key links; works before the target tab has mounted.
+   */
+  setFilters(tabId: string, filters: TypedFilter[]): void;
   /** Apply all enabled filter rows of the tab. */
   requestApply(tabId: string): void;
   /** Remove all filters and show the unfiltered table. */
@@ -66,6 +80,11 @@ export const useTableWs = create<WS>((set, get) => {
       const s = cur(tabId);
       patch(tabId, { rows, filterOpen: true, focusRow: row.id, applySeq: opts.apply === false ? s.applySeq : s.applySeq + 1 });
       return row.id;
+    },
+    setFilters(tabId, filters) {
+      const rows = filters.filter((f) => f.op !== 'raw').map((f) => fromQuickFilter({ column: f.column, op: f.op as UiOp, value: f.value == null || f.value.t === 'null' ? '' : editableText(f.value) }));
+      const applied: FilterCondition[] = filters.map((f) => ({ column: f.column, op: f.op, value: f.value ?? null, values: [] }));
+      patch(tabId, { rows, applied, filterOpen: true, focusRow: rows[0]?.id });
     },
     requestApply(tabId) {
       patch(tabId, { applySeq: cur(tabId).applySeq + 1 });

@@ -64,6 +64,28 @@ fn tool(name: &str) -> DbResult<std::path::PathBuf> {
     which::which(name).map_err(|_| DbError::new(ErrorKind::NotFound, format!("{name} was not found on PATH; install the database client tools")))
 }
 
+/// The connection's SSL mode, in libpq (`PGSSLMODE`) terms.
+fn pg_sslmode(m: TlsMode) -> &'static str {
+    match m {
+        TlsMode::Disabled => "disable",
+        TlsMode::Preferred => "prefer",
+        TlsMode::Required => "require",
+        TlsMode::VerifyCa => "verify-ca",
+        TlsMode::VerifyIdentity => "verify-full",
+    }
+}
+
+/// The connection's SSL mode as a `mysql`/`mysqldump` argument.
+fn mysql_ssl_mode(m: TlsMode) -> &'static str {
+    match m {
+        TlsMode::Disabled => "--ssl-mode=DISABLED",
+        TlsMode::Preferred => "--ssl-mode=PREFERRED",
+        TlsMode::Required => "--ssl-mode=REQUIRED",
+        TlsMode::VerifyCa => "--ssl-mode=VERIFY_CA",
+        TlsMode::VerifyIdentity => "--ssl-mode=VERIFY_IDENTITY",
+    }
+}
+
 fn secret_file(contents: &str) -> DbResult<tempfile::NamedTempFile> {
     let mut f = tempfile::Builder::new().prefix("dbs-").tempfile().map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
     #[cfg(unix)]
@@ -122,7 +144,7 @@ pub async fn backup(cfg: &ConnectionConfig, secrets: ConnectSecrets, dest: &Path
                 pgpass_escape(secrets.password.as_deref().unwrap_or(""))
             ))?;
             drop(secrets);
-            cmd.env("PGPASSFILE", pass.path()).env("PGSSLMODE", if cfg.tls.mode == TlsMode::Disable { "disable" } else { "verify-full" });
+            cmd.env("PGPASSFILE", pass.path()).env("PGSSLMODE", pg_sslmode(cfg.tls.mode));
             if let Some(ca) = &cfg.tls.ca_cert_path {
                 cmd.env("PGSSLROOTCERT", ca);
             }
@@ -167,7 +189,7 @@ pub async fn backup(cfg: &ConnectionConfig, secrets: ConnectSecrets, dest: &Path
             cmd.arg(format!("--defaults-extra-file={}", defaults.path().display()));
             cmd.arg(format!("--host={}", cfg.host.as_deref().unwrap_or("localhost"))).arg(format!("--port={}", cfg.effective_port().unwrap_or(3306)));
             cmd.arg("--single-transaction").arg("--routines").arg("--triggers").arg("--events").arg("--hex-blob");
-            cmd.arg(if cfg.tls.mode == TlsMode::Disable { "--ssl-mode=DISABLED" } else { "--ssl-mode=VERIFY_IDENTITY" });
+            cmd.arg(mysql_ssl_mode(cfg.tls.mode));
             match o.scope {
                 BackupScope::SchemaOnly => {
                     cmd.arg("--no-data");
@@ -206,7 +228,7 @@ pub async fn restore(cfg: &ConnectionConfig, secrets: ConnectSecrets, src: &Path
             ))?;
             drop(secrets);
             let mut cmd = tokio::process::Command::new(tool("pg_restore")?);
-            cmd.env("PGPASSFILE", pass.path()).env("PGSSLMODE", if cfg.tls.mode == TlsMode::Disable { "disable" } else { "verify-full" });
+            cmd.env("PGPASSFILE", pass.path()).env("PGSSLMODE", pg_sslmode(cfg.tls.mode));
             cmd.arg("--no-password").arg("--single-transaction").arg("--exit-on-error");
             cmd.arg(format!("--host={}", cfg.host.as_deref().unwrap_or("localhost"))).arg(format!("--port={}", cfg.effective_port().unwrap_or(5432)));
             if let Some(u) = &cfg.username {
@@ -226,7 +248,7 @@ pub async fn restore(cfg: &ConnectionConfig, secrets: ConnectSecrets, src: &Path
             let mut cmd = tokio::process::Command::new(tool("mysql")?);
             cmd.arg(format!("--defaults-extra-file={}", defaults.path().display()));
             cmd.arg(format!("--host={}", cfg.host.as_deref().unwrap_or("localhost"))).arg(format!("--port={}", cfg.effective_port().unwrap_or(3306)));
-            cmd.arg(if cfg.tls.mode == TlsMode::Disable { "--ssl-mode=DISABLED" } else { "--ssl-mode=VERIFY_IDENTITY" });
+            cmd.arg(mysql_ssl_mode(cfg.tls.mode));
             cmd.arg("--").arg(cfg.database.as_deref().ok_or_else(|| DbError::invalid("select a target database"))?);
             let file = std::fs::File::open(src).map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
             cmd.stdin(Stdio::from(file)).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);

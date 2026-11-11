@@ -30,14 +30,16 @@ export function tlsLabel(s: Pick<OpenSession, 'server' | 'config'>, t: (k: strin
   const v = s.server.tls_version;
   if (v === '') return t('tableWs.noTls');
   if (v) return v;
-  return s.config.tls.mode === 'disable' ? t('tableWs.noTls') : t('tableWs.tls');
+  if (s.config.tls.mode === 'disabled') return t('tableWs.noTls');
+  // 'preferred' may silently fall back to plaintext when the driver cannot report the outcome.
+  return s.config.tls.mode === 'preferred' ? `${t('tableWs.tls')}?` : t('tableWs.tls');
 }
 
 /** Whether the session should carry a warning marker, and why. */
 export function pillWarning(s: Pick<OpenSession, 'server' | 'config'>, t: (k: string) => string): string | null {
   if (s.config.environment === 'production') return t('tableWs.warnProduction');
   const remote = !!s.config.host && !LOOPBACK.test(s.config.host) && !s.config.ssh;
-  const plaintext = s.server.tls_version === '' || (s.server.tls_version == null && s.config.tls.mode === 'disable');
+  const plaintext = s.server.tls_version === '' || (s.server.tls_version == null && s.config.tls.mode === 'disabled');
   if (remote && plaintext && s.config.engine !== 'sqlite') return t('tableWs.warnPlaintext');
   return null;
 }

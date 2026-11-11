@@ -11,8 +11,8 @@ test('debug prod', async () => {
     await until(async () => (await pageText(b)).includes('customers'), 'connected'); log('connected 1');
     await clickSel(b, 'button[aria-label="Open another connection"]'); await waitText(b, 'Create a new connection'); log('launcher');
     await clickText(b, 'Create a new connection'); await clickSel(b, 'button[title="PostgreSQL"]'); log('form');
-    await fill(b, 'Name', 'E2E Prod'); await fill(b, 'Host', 'postgres'); await fill(b, 'User', 'dbs_test'); await fill(b, 'Password', 'dbs_test'); await fill(b, 'Database', 'dbs_test');
-    await clickText(b, 'Production', { exact: true, selector: '[role=radio]' }); log('env');
+    await fill(b, 'Name', 'E2E Prod'); await fill(b, 'Host/IP', 'postgres'); await fill(b, 'User', 'dbs_test'); await fill(b, 'Password', 'dbs_test'); await fill(b, 'Database', 'dbs_test');
+    await fill(b, 'Tag', 'production'); log('env');
     log('radio checked:', await b.execute(() => [...document.querySelectorAll('[role=dialog] [role=radio]')].map((r) => r.innerText.trim() + '=' + r.getAttribute('aria-checked')).join(' ')));
     await clickText(b, 'Connect', { exact: true }); log('clicked connect');
     await sleep(4000);

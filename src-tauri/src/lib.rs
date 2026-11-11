@@ -5,8 +5,10 @@
 mod ai;
 mod backup;
 mod commands;
+mod plugins;
 mod state;
 mod updater;
+mod windows;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -17,19 +19,11 @@ use dbs_store::AppStore;
 use state::AppState;
 use tauri::Manager;
 
-fn is_app_url(url: &tauri::Url) -> bool {
-    match url.scheme() {
-        "tauri" => true,
-        "http" | "https" => {
-            matches!(url.host_str(), Some("tauri.localhost"))
-                || (cfg!(debug_assertions) && matches!(url.host_str(), Some("localhost")) && url.port() == Some(5173))
-        }
-        _ => false,
-    }
-}
-
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(windows::app_menu);
+    builder
         .plugin(tauri_plugin_dialog::init())
         // Signature verification uses `plugins.updater.pubkey`; no updater permissions are granted to the webview.
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -58,21 +52,33 @@ pub fn run() {
                 ai_guard: dbs_ai::PromptGuard::new(state::random_key()),
                 sessions: Mutex::new(HashMap::new()),
                 running: Mutex::new(HashMap::new()),
+                stream_acks: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
                 known_hosts: dir.join("known_hosts"),
+                plugins: plugins::PluginHost::new(dir.join("plugins"))?,
             });
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
-                .title("Lord of the Rows")
-                .inner_size(1400.0, 900.0)
-                .min_inner_size(900.0, 600.0)
-                .on_navigation(is_app_url)
-                .build()?;
+            // Every window (main and "New Window") is built by `windows::build_window`.
+            windows::build_window(app, windows::MAIN)?;
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id() == windows::NEW_WINDOW_MENU_ID {
+                if let Err(e) = windows::open_new_window(app) {
+                    tracing::error!("new window: {e}");
+                }
+            }
+        })
+        .on_window_event(|window, event| {
+            // Closing a window disconnects only the sessions that window opened.
+            if let tauri::WindowEvent::Destroyed = event {
+                windows::on_window_destroyed(window);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            windows::open_window,
             commands::open_privacy_settings,
             commands::list_connections,
             commands::save_connection,
@@ -93,6 +99,8 @@ pub fn run() {
             commands::object_ddl,
             commands::evaluate_sql,
             commands::run_sql,
+            commands::run_sql_stream,
+            commands::ack_query_stream,
             commands::cancel_query,
             commands::split_sql,
             commands::explain_sql,
@@ -104,8 +112,10 @@ pub fn run() {
             commands::apply_changes,
             commands::copy_rows,
             commands::pick_file,
+            commands::pick_cert_path,
             commands::export_table,
             commands::export_query,
+            commands::export_rows,
             commands::import_preview,
             commands::import_run,
             commands::schema_snapshot,
@@ -140,6 +150,15 @@ pub fn run() {
             updater::check_update,
             updater::install_update,
             updater::restart_after_update,
+            plugins::plugin_list,
+            plugins::plugin_inspect,
+            plugins::plugin_install,
+            plugins::plugin_remove,
+            plugins::plugin_set_enabled,
+            plugins::plugin_set_grants,
+            plugins::plugin_set_settings,
+            plugins::plugin_format_sql,
+            plugins::plugin_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lord of the Rows");

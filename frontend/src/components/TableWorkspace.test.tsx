@@ -105,7 +105,7 @@ describe('status pill and bottom bar helpers', () => {
     expect(tlsLabel(sess({}, 'TLSv1.3'), t)).toBe('TLSv1.3');
     expect(tlsLabel(sess({}, ''), t)).toBe('no TLS');
     expect(tlsLabel(sess({}, null), t)).toBe('TLS');
-    expect(tlsLabel(sess({ tls: { mode: 'disable' } }, null), t)).toBe('no TLS');
+    expect(tlsLabel(sess({ tls: { mode: 'disabled' } }, null), t)).toBe('no TLS');
     expect(tlsLabel(sess({ engine: 'sqlite' }), t)).toBeNull();
   });
 

@@ -1,8 +1,9 @@
 // Typed wrappers around Tauri IPC. All privileged work happens in Rust; this
 // module only marshals arguments. Errors are rethrown as DbError objects.
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import type * as T from './types';
 import { hydrate } from './hydrate';
+import type { StreamMsg } from './stream';
 
 export class IpcError extends Error {
   constructor(public err: T.DbError) {
@@ -24,6 +25,8 @@ async function call<R>(cmd: string, args?: Record<string, unknown>): Promise<R> 
 
 export const api = {
   appInfo: () => call<T.AppInfo>('app_info'),
+  /** Opens another app window (own tabs, own sessions); resolves to its label. */
+  openWindow: () => call<string>('open_window'),
   openPrivacySettings: (pane: 'local_network') => call<void>('open_privacy_settings', { pane }),
 
   listConnections: () => call<T.StoredConnection[]>('list_connections'),
@@ -53,6 +56,10 @@ export const api = {
   splitSql: (engine: T.Engine, sql: string) => call<[number, number][]>('split_sql', { engine, sql }),
   runSql: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }) =>
     call<{ results: T.StatementResult[]; duration_ms: number }>('run_sql', { req }).then((r) => ({ ...r, results: r.results.map((s) => ({ ...s, result: hydrate(s.result) })) })),
+  /** Streaming run: same safety gate as runSql; rows arrive via `onMessage` (see lib/stream.ts). */
+  runSqlStream: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }, onMessage: (m: StreamMsg) => void) =>
+    call<{ duration_ms: number; ok: boolean }>('run_sql_stream', { req, onEvent: new Channel<StreamMsg>(onMessage) }),
+  ackQueryStream: (queryId: string, seq: number) => call<void>('ack_query_stream', { queryId, seq }),
   cancelQuery: (queryId: string) => call<boolean>('cancel_query', { queryId }),
   explainSql: (sessionId: string, sql: string, analyze: boolean, confirmToken?: string | null, typedConfirmation?: string | null) =>
     call<T.ResultSet>('explain_sql', { sessionId, sql, analyze, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }).then(hydrate),
@@ -67,10 +74,15 @@ export const api = {
     call<T.ApplyReport>('apply_changes', { sessionId, target, changes, confirmToken: confirmToken ?? null }),
   copyRows: (columns: T.ColumnMeta[], rows: T.Value[][], options: T.ExportOptions) => call<string>('copy_rows', { columns, rows, options }),
 
+  /** Native picker for SSL key/cert/CA files: returns the chosen path only (never contents). */
+  pickCertPath: (kind: 'key' | 'cert' | 'ca') => call<string | null>('pick_cert_path', { kind }),
   pickFile: (save: boolean, defaultName?: string, extensions: string[] = []) =>
     call<T.PickedFile | null>('pick_file', { save, defaultName: defaultName ?? null, extensions }),
   exportTable: (sessionId: string, target: T.TableTarget, filters: T.FilterCondition[], grant: string, options: T.ExportOptions, gzip: boolean) =>
     call<{ rows: number; path: string }>('export_table', { sessionId, target, filters, grant, options, gzip }),
+  /** Write rows already loaded in the UI (e.g. the current grid page) to a file granted by pickFile. */
+  exportRows: (sessionId: string, target: T.TableTarget, columns: T.ColumnMeta[], rows: T.Value[][], grant: string, options: T.ExportOptions) =>
+    call<{ rows: number; path: string }>('export_rows', { sessionId, target, columns, rows, grant, options }),
   exportQuery: (sessionId: string, sql: string, grant: string, options: T.ExportOptions, gzip: boolean) =>
     call<{ rows: number; path: string }>('export_query', { sessionId, sql, grant, options, gzip }),
   importPreview: (grant: string, options: T.ImportOptions) => call<T.ImportPreview>('import_preview', { grant, options }),
@@ -123,4 +135,13 @@ export const api = {
   checkUpdate: () => call<T.UpdateCheck>('check_update'),
   installUpdate: (version: string) => call<{ version: string; restart_required: boolean }>('install_update', { version }),
   restartAfterUpdate: () => call<void>('restart_after_update'),
+  pluginList: () => call<T.PluginInfo[]>('plugin_list'),
+  pluginInspect: (grant: string) => call<T.PluginPreview>('plugin_inspect', { grant }),
+  pluginInstall: (grant: string, wasmSha256: string, confirmUntrusted: boolean) => call<T.PluginInfo>('plugin_install', { grant, wasmSha256, confirmUntrusted }),
+  pluginRemove: (id: string) => call<void>('plugin_remove', { id }),
+  pluginSetEnabled: (id: string, enabled: boolean) => call<T.PluginInfo>('plugin_set_enabled', { id, enabled }),
+  pluginSetGrants: (id: string, grants: T.PluginCapability[]) => call<T.PluginInfo>('plugin_set_grants', { id, grants }),
+  pluginSetSettings: (id: string, settings: Record<string, unknown>) => call<T.PluginInfo>('plugin_set_settings', { id, settings }),
+  pluginFormatSql: (id: string, sql: string) => call<string>('plugin_format_sql', { id, sql }),
+  pluginExport: (id: string, grant: string, columns: T.ColumnMeta[], rows: T.Value[][]) => call<{ rows: number; path: string }>('plugin_export', { id, grant, columns, rows }),
 };

@@ -124,29 +124,49 @@ impl DatabaseDriver for RedisDriver {
         let host = cfg.host.clone().unwrap_or_else(|| "localhost".into());
         let port = cfg.effective_port().unwrap_or(6379);
         let db: i64 = cfg.database.as_deref().unwrap_or("0").parse().map_err(|_| DbError::invalid("Redis database must be a number"))?;
-        let addr = if cfg.tls.mode == TlsMode::Disable {
-            redis::ConnectionAddr::Tcp(host, port)
-        } else {
-            if cfg.tls.ca_cert_path.is_some() || cfg.tls.client_cert_path.is_some() {
-                return Err(DbError::unsupported("custom CA / client certificates for Redis (use system trust store)"));
+        if cfg.tls.mode.verifies_certificate() && (cfg.tls.ca_cert_path.is_some() || cfg.tls.client_cert_path.is_some()) {
+            return Err(DbError::unsupported("custom CA / client certificates for Redis (use system trust store)"));
+        }
+        let tls_addr = |mode: TlsMode, host: String| match mode {
+            TlsMode::Disabled => redis::ConnectionAddr::Tcp(host, port),
+            TlsMode::Required | TlsMode::Preferred => redis::ConnectionAddr::TcpTls { host, port, insecure: true, tls_params: None },
+            TlsMode::VerifyIdentity => redis::ConnectionAddr::TcpTls { host, port, insecure: false, tls_params: None },
+            TlsMode::VerifyCa => {
+                let mut a = redis::ConnectionAddr::TcpTls { host, port, insecure: false, tls_params: None };
+                a.set_danger_accept_invalid_hostnames(true);
+                a
             }
-            redis::ConnectionAddr::TcpTls { host, port, insecure: false, tls_params: None }
         };
-        let info = redis::ConnectionInfo {
-            addr,
-            redis: redis::RedisConnectionInfo {
-                db,
-                username: cfg.username.clone().filter(|u| !u.is_empty()),
-                password: secrets.password.clone(),
-                ..Default::default()
-            },
+        let redis_info = redis::RedisConnectionInfo {
+            db,
+            username: cfg.username.clone().filter(|u| !u.is_empty()),
+            password: secrets.password.clone(),
+            ..Default::default()
         };
         drop(secrets);
-        let client = redis::Client::open(info).map_err(map_err)?;
-        let conn = tokio::time::timeout(std::time::Duration::from_secs(cfg.connect_timeout_secs as u64), client.get_multiplexed_async_connection())
-            .await
-            .map_err(|_| DbError::new(ErrorKind::Timeout, "connection timed out"))?
-            .map_err(map_err)?;
+        let timeout = std::time::Duration::from_secs(cfg.connect_timeout_secs as u64);
+        let dial = |addr: redis::ConnectionAddr| {
+            // A plaintext Redis may just sit on a TLS ClientHello; don't make PREFERRED wait the full timeout.
+            let probe = cfg.tls.mode == TlsMode::Preferred && matches!(addr, redis::ConnectionAddr::TcpTls { .. });
+            let timeout = if probe { timeout.min(std::time::Duration::from_secs(3)) } else { timeout };
+            let info = redis::ConnectionInfo { addr, redis: redis_info.clone() };
+            async move {
+                let client = redis::Client::open(info).map_err(map_err)?;
+                tokio::time::timeout(timeout, client.get_multiplexed_async_connection())
+                    .await
+                    .map_err(|_| DbError::new(ErrorKind::Timeout, "connection timed out"))?
+                    .map_err(map_err)
+            }
+        };
+        let conn = match dial(tls_addr(cfg.tls.mode, host.clone())).await {
+            // PREFERRED: a server without TLS can't complete the handshake; retry in plaintext.
+            // Authentication errors are not retried (they'd fail the same way).
+            Err(e) if cfg.tls.mode == TlsMode::Preferred && e.kind != ErrorKind::Authentication => {
+                tracing::info!("TLS to Redis failed ({}); SSL mode PREFERRED falls back to plaintext", e.message);
+                dial(tls_addr(TlsMode::Disabled, host)).await?
+            }
+            r => r?,
+        };
         Ok(Box::new(RedisConnection { conn: Mutex::new(conn), read_only: cfg.read_only }))
     }
 }

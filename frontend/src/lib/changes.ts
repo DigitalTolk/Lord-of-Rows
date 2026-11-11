@@ -43,6 +43,17 @@ export function setInsertedCell(s: StagedState, i: number, col: string, v: Value
   return { ...s, inserted };
 }
 
+/** Remove a column from a staged new row, so the INSERT omits it and the column DEFAULT applies. */
+export function unsetInsertedCell(s: StagedState, i: number, col: string): StagedState {
+  const inserted = s.inserted.map((r, idx) => {
+    if (idx !== i) return r;
+    const next = { ...r };
+    delete next[col];
+    return next;
+  });
+  return { ...s, inserted };
+}
+
 export function removeInserted(s: StagedState, i: number): StagedState {
   return { ...s, inserted: s.inserted.filter((_, idx) => idx !== i) };
 }

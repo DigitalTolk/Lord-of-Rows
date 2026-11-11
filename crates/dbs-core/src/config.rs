@@ -87,6 +87,7 @@ impl Engine {
             Engine::MySql | Engine::MariaDb | Engine::Percona | Engine::SingleStore => Some(Engine::MySql),
             Engine::Sqlite => Some(Engine::Sqlite),
             Engine::Redis => Some(Engine::Redis),
+            Engine::DynamoDb => Some(Engine::DynamoDb),
             _ => None,
         }
     }
@@ -104,16 +105,48 @@ pub enum EnvironmentKind {
     Custom,
 }
 
+/// Standard SSL modes (libpq / MySQL naming). Serialized snake_case; the old
+/// names `disable` and `verify_full` are still accepted when reading saved configs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TlsMode {
-    /// No TLS. Only allowed for loopback/socket hosts unless the user explicitly opts in.
-    Disable,
-    /// TLS required, certificate + hostname verified (default).
-    #[default]
-    VerifyFull,
-    /// TLS required, CA verified, hostname not verified. Must be chosen explicitly.
+    /// Try TLS without certificate verification; fall back to plaintext if the
+    /// server does not support TLS. Never allowed for remote production (see `validate`).
+    Preferred,
+    /// No TLS.
+    #[serde(alias = "disable")]
+    Disabled,
+    /// TLS mandatory, certificate NOT verified (encrypts, but no MITM protection).
+    Required,
+    /// TLS mandatory, certificate chain verified (custom CA optional), hostname not verified.
     VerifyCa,
+    /// TLS mandatory, certificate chain + hostname verified (default for configs that don't say).
+    #[default]
+    #[serde(alias = "verify_full")]
+    VerifyIdentity,
+}
+
+impl TlsMode {
+    /// Whether this mode can end up sending data in plaintext.
+    pub fn may_be_plaintext(self) -> bool {
+        matches!(self, TlsMode::Disabled | TlsMode::Preferred)
+    }
+
+    /// Whether the server certificate chain is verified.
+    pub fn verifies_certificate(self) -> bool {
+        matches!(self, TlsMode::VerifyCa | TlsMode::VerifyIdentity)
+    }
+
+    /// UI / documentation label.
+    pub fn label(self) -> &'static str {
+        match self {
+            TlsMode::Preferred => "PREFERRED",
+            TlsMode::Disabled => "DISABLED",
+            TlsMode::Required => "REQUIRED",
+            TlsMode::VerifyCa => "VERIFY-CA",
+            TlsMode::VerifyIdentity => "VERIFY-IDENTITY",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -220,28 +253,69 @@ impl ConnectionConfig {
                     return Err(DbError::invalid("a database file path is required"));
                 }
             }
+            // DynamoDB: `host` is an optional endpoint URL (empty = AWS endpoint for the region).
+            Engine::DynamoDb => return self.validate_dynamodb(),
             _ => {
                 if self.socket_path.is_none() && self.host.as_deref().is_none_or(|h| h.trim().is_empty()) {
                     return Err(DbError::invalid("host is required"));
                 }
             }
         }
+        self.validate_color()?;
         if let Some(h) = &self.host {
             if h.chars().any(|c| c.is_whitespace() || c.is_control() || c == '/' || c == '@') {
                 return Err(DbError::invalid("host contains invalid characters"));
             }
         }
-        if self.tls.mode == TlsMode::Disable && self.ssh.is_none() && self.tunnel.is_none() {
+        // PREFERRED may silently fall back to plaintext, so it is treated like DISABLED here.
+        if self.tls.mode.may_be_plaintext() && self.ssh.is_none() && self.tunnel.is_none() {
             if let Some(h) = &self.host {
                 if !is_loopback(h) && self.environment == EnvironmentKind::Production {
-                    return Err(DbError::invalid("TLS cannot be disabled for a non-local production connection without an SSH tunnel"));
+                    return Err(DbError::invalid(format!(
+                        "SSL mode {} can send data unencrypted: a non-local production connection needs SSL mode REQUIRED, VERIFY-CA or VERIFY-IDENTITY, or an SSH tunnel",
+                        self.tls.mode.label()
+                    )));
                 }
             }
         }
+        Ok(())
+    }
+
+    fn validate_color(&self) -> DbResult<()> {
         if let Some(c) = &self.color {
             let ok = c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit());
             if !ok {
                 return Err(DbError::invalid("color must be #RRGGBB"));
+            }
+        }
+        Ok(())
+    }
+
+    /// DynamoDB mapping: `host` = optional endpoint URL (`http(s)://host[:port]`, for
+    /// DynamoDB Local / LocalStack), `database` = region, `username` = access key id or
+    /// `profile:NAME`, password = secret access key. Port, TLS and SSH settings do not apply.
+    fn validate_dynamodb(&self) -> DbResult<()> {
+        self.validate_color()?;
+        if self.ssh.is_some() {
+            return Err(DbError::invalid("SSH tunnels are not supported for DynamoDB (use an endpoint URL)"));
+        }
+        if let Some(r) = self.database.as_deref().filter(|r| !r.is_empty()) {
+            if r.len() > 32 || !r.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                return Err(DbError::invalid("region must look like us-east-1"));
+            }
+        }
+        if let Some(ep) = self.host.as_deref().map(str::trim).filter(|h| !h.is_empty()) {
+            let rest = ep
+                .strip_prefix("https://")
+                .or_else(|| ep.strip_prefix("http://"))
+                .ok_or_else(|| DbError::invalid("endpoint must be an http:// or https:// URL"))?;
+            let authority = rest.split('/').next().unwrap_or("");
+            if authority.is_empty() || ep.chars().any(|c| c.is_whitespace() || c.is_control() || matches!(c, '@' | '?' | '#')) {
+                return Err(DbError::invalid("endpoint URL is invalid (credentials, query or fragment are not allowed)"));
+            }
+            let host = authority.rsplit_once(':').map(|(h, _)| h).unwrap_or(authority);
+            if ep.starts_with("http://") && !is_loopback(host) && self.environment == EnvironmentKind::Production {
+                return Err(DbError::invalid("TLS cannot be disabled for a non-local production connection (use an https:// endpoint)"));
             }
         }
         Ok(())
@@ -262,6 +336,13 @@ impl ConnectionConfig {
             Some(Engine::MySql) => "mysql",
             Some(Engine::Sqlite) => return format!("sqlite://{}", self.database.clone().unwrap_or_default()),
             Some(Engine::Redis) => "redis",
+            Some(Engine::DynamoDb) => {
+                let region = self.database.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "us-east-1".into());
+                return match self.host.as_deref().filter(|h| !h.is_empty()) {
+                    Some(ep) => format!("dynamodb://{region}?endpoint={ep}"),
+                    None => format!("dynamodb://{region}"),
+                };
+            }
             _ => "db",
         };
         let user = self.username.clone().map(|u| format!("{u}@")).unwrap_or_default();
@@ -308,20 +389,68 @@ mod tests {
 
     #[test]
     fn tls_on_by_default() {
-        assert_eq!(pg().tls.mode, TlsMode::VerifyFull);
+        assert_eq!(pg().tls.mode, TlsMode::VerifyIdentity);
     }
 
     #[test]
     fn rejects_plaintext_remote_production() {
-        let mut c = pg();
-        c.tls.mode = TlsMode::Disable;
-        assert!(c.validate().is_err());
-        c.host = Some("localhost".into());
-        assert!(c.validate().is_ok());
-        // An active SSH tunnel (runtime endpoint) counts as an encrypted path.
-        c.host = Some("db.internal".into());
-        c.tunnel = Some(("127.0.0.1".into(), 40000));
-        assert!(c.validate().is_ok());
+        for mode in [TlsMode::Disabled, TlsMode::Preferred] {
+            let mut c = pg();
+            c.tls.mode = mode;
+            let e = c.validate().unwrap_err();
+            assert!(e.message.contains(mode.label()), "{e:?}");
+            c.host = Some("localhost".into());
+            assert!(c.validate().is_ok());
+            // An active SSH tunnel (runtime endpoint) counts as an encrypted path.
+            c.host = Some("db.internal".into());
+            c.tunnel = Some(("127.0.0.1".into(), 40000));
+            assert!(c.validate().is_ok());
+            // So does a configured SSH tunnel.
+            c.tunnel = None;
+            c.ssh = Some(SshConfig {
+                host: "bastion".into(),
+                port: 22,
+                user: "u".into(),
+                auth: SshAuth::Agent,
+                private_key_path: None,
+                jump_hosts: vec![],
+                keepalive_secs: 30,
+            });
+            assert!(c.validate().is_ok());
+            // Non-production remote connections may use them.
+            c.ssh = None;
+            c.environment = EnvironmentKind::Staging;
+            assert!(c.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn encrypted_modes_allowed_for_remote_production() {
+        for mode in [TlsMode::Required, TlsMode::VerifyCa, TlsMode::VerifyIdentity] {
+            let mut c = pg();
+            c.tls.mode = mode;
+            assert!(c.validate().is_ok(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn tls_mode_serde_names_and_legacy_aliases() {
+        let ser = |m: TlsMode| serde_json::to_string(&m).unwrap();
+        assert_eq!(ser(TlsMode::Preferred), "\"preferred\"");
+        assert_eq!(ser(TlsMode::Disabled), "\"disabled\"");
+        assert_eq!(ser(TlsMode::Required), "\"required\"");
+        assert_eq!(ser(TlsMode::VerifyCa), "\"verify_ca\"");
+        assert_eq!(ser(TlsMode::VerifyIdentity), "\"verify_identity\"");
+        let de = |s: &str| serde_json::from_str::<TlsMode>(s).unwrap();
+        assert_eq!(de("\"disable\""), TlsMode::Disabled);
+        assert_eq!(de("\"verify_full\""), TlsMode::VerifyIdentity);
+        assert_eq!(de("\"verify_ca\""), TlsMode::VerifyCa);
+        for m in [TlsMode::Preferred, TlsMode::Disabled, TlsMode::Required, TlsMode::VerifyCa, TlsMode::VerifyIdentity] {
+            assert_eq!(de(&ser(m)), m);
+        }
+        // A saved config from an older version still loads.
+        let old: TlsConfig = serde_json::from_str(r#"{"mode":"disable","ca_cert_path":null,"client_cert_path":null,"client_key_path":null}"#).unwrap();
+        assert_eq!(old.mode, TlsMode::Disabled);
     }
 
     #[test]
@@ -337,6 +466,30 @@ mod tests {
     fn redacted_url_has_no_password_slot() {
         let u = pg().redacted_url();
         assert_eq!(u, "postgresql://bob@db.example.com:5432/app");
+    }
+
+    #[test]
+    fn dynamodb_endpoint_rules() {
+        let mut c = pg();
+        c.engine = Engine::DynamoDb;
+        c.host = None;
+        c.database = Some("eu-central-1".into());
+        assert!(c.validate().is_ok(), "AWS endpoint needs no host");
+        c.host = Some("http://127.0.0.1:8000".into());
+        assert!(c.validate().is_ok());
+        c.host = Some("http://dynamodb.internal:8000".into());
+        assert!(c.validate().is_err(), "plaintext remote production endpoint");
+        c.environment = EnvironmentKind::Local;
+        assert!(c.validate().is_ok());
+        c.host = Some("https://user:pw@x".into());
+        assert!(c.validate().is_err());
+        c.host = Some("ftp://x".into());
+        assert!(c.validate().is_err());
+        c.host = None;
+        c.database = Some("us east".into());
+        assert!(c.validate().is_err());
+        c.database = Some("us-east-1".into());
+        assert_eq!(c.redacted_url(), "dynamodb://us-east-1");
     }
 
     #[test]

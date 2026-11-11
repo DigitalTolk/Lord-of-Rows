@@ -46,6 +46,9 @@ const P: Record<string, string> = {
   warning: 'M12 4L2.8 19.5h18.4zM12 10v4.5M12 17h.01',
   minus: 'M5 12h14',
   chevronLeft: 'M15 6l-6 6 6 6',
+  splitRight: 'M4 5h16v14H4zM12 5v14',
+  splitDown: 'M4 5h16v14H4zM4 12h16',
+  window: 'M3 6h14v12H3zM7 6V3h14v12h-4',
 };
 
 export type IconName = keyof typeof P;

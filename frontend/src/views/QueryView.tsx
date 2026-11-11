@@ -9,20 +9,29 @@ import { ask } from '../components/ask';
 import { ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
+import { runStream } from '../lib/stream';
 import { monaco, registerSqlCompletion, setCompletionSource, useEditorTheme } from '../lib/monaco';
+import { formatters, usePlugins } from '../lib/plugins';
+import { DEFAULT_KEYS, displayCombo } from '../lib/keys';
 import { family } from '../lib/sqlgen';
 import { displayValue } from '../lib/value';
-import type { StatementResult } from '../lib/types';
+import type { DbError, StatementResult } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
+
+const dbErrorText = (e: DbError) => `${e.message}${e.code ? ` [${e.code}]` : ''}${e.hint ? `\nHint: ${e.hint}` : ''}`;
 
 const formatterLang = (e: string) => (family(e as never) === 'pg' ? 'postgresql' : family(e as never) === 'mysql' ? 'mysql' : family(e as never) === 'sqlite' ? 'sqlite' : family(e as never) === 'mssql' ? 'transactsql' : 'sql');
 
-export function QueryView({ tab }: { tab: Tab }) {
+export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
   const { t } = useTranslation();
-  const { sessions, updateTab, settings, toast } = useApp();
+  const { sessions, updateTab, settings, toast, toggleSplit } = useApp();
+  // Split tabs: pane 1 edits `sql2`; each pane runs and shows results independently.
+  const textKey = pane === 1 ? 'sql2' : 'sql';
   const s = tab.sessionId ? sessions[tab.sessionId] : undefined;
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [running, setRunning] = useState<string | null>(null);
+  const [runId, setRunId] = useState('');
+  const [streamedRows, setStreamedRows] = useState(0);
   const [results, setResults] = useState<StatementResult[]>([]);
   const [messages, setMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +40,11 @@ export function QueryView({ tab }: { tab: Tab }) {
   const editorTheme = useEditorTheme();
   const aiEnabled = settings['ai.enabled'] === true;
   const [aiOpen, setAiOpen] = useState(false);
+  const { plugins: installed, loaded: pluginsLoaded, load: loadPlugins } = usePlugins();
+  const pluginFormatters = formatters(installed);
+  useEffect(() => {
+    if (!pluginsLoaded) void loadPlugins();
+  }, [pluginsLoaded, loadPlugins]);
 
   // Feed schema metadata into autocomplete.
   useEffect(() => {
@@ -83,6 +97,7 @@ export function QueryView({ tab }: { tab: Tab }) {
       setMessages([]);
       const queryId = crypto.randomUUID();
       setRunning(queryId);
+      setStreamedRows(0);
       try {
         // Backend evaluates the safety policy; confirm if required, then run with the token.
         const ev = await api.evaluateSql(s.session_id, sql);
@@ -94,13 +109,25 @@ export function QueryView({ tab }: { tab: Tab }) {
           token = c.token;
           typed = c.typed;
         }
-        const r = await api.runSql({ session_id: s.session_id, sql, query_id: queryId, confirm_token: token, typed_confirmation: typed ?? null });
+        // Rows stream in batches; the grid is usable while they arrive.
+        setResults([]);
+        setRunId(queryId);
+        const r = await runStream({
+          start: (onMessage) => api.runSqlStream({ session_id: s.session_id, sql, query_id: queryId, confirm_token: token, typed_confirmation: typed ?? null }, onMessage),
+          ack: (seq) => void api.ackQueryStream(queryId, seq).catch(() => undefined),
+          onUpdate: (snap, n) => {
+            setResults(snap);
+            setStreamedRows(n);
+          },
+        });
         setResults(r.results);
-        setMessages([`Completed in ${r.duration_ms} ms`]);
+        setStreamedRows(r.rowCount);
+        setMessages([r.cancelled ? t('query.cancelledAfter', { ms: r.duration_ms }) : t('query.completedIn', { ms: r.duration_ms })]);
         // Refresh the object tree after DDL.
         if (ev.statements.some((x) => ['CREATE', 'ALTER', 'DROP', 'RENAME'].includes(x.verb))) void useApp.getState().loadObjects(s.session_id, s.activeSchema);
+        if (r.error) throw new IpcError(r.error);
       } catch (e) {
-        const msg = e instanceof IpcError ? `${e.err.message}${e.err.code ? ` [${e.err.code}]` : ''}${e.err.hint ? `\nHint: ${e.err.hint}` : ''}` : errMsg(e);
+        const msg = e instanceof IpcError ? dbErrorText(e.err) : errMsg(e);
         setError(msg);
         // Highlight "at character N" positions.
         const m = /at character (\d+)/.exec(msg);
@@ -112,7 +139,7 @@ export function QueryView({ tab }: { tab: Tab }) {
         setRunning(null);
       }
     },
-    [s, isRedis],
+    [s, isRedis, t],
   );
 
   const cancel = () => {
@@ -125,6 +152,18 @@ export function QueryView({ tab }: { tab: Tab }) {
       ed.executeEdits('format', [{ range: ed.getModel()!.getFullModelRange(), text: formatSql(ed.getValue(), { language: formatterLang(s.config.engine) as never, tabWidth: Number(settings['editor.tabSize'] ?? 2), keywordCase: (settings['editor.keywordCase'] as 'upper') ?? 'upper' }) }]);
     } catch (e) {
       toast('error', errMsg(e));
+    }
+  };
+  // Runs in the backend wasm sandbox; the plugin only ever sees this text.
+  const fmtWithPlugin = async (id: string) => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    try {
+      const out = await api.pluginFormatSql(id, ed.getValue());
+      ed.executeEdits('plugin-format', [{ range: ed.getModel()!.getFullModelRange(), text: out }]);
+    } catch (e) {
+      toast('error', errMsg(e));
+      void loadPlugins(); // a failing plugin is disabled by the backend
     }
   };
   const minify = () => {
@@ -149,6 +188,7 @@ export function QueryView({ tab }: { tab: Tab }) {
           rs = await api.explainSql(s.session_id, sql.trim().replace(/;$/, ''), true, c.token, c.typed);
         } else throw e;
       }
+      setRunId(crypto.randomUUID());
       setResults([{ statement_index: 0, sql_excerpt: analyze ? 'EXPLAIN ANALYZE' : 'EXPLAIN', result: rs, duration_ms: 0, notices: [] }]);
     } catch (e) {
       setError(errMsg(e));
@@ -164,7 +204,7 @@ export function QueryView({ tab }: { tab: Tab }) {
   // AI panel inputs: only what the user is looking at; the panel decides what to send.
   const editorSql = () => {
     const ed = editorRef.current;
-    if (!ed) return tab.sql ?? '';
+    if (!ed) return tab[textKey] ?? '';
     const sel = ed.getSelection();
     return sel && !sel.isEmpty() ? ed.getModel()!.getValueInRange(sel) : ed.getValue();
   };
@@ -191,7 +231,7 @@ export function QueryView({ tab }: { tab: Tab }) {
     ed.addCommand(K.CtrlCmd | C.Period, () => void cancel());
     ed.onDidChangeModelContent(() => {
       monaco.editor.setModelMarkers(ed.getModel()!, 'db', []);
-      updateTab(tab.id, { sql: ed.getValue() });
+      updateTab(tab.id, { [textKey]: ed.getValue() });
     });
     ed.focus();
   };
@@ -214,11 +254,20 @@ export function QueryView({ tab }: { tab: Tab }) {
         <button className="btn btn-primary h-6 px-2" onClick={() => run('selection')} disabled={!s || !!running} title="Run selection or current statement (⌘/Ctrl+Enter)"><Icon name="play" size={12} fill="currentColor" /> {t('query.run')}</button>
         <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
         <button className="icon-btn h-6 w-6" onClick={cancel} disabled={!running} title={`${t('query.cancel')} (⌘/Ctrl+.)`} aria-label={t('query.cancel')}><Icon name="stop" size={13} /></button>
-        {running && <Spinner label={t('query.running')} />}
+        {running && <Spinner label={streamedRows > 0 ? t('query.loadingRows', { n: streamedRows.toLocaleString() }) : t('query.running')} />}
         {!isRedis && (
           <>
             <span className="mx-1 h-4 border-l border-border" />
             <button className="btn btn-ghost h-6 px-2" onClick={fmt} title="⌘/Ctrl+Alt+F">{t('query.format')}</button>
+            {pluginFormatters.length === 1 && (
+              <button className="btn btn-ghost h-6 px-2" onClick={() => fmtWithPlugin(pluginFormatters[0].id)} title={`Plugin ${pluginFormatters[0].id}`}>Format with {pluginFormatters[0].manifest.name}</button>
+            )}
+            {pluginFormatters.length > 1 && (
+              <select className="input h-6 w-auto py-0" aria-label="Format with plugin" value="" onChange={(e) => e.target.value && fmtWithPlugin(e.target.value)}>
+                <option value="">Format with…</option>
+                {pluginFormatters.map((p) => <option key={p.id} value={p.id}>Format with {p.manifest.name}</option>)}
+              </select>
+            )}
             {s?.capabilities.explain && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(false)}>{t('query.explain')}</button>}
             {s?.capabilities.explain_analyze && <button className="btn btn-ghost h-6 px-2" onClick={() => explain(true)}>{t('query.explainAnalyze')}</button>}
             <button className="btn btn-ghost h-6 px-2" onClick={minify}>{t('query.minify')}</button>
@@ -228,6 +277,18 @@ export function QueryView({ tab }: { tab: Tab }) {
           <button className={`btn btn-ghost h-6 px-2 ${aiOpen ? 'bg-accent/15' : ''}`} onClick={() => setAiOpen((x) => !x)} aria-pressed={aiOpen} title={t('ai.toggle')}><Icon name="bolt" size={13} /> {t('ai.button')}</button>
         )}
         <button className="btn btn-ghost ml-auto h-6 px-2" onClick={saveSnippet}><Icon name="star" size={13} /> {t('query.saveSnippet')}</button>
+        {pane === 0 && !tab.split && (
+          <>
+            <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id, 'right')} title={`${t('split.right')} (${displayCombo(DEFAULT_KEYS.splitEditor)})`} aria-label={t('split.right')}><Icon name="splitRight" size={13} /></button>
+            <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id, 'down')} title={t('split.down')} aria-label={t('split.down')}><Icon name="splitDown" size={13} /></button>
+          </>
+        )}
+        {pane === 0 && tab.split && (
+          <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id, tab.split === 'right' ? 'down' : 'right')} title={t('split.rotate')} aria-label={t('split.rotate')}><Icon name={tab.split === 'right' ? 'splitDown' : 'splitRight'} size={13} /></button>
+        )}
+        {pane === 1 && (
+          <button className="icon-btn h-6 w-6" onClick={() => toggleSplit(tab.id)} title={`${t('split.close')} (${displayCombo(DEFAULT_KEYS.splitEditor)})`} aria-label={t('split.close')}><Icon name="x" size={13} /></button>
+        )}
         {s ? <span className="text-[0.82rem] text-muted">{s.config.name}{s.activeSchema ? ` · ${s.activeSchema}` : ''}</span> : <span className="text-warn">{t('status.disconnected')}</span>}
       </div>
       {!s && (
@@ -248,7 +309,7 @@ export function QueryView({ tab }: { tab: Tab }) {
         <div style={{ flexBasis: `${split * 100}%` }} className="min-h-0 shrink-0">
           <Editor
             defaultLanguage={isRedis ? 'redis' : 'sql'}
-            defaultValue={tab.sql ?? ''}
+            defaultValue={tab[textKey] ?? ''}
             theme={editorTheme}
             onMount={onMount}
             options={{
@@ -270,7 +331,14 @@ export function QueryView({ tab }: { tab: Tab }) {
           onMouseDown={startDrag}
           onKeyDown={(e) => { if (e.key === 'ArrowUp') setSplit((x) => Math.max(0.15, x - 0.05)); if (e.key === 'ArrowDown') setSplit((x) => Math.min(0.85, x + 0.05)); }} />
         <div className="min-h-0 flex-1">
-          {error ? <div className="p-2"><ErrorBox error={error} /></div> : <Results results={results} messages={messages} />}
+          {error && !results.length ? (
+            <div className="p-2"><ErrorBox error={error} /></div>
+          ) : (
+            <div className="flex h-full min-h-0 flex-col">
+              {error && <div className="shrink-0 p-2"><ErrorBox error={error} /></div>}
+              <div className="min-h-0 flex-1"><Results results={results} messages={messages} runId={runId} /></div>
+            </div>
+          )}
         </div>
       </div>
       {aiEnabled && aiOpen && !isRedis && <AiPanel session={s} sources={{ sql: editorSql, error, plan: lastPlan }} onInsert={insertSql} onClose={() => setAiOpen(false)} />}

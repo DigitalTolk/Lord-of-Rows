@@ -1,5 +1,7 @@
 {
   "app": { "name": "Lord of the Rows" },
+  "windows": { "new": "New window" },
+  "split": { "right": "Split editor right", "down": "Split editor down", "close": "Close split pane", "rotate": "Change split orientation", "pane": "Editor pane {{n}}", "resize": "Resize editor panes" },
   "common": {
     "save": "Save", "cancel": "Cancel", "delete": "Delete", "close": "Close", "refresh": "Refresh", "search": "Search",
     "connect": "Connect", "disconnect": "Disconnect", "test": "Test", "ok": "OK", "edit": "Edit", "duplicate": "Duplicate",
@@ -33,7 +35,8 @@
     "snippets": "Snippets", "running": "Running…", "rowsAffected": "{{n}} rows affected", "rowsReturned": "{{n}} rows",
     "truncated": "Result limited to {{n}} rows", "noResults": "Run a query to see results", "messages": "Messages", "duration": "{{ms}} ms",
     "grid": "Grid", "json": "JSON", "text": "Text", "chart": "Chart", "record": "Record", "statement": "Statement {{n}}",
-    "snippetName": "Snippet name", "export": "Export results"
+    "snippetName": "Snippet name", "export": "Export results",
+    "loadingRows": "Loading… {{n}} rows", "completedIn": "Completed in {{ms}} ms", "cancelledAfter": "Cancelled after {{ms}} ms"
   },
   "safety": {
     "title": "Review before running", "blocked": "Blocked by safety policy", "productionBanner": "PRODUCTION — changes affect live data",
@@ -46,6 +49,22 @@
     "of": "of {{n}}", "noKey": "No primary key: editing existing rows is disabled.", "conflict": "{{n}} row(s) were changed or deleted by someone else since loading. Nothing was committed. Refresh and retry.",
     "committed": "Committed {{n}} row(s)", "setNull": "Set NULL", "copyAs": "Copy as", "filterAdd": "Add filter", "filterValue": "value",
     "pageSize": "Rows per page", "hideColumn": "Hide column", "showAll": "Show all columns", "searchResults": "Search results…", "editCell": "Edit value"
+  },
+  "gridMenu": {
+    "menuLabel": "Cell actions", "headerMenuLabel": "Column actions",
+    "quickLook": "Quick Look Editor", "setValue": "Set Value", "setEmpty": "Empty string", "defaultHint": "new rows only",
+    "setNow": "Current date/time", "openFk": "Open Referenced Row in {{table}}", "fkLink": "Open the referenced row in {{table}}",
+    "paste": "Paste", "pasteSelected": "Paste to Selected Cells", "addRow": "Add Row", "duplicate": "Duplicate",
+    "copyRows": "Copy Rows", "copyRowsAs": "Copy Rows As", "copyCells": "Copy Selected Cells", "copyCellsAs": "Copy Selected Cells As",
+    "copyColumn": "Copy All Column Values", "pageOnly": "loaded page only: {{n}} rows", "quickFilter": "Quick Filter",
+    "import": "Import CSV / JSON into This Table…", "exportPage": "Export Current Page", "delete": "Delete Row", "deleteN": "Delete {{n}} Rows",
+    "freeze": "Freeze up to here", "unfreeze": "Unfreeze columns",
+    "fmtCsv": "CSV", "fmtCsvHeader": "CSV with header", "fmtTsv": "TSV", "fmtTsvHeader": "TSV with header", "fmtJson": "JSON",
+    "fmtSqlInsert": "SQL INSERT statements", "fmtSqlUpdate": "SQL UPDATE statements (by primary key)", "fmtMarkdown": "Markdown table",
+    "needsKey": "needs a primary key", "copied": "Copied {{n}} row(s)", "copiedValues": "Copied {{n}} value(s)",
+    "pasteSkipped": "{{n}} pasted value(s) were skipped: read-only, deleted, or not valid for the column type",
+    "pasteClipped": "Some pasted cells fell outside the grid and were ignored", "clipboardUnavailable": "Could not read the clipboard",
+    "discardTitle": "Discard pending changes?", "discardMessage": "Reloading drops {{n}} pending change(s) that have not been committed."
   },
   "structure": { "columns": "Columns", "indexes": "Indexes", "foreignKeys": "Foreign keys", "constraints": "Constraints", "ddl": "DDL",
     "addColumn": "Add column", "previewChanges": "Preview SQL", "apply": "Apply changes", "type": "Type", "nullable": "Nullable", "default": "Default",
@@ -73,7 +92,7 @@
     "historyNonProd": "Non-production connections only", "historyAlways": "Always", "auditText": "Query text in audit log", "auditOmit": "Omit (default)",
     "auditHash": "Hash only", "auditRedacted": "Redacted (literals removed)", "reset": "Reset all settings", "reducedMotion": "Reduce motion",
     "uiScale": "Interface scale", "telemetry": "Telemetry: none. This app sends no analytics.", "exportSettings": "Export settings", "importSettings": "Import settings",
-    "clearHistory": "Clear query history", "language": "Language", "updates": "Updates" },
+    "clearHistory": "Clear query history", "language": "Language", "updates": "Updates", "plugins": "Plugins" },
   "updates": { "channel": "Update channel", "stable": "Stable", "beta": "Beta", "autoCheck": "Check for updates on startup",
     "autoCheckHint": "Off by default: Lord of the Rows makes no network requests unless you enable this or click Check now.",
     "endpointStable": "Stable manifest URL", "endpointBeta": "Beta manifest URL", "endpointHint": "HTTPS URL of the signed latest.json manifest for this channel.",

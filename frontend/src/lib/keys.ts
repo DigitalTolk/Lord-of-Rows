@@ -9,7 +9,9 @@ export const DEFAULT_KEYS = {
   prevTab: 'Ctrl+Shift+Tab',
   settings: 'Mod+,',
   toggleSidebar: 'Mod+B',
-  newConnection: 'Mod+Shift+N',
+  newConnection: 'Mod+N',
+  newWindow: 'Mod+Shift+N',
+  splitEditor: 'Mod+\\',
   focusMode: 'Mod+Shift+F',
 } as const;
 export type KeyAction = keyof typeof DEFAULT_KEYS;

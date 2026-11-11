@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { confirmDecision } from '../components/confirm';
 import { DataGrid } from '../components/DataGrid';
 import { FilterBar } from '../components/FilterBar';
-import { copyAs } from '../components/Results';
 import { RowDetailPanel } from '../components/RowDetailPanel';
 import { IndexList, TableBottomBar, type RowCount, type TableMode } from '../components/TableBottomBar';
 import { ErrorBox, Spinner } from '../components/ui';
@@ -15,6 +14,7 @@ import { api } from '../lib/ipc';
 import { displayCombo } from '../lib/keys';
 import { selectTab, useTableWs, type PendingActions } from '../lib/tableWorkspace';
 import type { ExportFormat, FilterCondition, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
+import { useTableGridActions } from './useTableGridActions';
 import { errMsg, useApp, type Tab } from '../store';
 
 /** Above this estimated size the exact COUNT(*) is only run on request. */
@@ -44,6 +44,8 @@ export function TableView({ tab }: { tab: Tab }) {
   const countKey = useRef<string | null>(null);
   const [mode, setMode] = useState<TableMode>('data');
   const isKeyValue = s?.config.engine === 'redis';
+  // DynamoDB browses with Scan: no server-side ordering, and the count may only be an estimate.
+  const isDynamo = s?.config.engine === 'dynamo_db';
   const editable = !!s?.capabilities.inline_edit && !s.config.read_only && !isKeyValue;
   const keyCols = desc?.primary_key ?? [];
   const pending = pendingCount(staged);
@@ -71,7 +73,8 @@ export function TableView({ tab }: { tab: Tab }) {
     try {
       const d = desc ?? (await api.describeTable(s.session_id, target).catch(() => null));
       // Without an explicit sort, order by primary key so paging is stable.
-      const order: [string, SortDir][] = sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
+      // DynamoDB browses with Scan: no server-side ordering.
+      const order: [string, SortDir][] = isDynamo ? [] : sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
       const r = await api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order, filters: applied });
       setDesc(d);
       setRs(r);
@@ -92,7 +95,7 @@ export function TableView({ tab }: { tab: Tab }) {
     } finally {
       setLoading(false);
     }
-  }, [s, target, page, pageSize, sort, applied, desc, runCount]);
+  }, [s, target, page, pageSize, sort, applied, desc, isDynamo, runCount]);
 
   useEffect(() => {
     void load();
@@ -153,7 +156,7 @@ export function TableView({ tab }: { tab: Tab }) {
     void applyRows(useTableWs.getState().tabs[tab.id]?.rows.filter((r) => r.enabled) ?? []);
   }, [ws.applySeq]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const order = (): [string, SortDir][] => (sort.length ? sort : keyCols.map((c) => [c, 'asc']));
+  const order = (): [string, SortDir][] => (isDynamo ? [] : sort.length ? sort : keyCols.map((c) => [c, 'asc']));
   const sqlFor = async (rows: FilterRow[]) => {
     if (!s) return '';
     return api.tableSelectSql(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order(), filters: toConditions(rows, columns) });
@@ -214,19 +217,8 @@ export function TableView({ tab }: { tab: Tab }) {
     useTableWs.getState().patch(tab.id, { pending });
   }, [tab.id, pending]);
 
-  // ---------------------------------------------------------------- misc actions
-
-  const copy = async (rows: number[], cols: string[], fmt: ExportFormat = 'tsv') => {
-    if (!rs) return;
-    const ci = cols.length ? cols.map((c) => columns.findIndex((x) => x.name === c)) : columns.map((_, i) => i);
-    const data = (rows.length ? rows.filter((r) => r < rs.rows.length).map((r) => rs.rows[r]) : rs.rows).map((r) => ci.map((i) => r[i]));
-    try {
-      await copyAs(ci.map((i) => columns[i]), data, fmt, target.table);
-      toast('info', `Copied ${data.length} row(s)`);
-    } catch (e) {
-      toast('error', errMsg(e));
-    }
-  };
+  // Grid context menu (copy, set value, quick filter, FK links, ...); filters go through the tab's workspace store.
+  const gridActions = useTableGridActions({ tab, session: s, target, desc, rs, staged, change, count: count?.n ?? null, editable, reload: () => void load() });
 
   const exportAll = async (format: ExportFormat) => {
     if (!s) return;
@@ -362,12 +354,11 @@ export function TableView({ tab }: { tab: Tab }) {
               staged={staged}
               editable={editable}
               sort={sort}
-              onSort={sortBy}
+              onSort={isDynamo ? undefined : sortBy}
               onEdit={onEdit}
               onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
               onSelectRows={setSelRows}
-              onCopy={(r, c) => copy(r, c)}
-              onQuickFilter={(f) => { wsApi.addFilter(tab.id, f, { apply: true }); }}
+              {...gridActions}
               ariaLabel={`Table ${header}`}
             />
           </div>

@@ -8,9 +8,10 @@ import type { AiProvider, AiStatus } from '../lib/types';
 import { DEFAULT_KEYS, type KeyAction } from '../lib/keys';
 import type { UpdateChannel, UpdateCheck, UpdateProgress } from '../lib/types';
 import { channelOf, endpointKey, formatBytes, PROGRESS_EVENT, progressPercent } from '../lib/updates';
+import { PluginsSettings } from './PluginsSettings';
 import { errMsg, useApp } from '../store';
 
-const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'ai', 'keys', 'a11y', 'updates'] as const;
+const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'ai', 'keys', 'plugins', 'a11y', 'updates'] as const;
 
 const DEFAULT_MODEL: Record<AiProvider, string> = { anthropic: 'claude-opus-5-5', openai_compatible: 'llama3.1' };
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
@@ -217,6 +218,7 @@ export function SettingsView() {
             </table>
           )}
           {section === 'ai' && <AiSettingsSection />}
+          {section === 'plugins' && <PluginsSettings />}
           {section === 'a11y' && (
             <label className="flex items-center gap-2"><input type="checkbox" checked={get('a11y.reduceMotion', false)} onChange={(e) => set('a11y.reduceMotion', e.target.checked)} />{t('settings.reducedMotion')}</label>
           )}

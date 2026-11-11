@@ -18,7 +18,7 @@
 │           parameterised SQL builders (CRUD, paging, filters)                        │
 ├──────────────────────────────────────────────────────────────────────────────────────┤
 │ dbs-drivers: postgres (tokio-postgres) · mysql/mariadb (mysql_async) · sqlite        │
-│              (rusqlite, bundled) · redis                                             │
+│              (rusqlite, bundled) · redis · dynamodb (aws-sdk, PartiQL)              │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

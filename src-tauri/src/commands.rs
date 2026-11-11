@@ -1,5 +1,6 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use dbs_audit::{AuditEntry, AuditFilter, Category, NewEvent, Outcome, VerifyReport};
 use dbs_core::*;
@@ -207,10 +208,16 @@ async fn connect(
         // Dial the tunnel; TLS still verifies against the real hostname.
         eff.tunnel = Some(("127.0.0.1".into(), tunnel.local_port));
     } else {
-        if cfg.tls.mode != TlsMode::Disable {
-            return Err(DbError::unsupported(
-                "TLS through an SSH tunnel for this engine (hostname verification can't be preserved). Disable TLS: the SSH tunnel already encrypts the connection",
-            ));
+        // These drivers dial 127.0.0.1 through the tunnel, so the server hostname can't be verified.
+        match cfg.tls.mode {
+            TlsMode::VerifyIdentity => {
+                return Err(DbError::unsupported(
+                    "SSL mode VERIFY-IDENTITY through an SSH tunnel for this engine (the hostname can't be verified through the tunnel). Use VERIFY-CA or REQUIRED, or PREFERRED/DISABLED: the SSH tunnel already encrypts the connection",
+                ));
+            }
+            // The tunnel already encrypts; PREFERRED means "no extra TLS" here.
+            TlsMode::Preferred => eff.tls.mode = TlsMode::Disabled,
+            TlsMode::Disabled | TlsMode::Required | TlsMode::VerifyCa => {}
         }
         eff.host = Some("127.0.0.1".into());
         eff.port = Some(tunnel.local_port);
@@ -356,18 +363,31 @@ pub fn parse_connection_url(url: String) -> R<ParsedUrl> {
     for kv in query.split('&').filter(|s| !s.is_empty()) {
         let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
         match (k, v) {
-            ("sslmode", "disable") | ("ssl-mode", "DISABLED") => cfg.tls.mode = TlsMode::Disable,
-            ("sslmode", "verify-ca") => cfg.tls.mode = TlsMode::VerifyCa,
-            // "require"/"prefer" in libpq don't verify certs; we deliberately upgrade to full verification.
-            ("sslmode", _) => cfg.tls.mode = TlsMode::VerifyFull,
+            ("sslmode" | "ssl-mode" | "ssl_mode", m) => {
+                cfg.tls.mode = match m.to_ascii_lowercase().replace('_', "-").as_str() {
+                    "disable" | "disabled" => TlsMode::Disabled,
+                    "allow" | "prefer" | "preferred" => TlsMode::Preferred,
+                    "require" | "required" => TlsMode::Required,
+                    "verify-ca" => TlsMode::VerifyCa,
+                    // verify-full / verify-identity, and anything unknown: the strictest mode.
+                    _ => TlsMode::VerifyIdentity,
+                }
+            }
+            // libpq certificate parameters (paths only; files are read at connect time).
+            ("sslrootcert", p) if !p.is_empty() => cfg.tls.ca_cert_path = Some(pct_decode(p)),
+            ("sslcert", p) if !p.is_empty() => cfg.tls.client_cert_path = Some(pct_decode(p)),
+            ("sslkey", p) if !p.is_empty() => cfg.tls.client_key_path = Some(pct_decode(p)),
             _ => {}
         }
     }
-    if scheme == "redis" && !url.contains("sslmode") {
-        cfg.tls.mode = TlsMode::Disable;
-    }
-    if cfg.host.as_deref().is_some_and(is_loopback) && !query.contains("sslmode") {
-        cfg.tls.mode = TlsMode::Disable;
+    let has_mode = ["sslmode=", "ssl-mode=", "ssl_mode="].iter().any(|k| query.contains(k));
+    if !has_mode {
+        cfg.tls.mode = match scheme.to_ascii_lowercase().as_str() {
+            "redis" => TlsMode::Disabled,
+            "rediss" => TlsMode::VerifyIdentity,
+            // libpq / MySQL client default.
+            _ => TlsMode::Preferred,
+        };
     }
     cfg.name = format!("{}@{}", cfg.database.clone().unwrap_or_default(), cfg.host.clone().unwrap_or_default());
     Ok(ParsedUrl { config: cfg, password })
@@ -422,7 +442,13 @@ pub struct SessionOpened {
 }
 
 #[tauri::command]
-pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password: Option<String>, trust_host_key: Option<String>) -> R<SessionOpened> {
+pub async fn open_session(
+    window: tauri::WebviewWindow,
+    st: State<'_, AppState>,
+    connection_id: Uuid,
+    password: Option<String>,
+    trust_host_key: Option<String>,
+) -> R<SessionOpened> {
     let cfg = st.store.get_connection(connection_id)?;
     let secrets = resolve_secrets(&st, &cfg, password)?;
     let ssh_secrets = resolve_ssh_secrets(&st, &cfg, None, None)?;
@@ -442,7 +468,10 @@ pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password
             e.detail = Some(format!("trusted SSH host key {}", trust_host_key.clone().unwrap_or_default()))
         });
     }
-    st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn), _tunnel: tunnel }));
+    st.sessions
+        .lock()
+        .unwrap()
+        .insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn), _tunnel: tunnel, owner: window.label().to_string() }));
     st.store.touch_connection(cfg.id)?;
     audit(&st, Category::ConnectionOpened, Outcome::Success, Some(&cfg), |e| {
         e.session_id = Some(id.to_string());
@@ -452,8 +481,12 @@ pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password
 }
 
 #[tauri::command]
-pub async fn close_session(st: State<'_, AppState>, session_id: String) -> R<()> {
+pub async fn close_session(window: tauri::WebviewWindow, st: State<'_, AppState>, session_id: String) -> R<()> {
     let s = st.session(&session_id)?;
+    // A window may only disconnect the sessions it opened.
+    if s.owner != window.label() {
+        return Err(DbError::new(ErrorKind::Permission, "session belongs to another window"));
+    }
     st.sessions.lock().unwrap().remove(&s.id);
     s.conn.close().await
 }
@@ -573,18 +606,29 @@ pub struct RunResult {
     duration_ms: u64,
 }
 
-#[tauri::command]
-pub async fn run_sql(st: State<'_, AppState>, req: RunSql) -> R<RunResult> {
+/// A run that passed the safety gate. Built only by [`authorize_run`]; both the
+/// materialised (`run_sql`) and streaming (`run_sql_stream`) paths go through it.
+struct AuthorizedRun {
+    session: Arc<Session>,
+    kinds: Vec<String>,
+    max_risk: Risk,
+    opts: ExecOptions,
+}
+
+/// The single SQL execution gate: size limits, classification, policy
+/// (read-only / block / confirmation token / typed phrase) and the
+/// denied/confirmed audit entries.
+fn authorize_run(st: &AppState, req: &RunSql) -> R<AuthorizedRun> {
     check_len(&req.sql, 50 * 1024 * 1024, "SQL")?;
     check_len(&req.query_id, 100, "query id")?;
     let s = st.session(&req.session_id)?;
-    let eval = evaluate_for(&st, &s, &req.sql);
+    let eval = evaluate_for(st, &s, &req.sql);
     let kinds: Vec<String> = eval.statements.iter().map(|c| c.verb.clone()).collect();
     let max_risk = eval.statements.iter().map(|c| c.risk).max().unwrap_or(Risk::Read);
     let cid = s.config.id.to_string();
     if let Err(msg) = dbs_safety::authorize(&eval, &st.guard, &cid, &req.sql, req.confirm_token.as_deref(), req.typed_confirmation.as_deref()) {
         let blocked = matches!(eval.decision, Decision::Block { .. });
-        audit(&st, Category::SafetyBlocked, Outcome::Denied, Some(&s.config), |e| {
+        audit(st, Category::SafetyBlocked, Outcome::Denied, Some(&s.config), |e| {
             e.statement_kinds = Some(kinds.clone());
             e.query_text = Some(req.sql.clone());
             e.detail = Some(msg.clone());
@@ -592,22 +636,23 @@ pub async fn run_sql(st: State<'_, AppState>, req: RunSql) -> R<RunResult> {
         return Err(DbError::new(if blocked { ErrorKind::PolicyBlocked } else { ErrorKind::ConfirmationRequired }, msg));
     }
     if matches!(eval.decision, Decision::Confirm { .. }) {
-        audit(&st, Category::SafetyConfirmed, Outcome::Success, Some(&s.config), |e| {
+        audit(st, Category::SafetyConfirmed, Outcome::Success, Some(&s.config), |e| {
             e.statement_kinds = Some(kinds.clone());
             e.query_text = Some(req.sql.clone());
         });
     }
-    let token = CancellationToken::new();
-    st.running.lock().unwrap().insert(req.query_id.clone(), token.clone());
     let opts = ExecOptions {
         max_rows: req.max_rows.unwrap_or_else(|| st.max_rows()).clamp(1, 1_000_000),
         timeout_ms: s.config.query_timeout_secs.map(|t| t as u64 * 1000),
     };
-    let t = Instant::now();
-    let res = s.conn.execute(&req.sql, &opts, token).await;
-    st.running.lock().unwrap().remove(&req.query_id);
-    let dur = t.elapsed().as_millis() as u64;
-    let cat = match max_risk {
+    Ok(AuthorizedRun { session: s, kinds, max_risk, opts })
+}
+
+/// Audit + history entry for an executed run (success or failure).
+fn record_run(st: &AppState, run: &AuthorizedRun, sql: &str, dur: u64, affected: u64, err: Option<&DbError>) {
+    let s = &run.session;
+    let kinds = &run.kinds;
+    let cat = match run.max_risk {
         Risk::Schema | Risk::Destructive if kinds.iter().any(|k| matches!(k.as_str(), "CREATE" | "ALTER" | "DROP" | "TRUNCATE" | "RENAME" | "COMMENT")) => {
             Category::DdlExecuted
         }
@@ -615,29 +660,214 @@ pub async fn run_sql(st: State<'_, AppState>, req: RunSql) -> R<RunResult> {
         Risk::Write | Risk::Destructive => Category::DmlExecuted,
         _ => Category::QueryExecuted,
     };
-    let affected: u64 = res.as_ref().map(|r| r.iter().filter_map(|s| s.rows_affected).sum()).unwrap_or(0);
-    audit(&st, cat, if res.is_ok() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
+    audit(st, cat, if err.is_none() { Outcome::Success } else { Outcome::Failure }, Some(&s.config), |e| {
         e.session_id = Some(s.id.to_string());
         e.duration_ms = Some(dur);
         e.rows_affected = Some(affected);
         e.statement_kinds = Some(kinds.clone());
-        e.query_text = Some(req.sql.clone());
-        e.error_kind = res.as_ref().err().map(|e| e.kind);
+        e.query_text = Some(sql.to_string());
+        e.error_kind = err.map(|e| e.kind);
     });
     let _ = st.store.add_history(
         &HistoryEntry {
             id: 0,
-            connection_id: cid,
+            connection_id: s.config.id.to_string(),
             ts: String::new(),
-            sql: st.store_query_text(&s.config).then(|| req.sql.chars().take(100_000).collect()),
+            sql: st.store_query_text(&s.config).then(|| sql.chars().take(100_000).collect()),
             duration_ms: Some(dur as i64),
             rows: Some(affected as i64),
-            ok: res.is_ok(),
-            error: res.as_ref().err().map(|e| e.message.chars().take(500).collect()),
+            ok: err.is_none(),
+            error: err.map(|e| e.message.chars().take(500).collect()),
         },
         2000,
     );
+}
+
+#[tauri::command]
+pub async fn run_sql(st: State<'_, AppState>, req: RunSql) -> R<RunResult> {
+    let run = authorize_run(&st, &req)?;
+    let token = CancellationToken::new();
+    st.running.lock().unwrap().insert(req.query_id.clone(), token.clone());
+    let t = Instant::now();
+    let res = run.session.conn.execute(&req.sql, &run.opts, token).await;
+    st.running.lock().unwrap().remove(&req.query_id);
+    let dur = t.elapsed().as_millis() as u64;
+    let affected: u64 = res.as_ref().map(|r| r.iter().filter_map(|s| s.rows_affected).sum()).unwrap_or(0);
+    record_run(&st, &run, &req.sql, dur, affected, res.as_ref().err());
     Ok(RunResult { results: res?, duration_ms: dur })
+}
+
+/// Messages the streaming run adds around the driver's [`StreamEvent`]s.
+#[derive(Serialize, Debug)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StreamEnd {
+    /// Execution failed (after any events already delivered).
+    Error { error: DbError },
+    /// Always the last message.
+    Done { duration_ms: u64, cancelled: bool },
+}
+
+#[derive(Serialize, Debug)]
+#[serde(untagged)]
+pub enum StreamMsg {
+    Event(StreamEvent),
+    End(StreamEnd),
+}
+
+/// Row batches the webview may hold unacknowledged before the backend waits.
+const STREAM_ACK_WINDOW: u64 = 4;
+/// Give up when the webview stops acknowledging (e.g. it was reloaded).
+const STREAM_ACK_TIMEOUT: Duration = Duration::from_secs(120);
+/// Driver → forwarder channel capacity (events). Together with the ack window
+/// this bounds rows held in memory to roughly (capacity + window) × batch size.
+const STREAM_CHANNEL_CAP: usize = 2;
+
+/// Acknowledgement state for one streaming run.
+#[derive(Default)]
+pub struct StreamAcks {
+    /// Number of row batches the webview has processed (highest seq + 1).
+    acked: AtomicU64,
+    notify: tokio::sync::Notify,
+}
+
+impl StreamAcks {
+    pub fn ack(&self, seq: u64) {
+        self.acked.fetch_max(seq.saturating_add(1), Ordering::SeqCst);
+        self.notify.notify_waiters();
+    }
+
+    /// Wait until batch `seq` may be sent (fewer than `window` batches outstanding).
+    async fn wait_for(&self, seq: u64, window: u64, cancel: &CancellationToken, timeout: Duration) -> R<()> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if seq < self.acked.load(Ordering::SeqCst) + window {
+                return Ok(());
+            }
+            tokio::select! {
+                _ = &mut notified => {}
+                _ = cancel.cancelled() => return Err(DbError::new(ErrorKind::Cancelled, "query cancelled")),
+                _ = tokio::time::sleep_until(deadline) => {
+                    return Err(DbError::new(ErrorKind::Timeout, "the results view stopped reading; stream aborted"));
+                }
+            }
+        }
+    }
+}
+
+#[derive(Default, Debug, PartialEq)]
+struct ForwardStats {
+    affected: u64,
+    rows: u64,
+    batches: u64,
+}
+
+/// Pump driver events to the webview with ack-based flow control. Returns when
+/// the driver side closes the channel. On error the receiver is dropped (which
+/// unblocks a driver waiting to send) and the caller cancels the query.
+async fn forward_stream(
+    mut rx: tokio::sync::mpsc::Receiver<StreamEvent>,
+    acks: &StreamAcks,
+    cancel: &CancellationToken,
+    window: u64,
+    ack_timeout: Duration,
+    mut emit: impl FnMut(StreamMsg) -> R<()>,
+) -> R<ForwardStats> {
+    let mut stats = ForwardStats::default();
+    while let Some(ev) = rx.recv().await {
+        match &ev {
+            StreamEvent::Rows { seq, rows, .. } => {
+                acks.wait_for(*seq, window, cancel, ack_timeout).await?;
+                stats.rows += rows.len() as u64;
+                stats.batches += 1;
+            }
+            StreamEvent::StatementDone { rows_affected, .. } => stats.affected += rows_affected.unwrap_or(0),
+            StreamEvent::ResultStart { .. } => {}
+        }
+        emit(StreamMsg::Event(ev))?;
+    }
+    Ok(stats)
+}
+
+/// Run a script through the streaming driver path, forwarding to `emit`.
+/// Returns (driver result, forwarder result).
+async fn stream_execution(
+    conn: &dyn DatabaseConnection,
+    sql: &str,
+    opts: &ExecOptions,
+    token: &CancellationToken,
+    acks: &StreamAcks,
+    emit: impl FnMut(StreamMsg) -> R<()>,
+) -> (R<()>, R<ForwardStats>) {
+    let (tx, rx) = tokio::sync::mpsc::channel(STREAM_CHANNEL_CAP);
+    let sink = RowSink::new(tx, token.clone(), opts.max_rows);
+    let exec = conn.execute_stream(sql, opts, token.clone(), sink);
+    let fwd = async {
+        let r = forward_stream(rx, acks, token, STREAM_ACK_WINDOW, STREAM_ACK_TIMEOUT, emit).await;
+        if r.is_err() {
+            // Nobody is reading any more: stop the query server-side too.
+            token.cancel();
+        }
+        r
+    };
+    tokio::join!(exec, fwd)
+}
+
+/// Combine driver and forwarder outcomes into the run's error, if any. A
+/// forwarding failure (webview gone / not reading) wins: the driver only saw
+/// it as a cancellation.
+fn stream_outcome(res: R<()>, fwd: &R<ForwardStats>) -> Option<DbError> {
+    match (res, fwd) {
+        (_, Err(e)) if e.kind != ErrorKind::Cancelled => Some(e.clone()),
+        (Err(e), _) => Some(e),
+        (Ok(()), Err(e)) => Some(e.clone()),
+        (Ok(()), Ok(_)) => None,
+    }
+}
+
+#[derive(Serialize)]
+pub struct StreamSummary {
+    duration_ms: u64,
+    ok: bool,
+}
+
+/// Streaming `run_sql`: same gate, cancellation and audit, but rows are sent to
+/// `on_event` in batches as they are read. Policy/confirmation failures reject
+/// the invoke (nothing was executed); execution errors arrive as an `error`
+/// message. The last message is always `done`.
+#[tauri::command]
+pub async fn run_sql_stream(st: State<'_, AppState>, req: RunSql, on_event: tauri::ipc::Channel<StreamMsg>) -> R<StreamSummary> {
+    let run = authorize_run(&st, &req)?;
+    let token = CancellationToken::new();
+    let acks = Arc::new(StreamAcks::default());
+    st.running.lock().unwrap().insert(req.query_id.clone(), token.clone());
+    st.stream_acks.lock().unwrap().insert(req.query_id.clone(), acks.clone());
+    let t = Instant::now();
+    let emit = |m: StreamMsg| on_event.send(m).map_err(|e| DbError::internal(format!("results channel closed: {e}")));
+    let (res, fwd) = stream_execution(&*run.session.conn, &req.sql, &run.opts, &token, &acks, emit).await;
+    st.running.lock().unwrap().remove(&req.query_id);
+    st.stream_acks.lock().unwrap().remove(&req.query_id);
+    let dur = t.elapsed().as_millis() as u64;
+    let affected = fwd.as_ref().map_or(0, |s| s.affected);
+    let err = stream_outcome(res, &fwd);
+    record_run(&st, &run, &req.sql, dur, affected, err.as_ref());
+    let cancelled = err.as_ref().is_some_and(|e| e.kind == ErrorKind::Cancelled);
+    if let Some(e) = &err {
+        let _ = on_event.send(StreamMsg::End(StreamEnd::Error { error: e.clone() }));
+    }
+    let _ = on_event.send(StreamMsg::End(StreamEnd::Done { duration_ms: dur, cancelled }));
+    Ok(StreamSummary { duration_ms: dur, ok: err.is_none() })
+}
+
+/// The webview processed row batch `seq` of a streaming run (flow control).
+#[tauri::command]
+pub fn ack_query_stream(st: State<'_, AppState>, query_id: String, seq: u64) -> R<()> {
+    if let Some(a) = st.stream_acks.lock().unwrap().get(&query_id) {
+        a.ack(seq);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -729,10 +959,6 @@ pub struct ChangePreview {
     decision: Decision,
 }
 
-fn change_preview_text(d: Dialect, target: &TableTarget, changes: &[RowChange]) -> R<Vec<String>> {
-    changes.iter().map(|c| build_change_sql(d, target, c).map(|g| g.preview(d))).collect()
-}
-
 fn edit_policy_decision(st: &AppState, s: &Session, text: &str, changes: &[RowChange]) -> Decision {
     let policy = st.policy_for(&s.config);
     if policy.read_only {
@@ -756,7 +982,7 @@ pub fn preview_changes(st: State<'_, AppState>, session_id: String, target: Tabl
     if changes.len() > 100_000 {
         return Err(DbError::invalid("too many staged changes"));
     }
-    let statements = change_preview_text(s.conn.dialect(), &target, &changes)?;
+    let statements = s.conn.preview_changes(&target, &changes)?;
     let decision = edit_policy_decision(&st, &s, &statements.join(";\n"), &changes);
     Ok(ChangePreview { statements, decision })
 }
@@ -770,7 +996,7 @@ pub async fn apply_changes(
     confirm_token: Option<String>,
 ) -> R<ApplyReport> {
     let s = st.session(&session_id)?;
-    let text = change_preview_text(s.conn.dialect(), &target, &changes)?.join(";\n");
+    let text = s.conn.preview_changes(&target, &changes)?.join(";\n");
     match edit_policy_decision(&st, &s, &text, &changes) {
         Decision::Allow => {}
         Decision::Block { .. } => return Err(DbError::new(ErrorKind::PolicyBlocked, "connection is read-only")),
@@ -846,6 +1072,27 @@ pub async fn pick_file(
     Ok(Some(PickedFile { grant, name, display_path }))
 }
 
+/// Native "choose file" dialog for SSL key / certificate / CA files. Returns only the
+/// chosen **path** (stored in the connection config; the driver reads the file at
+/// connect time). The webview never receives file contents.
+#[tauri::command]
+pub async fn pick_cert_path(app: tauri::AppHandle, kind: String) -> R<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (title, exts): (&str, &[&str]) = match kind.as_str() {
+        "key" => ("Choose SSL client key", &["key", "pem", "p12", "pfx"]),
+        "cert" => ("Choose SSL client certificate", &["crt", "pem", "cer", "p12", "pfx"]),
+        "ca" => ("Choose SSL CA certificate", &["crt", "pem", "cer"]),
+        _ => return Err(DbError::invalid("unknown certificate kind")),
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_title(title).add_filter("Certificates and keys", exts).add_filter("All files", &["*"]).pick_file(move |p| {
+        let _ = tx.send(p);
+    });
+    let Some(fp) = rx.await.map_err(|_| DbError::internal("dialog closed"))? else { return Ok(None) };
+    let path = fp.into_path().map_err(|_| DbError::invalid("unsupported file location"))?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
 fn open_writer(g: &FileGrant, gzip: bool) -> R<Box<dyn std::io::Write + Send>> {
     // Overwrite confirmation is handled by the native save dialog that issued the grant.
     let f = std::fs::File::create(&g.path).map_err(|e| DbError::new(ErrorKind::Io, e.to_string()))?;
@@ -855,8 +1102,19 @@ fn open_writer(g: &FileGrant, gzip: bool) -> R<Box<dyn std::io::Write + Send>> {
 
 #[derive(Serialize)]
 pub struct ExportReport {
-    rows: u64,
-    path: String,
+    pub(crate) rows: u64,
+    pub(crate) path: String,
+}
+
+/// Reorder a page's cells to `header` by column name. Schemaless engines
+/// (DynamoDB) can report different attribute sets per page; attributes not in the
+/// first page's header are dropped, missing ones become NULL.
+fn project_rows(header: &[ColumnMeta], cols: Vec<ColumnMeta>, rows: Vec<Vec<Value>>) -> Vec<Vec<Value>> {
+    if cols.len() == header.len() && cols.iter().zip(header).all(|(a, b)| a.name == b.name) {
+        return rows;
+    }
+    let idx: Vec<Option<usize>> = header.iter().map(|h| cols.iter().position(|c| c.name == h.name)).collect();
+    rows.into_iter().map(|r| idx.iter().map(|i| i.and_then(|i| r.get(i).cloned()).unwrap_or(Value::Null)).collect()).collect()
 }
 
 #[tauri::command]
@@ -890,8 +1148,8 @@ pub async fn export_table(
         s.conn.describe_table(&target).await.map(|d| d.primary_key.into_iter().map(|c| (c, SortDir::Asc)).collect()).unwrap_or_default();
     while last == 5000 {
         let page = s.conn.fetch_table(&target, &PageRequest { offset, limit: 5000, order_by: order.clone(), filters: filters.clone() }).await?;
-        ex.write_rows(&page.rows)?;
         last = page.rows.len();
+        ex.write_rows(&project_rows(&first.columns, page.columns, page.rows))?;
         offset += last as u64;
     }
     let rows = ex.finish()?;
@@ -900,6 +1158,42 @@ pub async fn export_table(
         e.rows_affected = Some(rows);
     });
     Ok(ExportReport { rows, path: g.path.to_string_lossy().into_owned() })
+}
+
+/// Export rows the UI already holds (the current grid page) to a file chosen in
+/// a native save dialog. Same writer and options as `export_table`.
+#[tauri::command]
+pub fn export_rows(
+    st: State<'_, AppState>,
+    session_id: String,
+    target: TableTarget,
+    columns: Vec<ColumnMeta>,
+    rows: Vec<Vec<Value>>,
+    grant: String,
+    options: dbs_io::ExportOptions,
+) -> R<ExportReport> {
+    if rows.len() > 1_000_000 {
+        return Err(DbError::invalid("too many rows to export"));
+    }
+    let s = st.session(&session_id)?;
+    let g = st.grant(&grant, GrantMode::Write)?;
+    let mut opts = options;
+    if opts.table.is_none() {
+        opts.table = Some(target.clone());
+    }
+    if opts.dialect.is_none() {
+        opts.dialect = Some(s.conn.dialect());
+    }
+    let mut ex = dbs_io::Exporter::begin(open_writer(&g, false)?, &columns, opts)?;
+    for chunk in rows.chunks(5000) {
+        ex.write_rows(chunk)?;
+    }
+    let n = ex.finish()?;
+    audit(&st, Category::Export, Outcome::Success, Some(&s.config), |e| {
+        e.object = Some(target.table.clone());
+        e.rows_affected = Some(n);
+    });
+    Ok(ExportReport { rows: n, path: g.path.to_string_lossy().into_owned() })
 }
 
 #[tauri::command]
@@ -1391,10 +1685,240 @@ mod tests {
         assert_eq!(p.config.host.as_deref(), Some("db.example.com"));
         assert_eq!(p.config.port, Some(6543));
         assert_eq!(p.config.database.as_deref(), Some("app"));
-        assert_eq!(p.config.tls.mode, TlsMode::VerifyFull);
+        assert_eq!(p.config.tls.mode, TlsMode::Required);
         let p = parse_connection_url("mysql://root@localhost/x".into()).unwrap();
-        assert_eq!(p.config.tls.mode, TlsMode::Disable);
+        assert_eq!(p.config.tls.mode, TlsMode::Preferred);
         assert!(parse_connection_url("javascript://alert(1)".into()).is_err());
+    }
+
+    // ---- streaming run: shared gate, audit, flow control
+
+    fn test_state() -> AppState {
+        AppState {
+            store: dbs_store::AppStore::open_in_memory().unwrap(),
+            audit: dbs_audit::AuditLog::open_in_memory("test").unwrap(),
+            secrets: Box::new(dbs_secrets::MemoryStore::default()),
+            session_secrets: Default::default(),
+            guard: dbs_safety::ConfirmationGuard::new([7u8; 32]),
+            ai_guard: dbs_ai::PromptGuard::new([8u8; 32]),
+            sessions: Default::default(),
+            running: Default::default(),
+            stream_acks: Default::default(),
+            grants: Default::default(),
+            known_hosts: std::path::PathBuf::from("/nonexistent/known_hosts"),
+            plugins: crate::plugins::PluginHost::new(std::env::temp_dir().join(format!("lotr-plugins-{}", Uuid::new_v4()))).unwrap(),
+        }
+    }
+
+    async fn sqlite_session(st: &AppState, dir: &std::path::Path, env: EnvironmentKind, read_only: bool) -> String {
+        let path = dir.join(format!("s{}.db", Uuid::new_v4()));
+        std::fs::write(&path, b"").unwrap(); // an empty file is a valid, empty database
+        {
+            let tmp = dbs_drivers::sqlite::SqliteConnection::open(path.to_str().unwrap(), false).unwrap();
+            tmp.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)", &ExecOptions::default(), CancellationToken::new()).await.unwrap();
+        }
+        let mut cfg = parse_connection_url(format!("sqlite://{}", path.display())).unwrap().config;
+        cfg.id = Uuid::new_v4();
+        cfg.environment = env;
+        cfg.read_only = read_only;
+        let (conn, _) = connect(st, &cfg, ConnectSecrets::default(), dbs_ssh::SshSecrets::default(), None).await.unwrap();
+        let id = Uuid::new_v4();
+        st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg, conn: Arc::from(conn), _tunnel: None, owner: "main".into() }));
+        id.to_string()
+    }
+
+    fn req(session_id: &str, sql: &str) -> RunSql {
+        RunSql {
+            session_id: session_id.into(),
+            sql: sql.into(),
+            query_id: Uuid::new_v4().to_string(),
+            confirm_token: None,
+            typed_confirmation: None,
+            max_rows: None,
+        }
+    }
+
+    /// The steps of `run_sql_stream`, with an auto-acknowledging "webview".
+    async fn run_streamed(st: &AppState, r: &RunSql) -> R<(Vec<serde_json::Value>, Option<DbError>)> {
+        let run = authorize_run(st, r)?;
+        let token = CancellationToken::new();
+        let acks = StreamAcks::default();
+        let mut msgs = Vec::new();
+        let (res, fwd) = stream_execution(&*run.session.conn, &r.sql, &run.opts, &token, &acks, |m| {
+            if let StreamMsg::Event(StreamEvent::Rows { seq, .. }) = &m {
+                acks.ack(*seq);
+            }
+            msgs.push(serde_json::to_value(&m).unwrap());
+            Ok(())
+        })
+        .await;
+        let affected = fwd.as_ref().map_or(0, |s| s.affected);
+        let err = stream_outcome(res, &fwd);
+        record_run(st, &run, &r.sql, 1, affected, err.as_ref());
+        Ok((msgs, err))
+    }
+
+    fn audit_categories(st: &AppState) -> Vec<(Category, Outcome)> {
+        st.audit.query(&AuditFilter::default()).unwrap().into_iter().map(|e| (e.category, e.outcome)).collect()
+    }
+
+    #[tokio::test]
+    async fn stream_run_goes_through_gate_and_audit() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state();
+        let sid = sqlite_session(&st, dir.path(), EnvironmentKind::Development, false).await;
+        let (msgs, err) = run_streamed(
+            &st,
+            &req(&sid, "INSERT INTO t (v) VALUES ('a'),('b'); WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM s WHERE n < 1500) SELECT n FROM s"),
+        )
+        .await
+        .unwrap();
+        assert!(err.is_none(), "{err:?}");
+        let types: Vec<&str> = msgs.iter().map(|m| m["type"].as_str().unwrap()).collect();
+        assert_eq!(types, vec!["statement_done", "result_start", "rows", "rows", "statement_done"]);
+        assert_eq!(msgs[0]["rows_affected"], 2);
+        assert_eq!(msgs[2]["rows"].as_array().unwrap().len(), FIRST_BATCH_ROWS);
+        assert_eq!(msgs[2]["rows"][0], serde_json::json!([1]), "compact row form");
+        assert_eq!(msgs[4]["row_count"], 1500);
+        let cats = audit_categories(&st);
+        assert!(cats.contains(&(Category::DmlExecuted, Outcome::Success)), "{cats:?}");
+        let cid = st.session(&sid).unwrap().config.id.to_string();
+        assert_eq!(st.store.list_history(&cid, 10).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn stream_run_applies_max_rows_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state();
+        st.store.set_setting("query.maxRows", &serde_json::json!(700)).unwrap();
+        let sid = sqlite_session(&st, dir.path(), EnvironmentKind::Development, false).await;
+        let (msgs, err) =
+            run_streamed(&st, &req(&sid, "WITH RECURSIVE s(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM s WHERE n < 5000) SELECT n FROM s")).await.unwrap();
+        assert!(err.is_none());
+        let last = msgs.last().unwrap();
+        assert_eq!(last["row_count"], 700);
+        assert_eq!(last["truncated"], true);
+    }
+
+    #[tokio::test]
+    async fn stream_run_is_blocked_on_read_only_and_needs_confirmation_in_production() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state();
+        let ro = sqlite_session(&st, dir.path(), EnvironmentKind::Development, true).await;
+        let e = run_streamed(&st, &req(&ro, "DELETE FROM t")).await.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::PolicyBlocked);
+        assert!(audit_categories(&st).contains(&(Category::SafetyBlocked, Outcome::Denied)));
+
+        let prod = sqlite_session(&st, dir.path(), EnvironmentKind::Production, false).await;
+        let e = run_streamed(&st, &req(&prod, "DELETE FROM t")).await.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::ConfirmationRequired);
+        // With the token issued by evaluation, it runs.
+        let s = st.session(&prod).unwrap();
+        let ev = evaluate_for(&st, &s, "DELETE FROM t");
+        let Decision::Confirm { token, typed_phrase, .. } = ev.decision else { panic!("expected confirmation") };
+        let mut r = req(&prod, "DELETE FROM t");
+        r.confirm_token = Some(token);
+        r.typed_confirmation = typed_phrase;
+        let (_, err) = run_streamed(&st, &r).await.unwrap();
+        assert!(err.is_none(), "{err:?}");
+        assert!(audit_categories(&st).contains(&(Category::SafetyConfirmed, Outcome::Success)));
+    }
+
+    #[tokio::test]
+    async fn stream_run_reports_execution_errors_after_partial_results() {
+        let dir = tempfile::tempdir().unwrap();
+        let st = test_state();
+        let sid = sqlite_session(&st, dir.path(), EnvironmentKind::Development, false).await;
+        let (msgs, err) = run_streamed(&st, &req(&sid, "SELECT 1 AS a; SELECT * FROM missing_table")).await.unwrap();
+        assert_eq!(msgs.len(), 3, "first statement delivered: {msgs:?}");
+        let e = err.expect("error");
+        assert!(e.message.contains("statement 2"), "{e:?}");
+        assert!(audit_categories(&st).contains(&(Category::QueryExecuted, Outcome::Failure)));
+    }
+
+    fn rows_ev(seq: u64) -> StreamEvent {
+        StreamEvent::Rows { result_index: 0, seq, rows: vec![vec![Value::Int(seq as i64)]] }
+    }
+
+    #[tokio::test]
+    async fn forwarder_waits_for_acks() {
+        let (tx, rx) = tokio::sync::mpsc::channel(1);
+        let acks = Arc::new(StreamAcks::default());
+        let cancel = CancellationToken::new();
+        let sent = Arc::new(std::sync::Mutex::new(Vec::<u64>::new()));
+        let producer = tokio::spawn(async move {
+            for i in 0..10 {
+                if tx.send(rows_ev(i)).await.is_err() {
+                    return i;
+                }
+            }
+            10
+        });
+        let (a2, s2, c2) = (acks.clone(), sent.clone(), cancel.clone());
+        let fwd = tokio::spawn(async move {
+            forward_stream(rx, &a2, &c2, 3, Duration::from_secs(30), |m| {
+                if let StreamMsg::Event(StreamEvent::Rows { seq, .. }) = m {
+                    s2.lock().unwrap().push(seq);
+                }
+                Ok(())
+            })
+            .await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(*sent.lock().unwrap(), vec![0, 1, 2], "only `window` batches without acks");
+        acks.ack(1);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(sent.lock().unwrap().len(), 5);
+        acks.ack(9);
+        let stats = fwd.await.unwrap().unwrap();
+        assert_eq!(stats.batches, 10);
+        assert_eq!(producer.await.unwrap(), 10);
+    }
+
+    #[tokio::test]
+    async fn forwarder_stops_on_cancel_or_ack_timeout_and_releases_producer() {
+        for cancel_it in [true, false] {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+            let acks = StreamAcks::default();
+            let cancel = CancellationToken::new();
+            let producer = tokio::spawn(async move {
+                for i in 0..100 {
+                    if tx.send(rows_ev(i)).await.is_err() {
+                        return i;
+                    }
+                }
+                100
+            });
+            if cancel_it {
+                let c = cancel.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(30)).await;
+                    c.cancel();
+                });
+            }
+            let r = forward_stream(rx, &acks, &cancel, 2, Duration::from_millis(100), |_| Ok(())).await;
+            let e = r.unwrap_err();
+            assert_eq!(e.kind, if cancel_it { ErrorKind::Cancelled } else { ErrorKind::Timeout });
+            // Receiver dropped: the producer is not left blocked.
+            assert!(producer.await.unwrap() < 100);
+        }
+    }
+
+    #[test]
+    fn url_ssl_modes() {
+        let mode = |u: &str| parse_connection_url(u.into()).unwrap().config.tls.mode;
+        assert_eq!(mode("postgresql://h/db?sslmode=disable"), TlsMode::Disabled);
+        assert_eq!(mode("postgresql://h/db?sslmode=prefer"), TlsMode::Preferred);
+        assert_eq!(mode("postgresql://h/db?sslmode=verify-ca"), TlsMode::VerifyCa);
+        assert_eq!(mode("postgresql://h/db?sslmode=verify-full"), TlsMode::VerifyIdentity);
+        assert_eq!(mode("postgresql://h/db?sslmode=bogus"), TlsMode::VerifyIdentity);
+        assert_eq!(mode("mysql://h/db?ssl-mode=DISABLED"), TlsMode::Disabled);
+        assert_eq!(mode("mysql://h/db?ssl-mode=REQUIRED"), TlsMode::Required);
+        assert_eq!(mode("mysql://h/db?ssl-mode=VERIFY_IDENTITY"), TlsMode::VerifyIdentity);
+        assert_eq!(mode("redis://h"), TlsMode::Disabled);
+        assert_eq!(mode("rediss://h"), TlsMode::VerifyIdentity);
+        let p = parse_connection_url("postgresql://h/db?sslmode=verify-full&sslrootcert=/certs/ca.crt".into()).unwrap();
+        assert_eq!(p.config.tls.ca_cert_path.as_deref(), Some("/certs/ca.crt"));
     }
 
     #[test]

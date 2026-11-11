@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
+import { exporters, usePlugins } from '../lib/plugins';
 import type { ColumnMeta, ExportFormat, StatementResult, Value } from '../lib/types';
 import { displayValue } from '../lib/value';
 import { errMsg, useApp } from '../store';
@@ -15,15 +16,21 @@ export async function copyAs(columns: ColumnMeta[], rows: Value[][], format: Exp
   await navigator.clipboard.writeText(text);
 }
 
-export function Results({ results, messages }: { results: StatementResult[]; messages: string[] }) {
+/**
+ * `runId` identifies a run: the selected result set resets when it changes or a
+ * new result set starts, not on every streamed batch. Without it, every new
+ * `results` array counts as a new run.
+ */
+export function Results({ results, messages, runId }: { results: StatementResult[]; messages: string[]; runId?: string }) {
   const { t } = useTranslation();
   const toast = useApp((s) => s.toast);
   const withRows = results.filter((r) => r.result);
   // Show the last result set by default (what you see after "Run all"); reset on each new run.
   const [idx, setIdx] = useState(Math.max(0, withRows.length - 1));
+  const resetKey = runId ?? results;
   useEffect(() => {
-    setIdx(Math.max(0, results.filter((r) => r.result).length - 1));
-  }, [results]);
+    setIdx(Math.max(0, withRows.length - 1));
+  }, [resetKey, withRows.length]);
   const [mode, setMode] = useState<Mode>('grid');
   const [search, setSearch] = useState('');
   const [recordRow, setRecordRow] = useState(0);
@@ -45,6 +52,22 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
       toast('info', `Copied ${rows.length} row(s)`);
     } catch (e) {
       toast('error', errMsg(e));
+    }
+  };
+
+  const pluginExporters = exporters(usePlugins((x) => x.plugins));
+  // Rows are passed explicitly by the user's action; the plugin never queries the database.
+  const exportViaPlugin = async (id: string) => {
+    const p = pluginExporters.find((x) => x.id === id);
+    if (!rs || !p?.manifest.export) return;
+    try {
+      const f = await api.pickFile(true, `results.${p.manifest.export.extension}`, [p.manifest.export.extension]);
+      if (!f) return;
+      const r = await api.pluginExport(id, f.grant, rs.columns, filteredRows);
+      toast('ok', `Exported ${r.rows} row(s) with ${p.manifest.name}`);
+    } catch (e) {
+      toast('error', errMsg(e));
+      void usePlugins.getState().load();
     }
   };
 
@@ -77,8 +100,18 @@ export function Results({ results, messages }: { results: StatementResult[]; mes
               <option value="">{t('grid.copyAs')}…</option>
               <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="sql_insert">SQL INSERT</option><option value="markdown">Markdown</option>
             </select>
-            <span className="ml-auto text-xs text-muted">
-              {t('query.rowsReturned', { n: filteredRows.length })} · {t('query.duration', { ms: current.duration_ms })}
+            {pluginExporters.length > 0 && (
+              <select className="input h-6 w-auto py-0" aria-label="Export with plugin" value="" onChange={(e) => e.target.value && exportViaPlugin(e.target.value)}>
+                <option value="">Export with plugin…</option>
+                {pluginExporters.map((p) => <option key={p.id} value={p.id}>{p.manifest.export?.label} ({p.manifest.name})</option>)}
+              </select>
+            )}
+            <span className="ml-auto text-xs text-muted" aria-live="polite">
+              {current.streaming ? (
+                <span>{t('query.loadingRows', { n: rs.rows.length.toLocaleString() })}{search ? ` · ${t('query.rowsReturned', { n: filteredRows.length })}` : ''}</span>
+              ) : (
+                <>{t('query.rowsReturned', { n: filteredRows.length })} · {t('query.duration', { ms: current.duration_ms })}</>
+              )}
               {rs.truncated && <span className="ml-2 text-warn">{t('query.truncated', { n: rs.rows.length })}</span>}
             </span>
           </>

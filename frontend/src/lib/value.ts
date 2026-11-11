@@ -43,6 +43,20 @@ export function valuesEqual(a: Value, b: Value): boolean {
 export function parseInput(text: string, col: ColumnMeta | undefined, original?: Value): Value {
   const type = (col?.type_name ?? '').toLowerCase();
   const kind = original?.t;
+  // DynamoDB type tags (case-sensitive): N stays exact decimal text, M/L are JSON, B is binary.
+  const dyn = col?.type_name ?? '';
+  if (dyn === 'N' || (original?.t === 'other' && original.v.type_name === 'N')) {
+    const t = text.trim();
+    if (/^-?\d+$/.test(t) && Number.isSafeInteger(Number(t))) return { t: 'int', v: Number(t) };
+    if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(t)) return { t: 'decimal', v: t };
+  }
+  if ((dyn === 'M' || dyn === 'L') && kind !== 'json') {
+    try {
+      return { t: 'json', v: JSON.parse(text) };
+    } catch {
+      return { t: 'text', v: text };
+    }
+  }
   if (kind === 'json' || /json/.test(type)) {
     try {
       return { t: 'json', v: JSON.parse(text) };
@@ -75,7 +89,7 @@ export function parseInput(text: string, col: ColumnMeta | undefined, original?:
     const tz = /tz|with time zone/.test(type) || (original?.t === 'timestamp' && original.v.tz);
     return { t: 'timestamp', v: { iso: text.trim(), tz: !!tz } };
   }
-  if (kind === 'bytes' || /bytea|blob|binary/.test(type)) {
+  if (kind === 'bytes' || dyn === 'B' || /bytea|blob|binary/.test(type)) {
     const h = text.trim().replace(/^\\x|^0x/i, '');
     if (/^([0-9a-f]{2})*$/i.test(h)) return { t: 'bytes', v: { hex: h.toLowerCase(), len: h.length / 2, truncated: false } };
   }

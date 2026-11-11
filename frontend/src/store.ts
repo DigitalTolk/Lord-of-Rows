@@ -3,6 +3,7 @@ import i18n from './i18n';
 import { api } from './lib/ipc';
 import { withHostKeyTrust } from './lib/hostkey';
 import { autoCheckForUpdates } from './lib/updates';
+import { currentWindowLabel, persistsWorkspace } from './lib/windows';
 import type { AppInfo, ObjectRef, SessionOpened, StoredConnection, TableTarget } from './lib/types';
 
 export type TabKind = 'query' | 'table' | 'structure' | 'diff' | 'audit' | 'monitor' | 'er' | 'settings' | 'import' | 'backup' | 'history' | 'dashboard';
@@ -15,6 +16,27 @@ export interface Tab {
   target?: TableTarget;
   sql?: string;
   pinned?: boolean;
+  /** Query tabs: second editor pane, laid out to the right of or below the first. */
+  split?: SplitDir;
+  /** Text of the second editor pane (kept when the split is closed, so re-splitting restores it). */
+  sql2?: string;
+}
+
+export type SplitDir = 'right' | 'down';
+
+/** Query tabs as saved for session restore (text and split layout only, never results or sessions). */
+export function workspaceSnapshot(tabs: Tab[]): Tab[] {
+  return tabs
+    .filter((x) => x.kind === 'query')
+    .map(({ id, kind, title, sql, pinned, split, sql2 }) => ({ id, kind, title, sql: (sql ?? '').slice(0, 200_000), pinned, split, sql2: sql2 == null ? undefined : sql2.slice(0, 200_000) }));
+}
+
+/** Tabs to restore from a saved snapshot: query tabs only, detached from any session. */
+export function restoreWorkspace(saved: unknown): Tab[] {
+  if (!Array.isArray(saved)) return [];
+  return (saved as Tab[])
+    .filter((t) => t && t.kind === 'query' && typeof t.id === 'string')
+    .map((t) => ({ ...t, sessionId: undefined, split: t.split === 'right' || t.split === 'down' ? t.split : undefined }));
 }
 
 export interface OpenSession extends SessionOpened {
@@ -53,6 +75,9 @@ interface State {
   reopenClosedTab(): void;
   updateTab(id: string, patch: Partial<Tab>): void;
   moveTab(id: string, toIndex: number): void;
+  /** Toggle a query tab's split. With `dir`, switch to that layout (or close the split if it is already in it). */
+  toggleSplit(id: string, dir?: SplitDir): void;
+  openWindow(): Promise<void>;
   toast(kind: 'info' | 'error' | 'ok', text: string): void;
 }
 
@@ -75,10 +100,10 @@ export const useApp = create<State>((set, get) => ({
     set({ info, settings, connections });
     // Opt-in only (`updates.autoCheck`); runs in the background and never blocks startup.
     void autoCheckForUpdates(settings, api.checkUpdate, (v) => get().toast('info', i18n.t('updates.autoFound', { version: v })));
-    // Restore saved workspace tabs (query text only; sessions must be reopened explicitly).
-    const ws = settings['workspace.tabs'];
-    if (Array.isArray(ws)) {
-      const tabs = (ws as Tab[]).filter((t) => t.kind === 'query').map((t) => ({ ...t, sessionId: undefined }));
+    // Restore saved workspace tabs (query text + split layout; sessions must be reopened explicitly).
+    // Only the main window restores; extra windows start with an empty workspace.
+    if (persistsWorkspace(currentWindowLabel())) {
+      const tabs = restoreWorkspace(settings['workspace.tabs']);
       if (tabs.length) set({ tabs, activeTab: tabs[0].id });
     }
   },
@@ -212,6 +237,21 @@ export const useApp = create<State>((set, get) => ({
     const [t] = tabs.splice(from, 1);
     tabs.splice(Math.max(0, Math.min(toIndex, tabs.length)), 0, t);
     set({ tabs });
+  },
+
+  toggleSplit(id, dir) {
+    const tab = get().tabs.find((t) => t.id === id);
+    if (!tab || tab.kind !== 'query') return;
+    const split: SplitDir | undefined = dir ? (tab.split === dir ? undefined : dir) : tab.split ? undefined : 'right';
+    get().updateTab(id, { split, sql2: split ? (tab.sql2 ?? '') : tab.sql2 });
+  },
+
+  async openWindow() {
+    try {
+      await api.openWindow();
+    } catch (e) {
+      get().toast('error', errMsg(e));
+    }
   },
 
   toast(kind, text) {
