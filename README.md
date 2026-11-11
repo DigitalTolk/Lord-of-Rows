@@ -21,6 +21,10 @@ Or download the DMG from [Releases](https://github.com/DigitalTolk/Lord-of-Rows/
 (Apple Silicon + Intel, macOS 11+), signed with DigitalTolk's Developer ID and notarized by Apple.
 Update with `brew update && brew upgrade --cask DigitalTolk/tools/lord-of-the-rows`.
 
+No admin rights on your Mac? Install into your own Applications folder:
+`brew install --cask --appdir=~/Applications DigitalTolk/tools/lord-of-the-rows`
+(or set `export HOMEBREW_CASK_OPTS="--appdir=~/Applications"` in `~/.zshrc` once).
+
 ## What works today
 
 - PostgreSQL, MySQL, SQLite, Redis, DynamoDB (PartiQL; tested against DynamoDB Local) (plus wire-compatible engines, unverified)
