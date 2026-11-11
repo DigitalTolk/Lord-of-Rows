@@ -40,6 +40,8 @@ pub struct AppState {
     pub secrets: Box<dyn SecretStore>,
     pub session_secrets: dbs_secrets::MemoryStore,
     pub guard: ConfirmationGuard,
+    /// Binds AI prompt previews to what is sent (see `ai.rs`).
+    pub ai_guard: dbs_ai::PromptGuard,
     pub sessions: Mutex<HashMap<Uuid, Arc<Session>>>,
     pub running: Mutex<HashMap<String, CancellationToken>>,
     pub grants: Mutex<HashMap<String, FileGrant>>,

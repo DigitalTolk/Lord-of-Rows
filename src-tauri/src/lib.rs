@@ -2,9 +2,11 @@
 //! Every command validates its arguments; safety policy and audit logging are
 //! enforced here, in Rust, not in the webview.
 
+mod ai;
 mod backup;
 mod commands;
 mod state;
+mod updater;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -29,6 +31,9 @@ fn is_app_url(url: &tauri::Url) -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Signature verification uses `plugins.updater.pubkey`; no updater permissions are granted to the webview.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updater::UpdaterState::default())
         .setup(|app| {
             let dir = app.path().app_data_dir().expect("app data dir");
             std::fs::create_dir_all(&dir)?;
@@ -50,6 +55,7 @@ pub fn run() {
                 secrets: Box::new(dbs_secrets::OsKeychain),
                 session_secrets: Default::default(),
                 guard: ConfirmationGuard::new(state::random_key()),
+                ai_guard: dbs_ai::PromptGuard::new(state::random_key()),
                 sessions: Mutex::new(HashMap::new()),
                 running: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
@@ -58,7 +64,7 @@ pub fn run() {
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
             tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
-                .title("DB Studio")
+                .title("Lord of the Rows")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(900.0, 600.0)
                 .on_navigation(is_app_url)
@@ -123,7 +129,15 @@ pub fn run() {
             commands::backup_tools,
             commands::run_backup,
             commands::run_restore,
+            ai::ai_status,
+            ai::ai_set_api_key,
+            ai::ai_preview,
+            ai::ai_send,
+            ai::ai_test,
+            updater::check_update,
+            updater::install_update,
+            updater::restart_after_update,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running DB Studio");
+        .expect("error while running Lord of the Rows");
 }

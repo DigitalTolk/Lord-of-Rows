@@ -6,8 +6,10 @@ import { errMsg, useApp } from '../store';
 import { ask } from './ask';
 import { ENGINE_LABELS } from './ConnectionDialog';
 import { EngineBadge } from './EngineBadge';
+import logo from '../assets/logo.svg';
 import { Icon } from './icons';
 import { EnvBadge, Spinner } from './ui';
+import { ThemeToggle } from './ThemeToggle';
 
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
@@ -69,12 +71,10 @@ export function Welcome() {
 
   return (
     <div className="flex h-full items-center justify-center bg-panel p-6">
-      <div className="flex h-[min(560px,90%)] w-[min(860px,100%)] overflow-hidden rounded-xl border border-border bg-bg shadow-[0_10px_40px_rgb(0_0_0/0.12)]">
+      <div className="flex h-[min(560px,90%)] w-[min(860px,100%)] overflow-hidden rounded-xl border border-border bg-bg shadow-[0_10px_40px_rgb(var(--shadow)/0.12)]">
         {/* Brand / actions */}
         <div className="flex w-[300px] shrink-0 flex-col items-center border-r border-border bg-panel px-6 py-8 text-center">
-          <div className="mb-3 flex h-20 w-20 items-center justify-center rounded-[22%] bg-gradient-to-b from-[#2f7cf6] to-[#1b56c9] text-white shadow-lg">
-            <Icon name="db" size={44} strokeWidth={1.6} />
-          </div>
+          <img src={logo} alt="" width={88} height={88} className="mb-3 h-[88px] w-[88px] drop-shadow-lg" draggable={false} />
           <h1 className="text-xl font-semibold">{t('app.name')}</h1>
           <p className="mb-6 text-[0.85rem] text-muted">Version {info?.version}</p>
           <div className="flex w-full flex-col gap-2">
@@ -131,7 +131,7 @@ export function Welcome() {
                       onDoubleClick={() => connect(cfg.id)}
                       onKeyDown={(e) => e.key === 'Enter' && connect(cfg.id)}
                       onContextMenu={(e) => { e.preventDefault(); setSel(cfg.id); setMenu({ c, x: e.clientX, y: e.clientY }); }}
-                      className={`group mx-2 flex cursor-default items-center gap-3 rounded-lg px-2 py-1.5 ${active ? 'bg-accent text-white' : 'hover:bg-hover'}`}
+                      className={`group mx-2 flex cursor-default items-center gap-3 rounded-lg px-2 py-1.5 ${active ? 'row-selected' : 'hover:bg-hover'}`}
                     >
                       <div className="relative">
                         <EngineBadge engine={cfg.engine} size={34} />
@@ -142,13 +142,13 @@ export function Welcome() {
                           <span className="truncate font-medium">{cfg.name}</span>
                           {cfg.read_only && <Icon name="lock" size={12} />}
                         </div>
-                        <div className={`truncate text-[0.85rem] ${active ? 'text-white/80' : 'text-muted'}`}>
+                        <div className={`truncate text-[0.85rem] ${active ? 'text-on-solid/80' : 'text-muted'}`}>
                           {ENGINE_LABELS[cfg.engine]} · {cfg.engine === 'sqlite' ? cfg.database : `${cfg.username ? cfg.username + '@' : ''}${cfg.host ?? ''}${cfg.database ? ' / ' + cfg.database : ''}`}
                         </div>
                       </div>
                       <EnvBadge env={cfg.environment} />
                       {busy === cfg.id ? <Spinner /> : (
-                        <button className={`icon-btn opacity-0 group-hover:opacity-100 ${active ? 'text-white hover:bg-white/20 hover:text-white' : ''}`} aria-label={t('common.connect')} onClick={(e) => { e.stopPropagation(); connect(cfg.id); }}>
+                        <button className={`icon-btn opacity-0 group-hover:opacity-100 ${active ? 'text-on-solid hover:bg-on-solid/20 hover:text-on-solid' : ''}`} aria-label={t('common.connect')} onClick={(e) => { e.stopPropagation(); connect(cfg.id); }}>
                           <Icon name="power" size={15} />
                         </button>
                       )}
@@ -163,13 +163,14 @@ export function Welcome() {
             <button className="icon-btn" aria-label={t('common.edit')} disabled={!sel} onClick={() => sel && useApp.setState({ connectionDialog: { id: sel } })}><Icon name="edit" /></button>
             <button className="icon-btn" aria-label={t('common.delete')} disabled={!sel} onClick={() => { const c = connections.find((x) => x.config.id === sel); if (c) void action('delete', c); }}><Icon name="trash" /></button>
             <span className="ml-auto text-[0.82rem] text-muted">Double-click to connect</span>
+            <ThemeToggle />
           </div>
         </div>
       </div>
       {menu && (
         <div role="menu" className="fixed z-50 w-48 rounded-lg border border-border bg-raised p-1 shadow-xl" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
           {[['connect', t('common.connect')], ['edit', t('common.edit')], ['duplicate', t('common.duplicate')], ['favorite', menu.c.config.favorite ? 'Remove from favorites' : 'Add to favorites'], ['delete', t('common.delete')]].map(([k, l]) => (
-            <button key={k} role="menuitem" className={`block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white ${k === 'delete' ? 'text-danger' : ''}`} onClick={() => action(k, menu.c)}>{l}</button>
+            <button key={k} role="menuitem" className={`menu-item ${k === 'delete' ? 'text-danger' : ''}`} onClick={() => action(k, menu.c)}>{l}</button>
           ))}
         </div>
       )}

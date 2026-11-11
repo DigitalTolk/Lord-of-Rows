@@ -19,11 +19,11 @@ fn env_name(c: &ConnectionConfig) -> String {
     serde_json::to_value(c.environment).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
 }
 
-fn engine_name(e: Engine) -> String {
+pub(crate) fn engine_name(e: Engine) -> String {
     serde_json::to_value(e).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
 }
 
-fn audit(st: &AppState, cat: Category, outcome: Outcome, cfg: Option<&ConnectionConfig>, f: impl FnOnce(&mut NewEvent)) {
+pub(crate) fn audit(st: &AppState, cat: Category, outcome: Outcome, cfg: Option<&ConnectionConfig>, f: impl FnOnce(&mut NewEvent)) {
     let mut ev = NewEvent { category: Some(cat), outcome: Some(outcome), ..Default::default() };
     if let Some(c) = cfg {
         ev.connection_id = Some(c.id.to_string());
@@ -36,7 +36,7 @@ fn audit(st: &AppState, cat: Category, outcome: Outcome, cfg: Option<&Connection
     }
 }
 
-fn check_len(s: &str, max: usize, what: &str) -> R<()> {
+pub(crate) fn check_len(s: &str, max: usize, what: &str) -> R<()> {
     if s.len() > max {
         return Err(DbError::invalid(format!("{what} is too large")));
     }
@@ -1184,6 +1184,9 @@ pub fn set_setting(st: State<'_, AppState>, key: String, value: serde_json::Valu
         return Err(DbError::invalid("unknown setting"));
     }
     check_len(&value.to_string(), 1024 * 1024, "setting")?;
+    if key.starts_with("updates.") {
+        crate::updater::validate_setting(&key, &value)?;
+    }
     if key.starts_with("safety.") {
         // Validate shape; refuse to weaken production below "confirm writes".
         if key == "safety.policy.production" {
@@ -1193,7 +1196,12 @@ pub fn set_setting(st: State<'_, AppState>, key: String, value: serde_json::Valu
             }
         }
         audit(&st, Category::SecurityPolicyChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));
-    } else if key.starts_with("privacy.") || key.starts_with("audit.") {
+    } else if key.starts_with("ai.") {
+        crate::ai::on_setting_change(&st, &key, &value)?;
+        // Turning the assistant on/off or changing literal redaction is a privacy decision.
+        let cat = if key == dbs_ai::KEY_ENABLED || key == dbs_ai::KEY_REDACT_LITERALS { Category::SecurityPolicyChanged } else { Category::SettingsChanged };
+        audit(&st, cat, Outcome::Success, None, |e| e.detail = Some(format!("{key}={value}")));
+    } else if key.starts_with("privacy.") || key.starts_with("audit.") || key.starts_with("updates.endpoint.") {
         audit(&st, Category::SecurityPolicyChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));
     } else {
         audit(&st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some(key.clone()));

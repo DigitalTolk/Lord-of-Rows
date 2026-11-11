@@ -1,3 +1,4 @@
+import { readableTextOn } from '../lib/theme';
 import type { Engine } from '../lib/types';
 
 // Original two-letter badges (not vendor logos) with a distinct colour per engine.
@@ -34,8 +35,8 @@ export function EngineBadge({ engine, size = 32, dim }: { engine: Engine; size?:
   return (
     <span
       aria-hidden
-      className="inline-flex shrink-0 select-none items-center justify-center rounded-[22%] font-semibold text-white shadow-sm"
-      style={{ width: size, height: size, background: s.color, fontSize: size * 0.38, opacity: dim ? 0.45 : 1, letterSpacing: '-0.02em' }}
+      className="inline-flex shrink-0 select-none items-center justify-center rounded-[22%] font-semibold shadow-sm ring-1 ring-inset ring-black/10"
+      style={{ width: size, height: size, background: s.color, color: readableTextOn(s.color), fontSize: size * 0.38, opacity: dim ? 0.45 : 1, letterSpacing: '-0.02em' }}
     >
       {s.abbr}
     </span>

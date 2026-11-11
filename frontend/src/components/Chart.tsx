@@ -5,8 +5,22 @@ import { displayValue } from '../lib/value';
 
 export type ChartKind = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'kpi';
 
-// Colour-blind-safe categorical palette (Okabe–Ito).
-export const PALETTE = ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9', '#F0E442', '#000000'];
+// Colour-blind-safe categorical palette (Okabe–Ito). The last slot (black in
+// the original set) is a theme token so it stays visible on dark surfaces.
+export const PALETTE = ['#0072B2', '#E69F00', '#009E73', '#D55E00', '#CC79A7', '#56B4E9', '#F0E442', 'rgb(var(--chart-8))'];
+
+// Recharts defaults are light-only; drive axis/grid/tooltip from theme tokens
+// (CSS variables resolve live, so no re-render is needed on theme switch).
+const v = (token: string, a = 1) => `rgb(var(--${token}) / ${a})`;
+const AXIS = { stroke: v('border'), tick: { fill: v('muted'), fontSize: 11 }, tickLine: { stroke: v('border') } } as const;
+const GRID = { stroke: v('border'), strokeDasharray: '3 3' } as const;
+const TOOLTIP = {
+  contentStyle: { background: v('raised'), border: `1px solid ${v('border')}`, borderRadius: 6, color: v('fg'), boxShadow: '0 4px 16px rgb(var(--shadow) / 0.2)' },
+  labelStyle: { color: v('fg'), fontWeight: 600 },
+  itemStyle: { color: v('fg') },
+  cursor: { fill: v('hover', 0.6), stroke: v('border') },
+} as const;
+const LEGEND = { wrapperStyle: { color: v('muted') } } as const;
 
 function num(v: Value): number | null {
   switch (v.t) {
@@ -50,45 +64,45 @@ export function ChartView({ columns, rows, spec }: { columns: ColumnMeta[]; rows
     <ResponsiveContainer width="100%" height="100%">
       {spec.kind === 'pie' ? (
         <PieChart>
-          <Tooltip />
-          <Legend />
-          <Pie data={data} dataKey={spec.y[0]} nameKey={spec.x} outerRadius="80%">
+          <Tooltip {...TOOLTIP} />
+          <Legend {...LEGEND} />
+          <Pie data={data} dataKey={spec.y[0]} nameKey={spec.x} outerRadius="80%" stroke={v('bg')}>
             {data.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
           </Pie>
         </PieChart>
       ) : spec.kind === 'scatter' ? (
         <ScatterChart>
-          <CartesianGrid strokeOpacity={0.2} />
-          <XAxis dataKey={spec.x} name={spec.x} />
-          <YAxis dataKey={spec.y[0]} name={spec.y[0]} />
-          <Tooltip />
+          <CartesianGrid {...GRID} />
+          <XAxis {...AXIS} dataKey={spec.x} name={spec.x} />
+          <YAxis {...AXIS} dataKey={spec.y[0]} name={spec.y[0]} />
+          <Tooltip {...TOOLTIP} />
           <Scatter data={data} fill={PALETTE[0]} />
         </ScatterChart>
       ) : spec.kind === 'line' ? (
         <LineChart data={data}>
-          <CartesianGrid strokeOpacity={0.2} />
-          <XAxis dataKey={spec.x} />
-          <YAxis />
-          <Tooltip />
-          <Legend />
+          <CartesianGrid {...GRID} />
+          <XAxis {...AXIS} dataKey={spec.x} />
+          <YAxis {...AXIS} />
+          <Tooltip {...TOOLTIP} />
+          <Legend {...LEGEND} />
           {spec.y.map((y, i) => <Line key={y} dataKey={y} stroke={PALETTE[i % PALETTE.length]} dot={false} isAnimationActive={false} />)}
         </LineChart>
       ) : spec.kind === 'area' ? (
         <AreaChart data={data}>
-          <CartesianGrid strokeOpacity={0.2} />
-          <XAxis dataKey={spec.x} />
-          <YAxis />
-          <Tooltip />
-          <Legend />
+          <CartesianGrid {...GRID} />
+          <XAxis {...AXIS} dataKey={spec.x} />
+          <YAxis {...AXIS} />
+          <Tooltip {...TOOLTIP} />
+          <Legend {...LEGEND} />
           {spec.y.map((y, i) => <Area key={y} dataKey={y} stroke={PALETTE[i % PALETTE.length]} fill={PALETTE[i % PALETTE.length]} fillOpacity={0.3} isAnimationActive={false} />)}
         </AreaChart>
       ) : (
         <BarChart data={data}>
-          <CartesianGrid strokeOpacity={0.2} />
-          <XAxis dataKey={spec.x} />
-          <YAxis />
-          <Tooltip />
-          <Legend />
+          <CartesianGrid {...GRID} />
+          <XAxis {...AXIS} dataKey={spec.x} />
+          <YAxis {...AXIS} />
+          <Tooltip {...TOOLTIP} />
+          <Legend {...LEGEND} />
           {spec.y.map((y, i) => <Bar key={y} dataKey={y} fill={PALETTE[i % PALETTE.length]} isAnimationActive={false} />)}
         </BarChart>
       )}

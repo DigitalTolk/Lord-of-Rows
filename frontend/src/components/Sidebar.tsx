@@ -10,7 +10,7 @@ const KIND_ICON: Partial<Record<ObjectKind, IconName>> = {
   table: 'table', view: 'view', materialized_view: 'view', function: 'func', procedure: 'func', trigger: 'bolt', sequence: 'list', enum: 'list',
   extension: 'copy', index: 'key', event: 'history', key: 'key', collection: 'table',
 };
-const KIND_COLOR: Partial<Record<ObjectKind, string>> = { table: 'text-accent', view: 'text-[#7c4dff]', materialized_view: 'text-[#7c4dff]', function: 'text-warn', procedure: 'text-warn', trigger: 'text-danger', key: 'text-ok' };
+const KIND_COLOR: Partial<Record<ObjectKind, string>> = { table: 'text-accent', view: 'text-purple', materialized_view: 'text-purple', function: 'text-warn', procedure: 'text-warn', trigger: 'text-danger', key: 'text-ok' };
 const KIND_ORDER: ObjectKind[] = ['table', 'view', 'materialized_view', 'function', 'procedure', 'trigger', 'sequence', 'enum', 'index', 'event', 'extension', 'key', 'collection'];
 const KIND_LABEL: Partial<Record<ObjectKind, string>> = { table: 'Tables', view: 'Views', materialized_view: 'Materialized views', function: 'Functions', procedure: 'Procedures', trigger: 'Triggers', sequence: 'Sequences', enum: 'Enums', index: 'Indexes', event: 'Events', extension: 'Extensions', key: 'Keys', collection: 'Collections' };
 
@@ -97,7 +97,7 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
                   role="treeitem"
                   aria-selected={active}
                   tabIndex={0}
-                  className={`mx-1.5 flex h-[24px] cursor-default items-center gap-2 rounded-md px-2 ${active ? 'bg-accent text-white' : 'hover:bg-hover'}`}
+                  className={`mx-1.5 flex h-[24px] cursor-default items-center gap-2 rounded-md px-2 ${active ? 'row-selected' : 'hover:bg-hover'}`}
                   onClick={() => open(o)}
                   onKeyDown={(e) => e.key === 'Enter' && open(o)}
                   onContextMenu={(e) => { e.preventDefault(); setCtx({ o, x: e.clientX, y: e.clientY }); }}
@@ -118,7 +118,7 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
             : [['data', t('tree.showDdl')], ['name', t('tree.copyName')], ['qualified', t('tree.copyQualified')]]
           ).map(([k, label], i) =>
             k === '-' ? <div key={i} className="my-1 border-t border-border" /> : (
-              <button key={k} role="menuitem" className={`block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white ${k === 'drop' || k === 'truncate' ? 'text-danger' : ''}`} onClick={() => action(k, ctx.o)}>{label}</button>
+              <button key={k} role="menuitem" className={`menu-item ${k === 'drop' || k === 'truncate' ? 'text-danger' : ''}`} onClick={() => action(k, ctx.o)}>{label}</button>
             ),
           )}
         </div>

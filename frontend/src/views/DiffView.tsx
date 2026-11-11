@@ -84,7 +84,7 @@ export function DiffView() {
             <p className="text-ok">{t('diff.noChanges')}</p>
           ) : (
             <>
-              <p className="mb-2 text-sm">{res.changes.length} change(s){destructive && <span className="ml-2 rounded bg-danger px-1 text-white">{t('diff.destructive')}</span>}</p>
+              <p className="mb-2 text-sm">{res.changes.length} change(s){destructive && <span className="ml-2 rounded bg-danger-solid px-1 text-on-solid">{t('diff.destructive')}</span>}</p>
               <div className="mb-2 flex gap-1" role="tablist">
                 <button role="tab" aria-selected={tab === 'forward'} className={`btn ${tab === 'forward' ? 'btn-primary' : ''}`} onClick={() => setTab('forward')}>{t('diff.forward')}</button>
                 <button role="tab" aria-selected={tab === 'reverse'} className={`btn ${tab === 'reverse' ? 'btn-primary' : ''}`} onClick={() => setTab('reverse')}>{t('diff.reverse')}</button>

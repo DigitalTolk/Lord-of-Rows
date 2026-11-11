@@ -3,6 +3,8 @@
 import { loader } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
+import { useLayoutEffect } from 'react';
+import { monacoThemeFor, useResolvedTheme } from './theme';
 
 (self as unknown as { MonacoEnvironment: unknown }).MonacoEnvironment = { getWorker: () => new EditorWorker() };
 loader.config({ monaco });
@@ -55,6 +57,72 @@ export function registerSqlCompletion() {
       return { suggestions };
     },
   });
+}
+
+// Editor themes derived from the app's CSS tokens so the editor shares the
+// surrounding surface colour. Re-defined on every theme switch (tokens differ
+// per theme) and applied globally, so every open editor follows live.
+function token(name: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+  const [r, g, b] = v.split(/\s+/).map(Number);
+  if ([r, g, b].some((x) => !Number.isFinite(x))) return '';
+  return '#' + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
+}
+
+export function defineAppThemes() {
+  const t = (n: string, alpha = '') => (token(n) ? token(n) + alpha : undefined);
+  const colors = Object.fromEntries(
+    Object.entries({
+      'editor.background': t('bg'),
+      'editor.foreground': t('fg'),
+      'editorGutter.background': t('bg'),
+      'editorLineNumber.foreground': t('muted', '99'),
+      'editorLineNumber.activeForeground': t('fg'),
+      'editor.lineHighlightBackground': t('hover', '80'),
+      'editor.lineHighlightBorder': t('hover', '00'),
+      'editor.selectionBackground': t('select', '4d'),
+      'editor.inactiveSelectionBackground': t('select', '26'),
+      'editorCursor.foreground': t('accent'),
+      'editorWidget.background': t('raised'),
+      'editorWidget.border': t('border'),
+      'editorSuggestWidget.background': t('raised'),
+      'editorSuggestWidget.border': t('border'),
+      'editorSuggestWidget.selectedBackground': t('select', '33'),
+      'editorHoverWidget.background': t('raised'),
+      'editorHoverWidget.border': t('border'),
+      'input.background': t('raised'),
+      'input.border': t('border'),
+      'focusBorder': t('accent', '99'),
+      'scrollbarSlider.background': t('muted', '40'),
+      'scrollbarSlider.hoverBackground': t('muted', '66'),
+      'scrollbarSlider.activeBackground': t('muted', '80'),
+    }).filter(([, v]) => !!v),
+  ) as Record<string, string>;
+  const dark = document.documentElement.classList.contains('dark');
+  // Only the theme matching the current tokens gets the token colours; the
+  // other keeps Monaco's defaults until it becomes active and is re-defined.
+  monaco.editor.defineTheme('dbs-light', { base: 'vs', inherit: true, rules: [], colors: dark ? {} : colors });
+  monaco.editor.defineTheme('dbs-dark', { base: 'vs-dark', inherit: true, rules: [], colors: dark ? colors : {} });
+}
+
+/** Re-derive the custom themes from the current tokens and switch all editors. */
+export function applyEditorTheme(name: string) {
+  defineAppThemes();
+  monaco.editor.setTheme(name);
+}
+
+/**
+ * Monaco theme name for the app's current theme. Follows live changes (setting
+ * or OS) and re-applies globally before child editors update, so all open
+ * editors switch together.
+ */
+export function useEditorTheme(): string {
+  const resolved = useResolvedTheme();
+  const name = monacoThemeFor(resolved);
+  useLayoutEffect(() => {
+    applyEditorTheme(name);
+  }, [name]);
+  return name;
 }
 
 export { monaco };

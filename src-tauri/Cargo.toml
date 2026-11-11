@@ -3,7 +3,7 @@ name = "dbstudio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "DB Studio - cross-platform database management"
+description = "Lord of the Rows - cross-platform database management"
 
 [lib]
 name = "dbstudio_lib"
@@ -22,6 +22,7 @@ dbs-drivers.workspace = true
 dbs-io.workspace = true
 dbs-schema.workspace = true
 dbs-ssh.workspace = true
+dbs-ai.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8"
 tokio.workspace = true
@@ -35,6 +36,12 @@ getrandom = "0.2"
 flate2 = "1"
 which = "7"
 tempfile = "3"
+tauri-plugin-updater = "2.14"
+semver = "1"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+base64 = "0.23"
+minisign-verify = "0.3"

@@ -210,4 +210,19 @@ export interface HistoryEntry { id: number; connection_id: string; ts: string; s
 export interface Document<T = unknown> { kind: string; id: string; name: string; body: T; updated: string }
 
 export interface AppInfo { version: string; os: string; arch: string; secret_backend: string; supported_engines: Engine[]; all_engines: Engine[] }
+export type UpdateChannel = 'stable' | 'beta';
+export type UpdateCheck =
+  | { status: 'not_configured'; channel: UpdateChannel; current_version: string }
+  | { status: 'up_to_date'; channel: UpdateChannel; current_version: string }
+  | { status: 'available'; channel: UpdateChannel; current_version: string; version: string; notes?: string | null; date?: string | null };
+export type UpdateProgress = { phase: 'downloading'; downloaded: number; total?: number | null } | { phase: 'verifying' } | { phase: 'installing' };
 export interface PickedFile { grant: string; name: string; display_path: string }
+
+// AI assistant (optional, disabled by default). Prompts are built and redacted in Rust.
+export type AiTask = 'explain_sql' | 'generate_sql' | 'optimize_sql' | 'explain_error' | 'explain_plan' | 'suggest_indexes' | 'summarize_schema';
+export type AiProvider = 'anthropic' | 'openai_compatible';
+export interface AiSettings { enabled: boolean; provider: AiProvider; model: string; base_url: string; redact_literals: boolean }
+export interface AiStatus { settings: AiSettings; has_api_key: boolean }
+export interface AiPreviewRequest { task: AiTask; input: string; sql?: string | null; session_id?: string | null; include_dialect: boolean; tables: TableTarget[] }
+export interface AiPreview { token: string; task: AiTask; system: string; user: string; text: string; bytes: number; provider: AiProvider; model: string; base_url: string }
+export interface AiAnswer { text: string; sql?: string | null; truncated: boolean; provider: AiProvider; model: string; duration_ms: number }

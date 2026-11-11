@@ -337,7 +337,7 @@ export function DataGrid(p: GridProps) {
 }
 
 function MenuItem({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return <button role="menuitem" className="block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white" onClick={onClick}>{children}</button>;
+  return <button role="menuitem" className="menu-item" onClick={onClick}>{children}</button>;
 }
 
 function InlineEditor({ initial, onDone, onCancel }: { initial: string; onDone: (t: string) => void; onCancel: () => void }) {

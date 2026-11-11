@@ -1,12 +1,105 @@
-import { useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ask } from '../components/ask';
 import { Field, Toolbar } from '../components/ui';
 import { api } from '../lib/ipc';
+import type { AiProvider, AiStatus } from '../lib/types';
 import { DEFAULT_KEYS, type KeyAction } from '../lib/keys';
+import type { UpdateChannel, UpdateCheck, UpdateProgress } from '../lib/types';
+import { channelOf, endpointKey, formatBytes, PROGRESS_EVENT, progressPercent } from '../lib/updates';
 import { errMsg, useApp } from '../store';
 
-const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'keys', 'a11y'] as const;
+const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'ai', 'keys', 'a11y', 'updates'] as const;
+
+const DEFAULT_MODEL: Record<AiProvider, string> = { anthropic: 'claude-opus-5-5', openai_compatible: 'llama3.1' };
+const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
+
+function AiSettingsSection() {
+  const { t } = useTranslation();
+  const { settings, setSetting, toast } = useApp();
+  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [key, setKey] = useState('');
+  const [testing, setTesting] = useState(false);
+  const provider = (settings['ai.provider'] as AiProvider | undefined) ?? 'anthropic';
+  const [model, setModel] = useState(String(settings['ai.model'] ?? ''));
+  const [baseUrl, setBaseUrl] = useState(String(settings['ai.baseUrl'] ?? ''));
+  const refresh = () => api.aiStatus().then(setStatus).catch((e) => toast('error', errMsg(e)));
+  useEffect(() => {
+    void refresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = async (k: string, v: unknown) => {
+    try {
+      await setSetting(k, v);
+      await refresh();
+    } catch (e) {
+      toast('error', errMsg(e));
+    }
+  };
+  const enabled = settings['ai.enabled'] === true;
+
+  const saveKey = async (value: string) => {
+    try {
+      await api.aiSetApiKey(provider, value);
+      setKey('');
+      toast('ok', value ? t('ai.keySaved') : t('ai.keyRemoved'));
+      await refresh();
+    } catch (e) {
+      toast('error', errMsg(e));
+    }
+  };
+  const test = async () => {
+    setTesting(true);
+    try {
+      const a = await api.aiTest();
+      toast('ok', t('ai.testOk', { model: a.model, ms: a.duration_ms }));
+    } catch (e) {
+      toast('error', errMsg(e));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="mb-3 rounded border border-warn/40 bg-warn/10 p-2 text-sm">
+        <p className="mb-1 font-semibold">{t('ai.privacyTitle')}</p>
+        <ul className="list-disc pl-5">
+          {(['privacy1', 'privacy2', 'privacy3', 'privacy4', 'privacy5'] as const).map((k) => <li key={k}>{t(`ai.${k}`)}</li>)}
+        </ul>
+      </div>
+      <label className="mb-3 flex items-center gap-2 font-semibold">
+        <input type="checkbox" checked={enabled} onChange={(e) => void set('ai.enabled', e.target.checked)} />{t('ai.enable')}
+      </label>
+      <Field label={t('ai.provider')}>
+        <select className="input" value={provider} onChange={(e) => { setModel(''); void set('ai.provider', e.target.value).then(() => set('ai.model', '')); }}>
+          <option value="anthropic">{t('ai.providerAnthropic')}</option>
+          <option value="openai_compatible">{t('ai.providerOpenai')}</option>
+        </select>
+      </Field>
+      <Field label={t('ai.model')} hint={t('ai.modelHint', { model: DEFAULT_MODEL[provider] })}>
+        <input className="input font-mono" placeholder={DEFAULT_MODEL[provider]} value={model} onChange={(e) => setModel(e.target.value)} onBlur={() => model !== String(settings['ai.model'] ?? '') && void set('ai.model', model.trim())} />
+      </Field>
+      {provider === 'openai_compatible' && (
+        <Field label={t('ai.baseUrl')} hint={t('ai.baseUrlHint')}>
+          <input className="input font-mono" placeholder={DEFAULT_BASE_URL} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} onBlur={() => baseUrl !== String(settings['ai.baseUrl'] ?? '') && void set('ai.baseUrl', baseUrl.trim())} />
+        </Field>
+      )}
+      <Field label={t('ai.apiKey')} hint={status?.has_api_key ? t('ai.keyStored') : provider === 'anthropic' ? t('ai.keyRequired') : t('ai.keyOptional')}>
+        <input className="input font-mono" type="password" autoComplete="off" value={key} placeholder={status?.has_api_key ? '••••••••' : ''} onChange={(e) => setKey(e.target.value)} />
+      </Field>
+      <div className="mb-3 flex gap-2">
+        <button className="btn" disabled={!key.trim()} onClick={() => void saveKey(key.trim())}>{t('ai.saveKey')}</button>
+        {status?.has_api_key && <button className="btn text-danger" onClick={() => void saveKey('')}>{t('ai.removeKey')}</button>}
+        <button className="btn ml-auto" disabled={!enabled || testing} onClick={() => void test()} title={t('ai.testHint')}>{t('ai.test')}</button>
+      </div>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={settings['ai.redactLiterals'] !== false} onChange={(e) => void set('ai.redactLiterals', e.target.checked)} />{t('ai.redactLiterals')}
+      </label>
+      <p className="ml-6 text-xs text-muted">{t('ai.redactLiteralsHint')}</p>
+    </>
+  );
+}
 
 export function SettingsView() {
   const { t } = useTranslation();
@@ -123,11 +216,145 @@ export function SettingsView() {
               </tbody>
             </table>
           )}
+          {section === 'ai' && <AiSettingsSection />}
           {section === 'a11y' && (
             <label className="flex items-center gap-2"><input type="checkbox" checked={get('a11y.reduceMotion', false)} onChange={(e) => set('a11y.reduceMotion', e.target.checked)} />{t('settings.reducedMotion')}</label>
           )}
+          {section === 'updates' && <UpdatesSection />}
         </div>
       </div>
     </div>
+  );
+}
+
+function EndpointField({ channel }: { channel: UpdateChannel }) {
+  const { t } = useTranslation();
+  const { settings, setSetting, toast } = useApp();
+  const saved = (settings[endpointKey(channel)] as string | undefined) ?? '';
+  const [draft, setDraft] = useState(saved);
+  const save = () => {
+    if (draft.trim() === saved) return;
+    // The backend validates (https only) and audits the change.
+    setSetting(endpointKey(channel), draft.trim()).catch((e) => toast('error', errMsg(e)));
+  };
+  return (
+    <Field label={t(channel === 'stable' ? 'updates.endpointStable' : 'updates.endpointBeta')} hint={t('updates.endpointHint')}>
+      <input className="input font-mono" type="url" placeholder="https://…/latest.json" value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={save} />
+    </Field>
+  );
+}
+
+function UpdatesSection() {
+  const { t } = useTranslation();
+  const { settings, setSetting, toast } = useApp();
+  const channel = channelOf(settings);
+  const [busy, setBusy] = useState<'checking' | 'installing' | null>(null);
+  const [result, setResult] = useState<UpdateCheck | null>(null);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [installed, setInstalled] = useState<string | null>(null);
+
+  useEffect(() => {
+    let dead = false;
+    let unlisten: (() => void) | undefined;
+    void listen<UpdateProgress>(PROGRESS_EVENT, (e) => setProgress(e.payload)).then((f) => {
+      if (dead) f();
+      else unlisten = f;
+    });
+    return () => {
+      dead = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const set = (k: string, v: unknown) => setSetting(k, v).catch((e) => toast('error', errMsg(e)));
+  const check = async () => {
+    setBusy('checking');
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await api.checkUpdate());
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  const install = async (version: string) => {
+    setBusy('installing');
+    setError(null);
+    setProgress(null);
+    try {
+      const r = await api.installUpdate(version);
+      setInstalled(r.version);
+    } catch (e) {
+      // Failed or rejected (e.g. bad signature): nothing was installed, the app keeps running.
+      setError(t('updates.failed', { error: errMsg(e) }));
+    } finally {
+      setBusy(null);
+      setProgress(null);
+    }
+  };
+  const pct = progressPercent(progress);
+
+  return (
+    <>
+      <p className="mb-3 text-sm">{t('updates.signed')}</p>
+      <Field label={t('updates.channel')}>
+        <select className="input" value={channel} disabled={busy !== null} onChange={(e) => { setResult(null); set('updates.channel', e.target.value); }}>
+          <option value="stable">{t('updates.stable')}</option>
+          <option value="beta">{t('updates.beta')}</option>
+        </select>
+      </Field>
+      <label className="mb-1 flex items-center gap-2">
+        <input type="checkbox" checked={settings['updates.autoCheck'] === true} onChange={(e) => set('updates.autoCheck', e.target.checked)} />
+        {t('updates.autoCheck')}
+      </label>
+      <p className="mb-3 text-xs text-muted">{t('updates.autoCheckHint')}</p>
+      <EndpointField key={`stable:${String(settings['updates.endpoint.stable'] ?? '')}`} channel="stable" />
+      <EndpointField key={`beta:${String(settings['updates.endpoint.beta'] ?? '')}`} channel="beta" />
+      <button className="btn" disabled={busy !== null || installed !== null} onClick={check}>{busy === 'checking' ? t('updates.checking') : t('updates.checkNow')}</button>
+
+      <div className="mt-3 text-sm" aria-live="polite">
+        {error && <p role="alert" className="rounded border border-danger/40 bg-danger/10 p-2 text-danger">{error}</p>}
+        {result?.status === 'not_configured' && <p>{t('updates.notConfigured', { channel: t(`updates.${result.channel}`) })}</p>}
+        {result?.status === 'up_to_date' && <p>{t('updates.upToDate', { version: result.current_version })}</p>}
+        {result?.status === 'available' && !installed && (
+          <div className="rounded border border-border p-2">
+            <p className="font-semibold">{t('updates.available', { version: result.version, current: result.current_version })}</p>
+            {result.date && <p className="text-xs text-muted">{new Date(result.date).toLocaleDateString()}</p>}
+            {result.notes && (
+              <>
+                <p className="label mt-2">{t('updates.notes')}</p>
+                {/* Notes come from the update server: rendered as plain text, never HTML. */}
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-panel p-2 font-sans text-xs">{result.notes}</pre>
+              </>
+            )}
+            {busy === 'installing' ? (
+              <div className="mt-2">
+                <p className="text-xs">
+                  {progress?.phase === 'verifying' ? t('updates.verifying') : progress?.phase === 'installing' ? t('updates.installing') : t('updates.downloading')}
+                  {progress?.phase === 'downloading' && ` ${formatBytes(progress.downloaded)}${progress.total ? ` / ${formatBytes(progress.total)}` : ''}`}
+                </p>
+                <div className="mt-1 h-2 w-full overflow-hidden rounded bg-panel" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
+                  <div className={`h-full bg-accent ${pct === null ? 'w-1/3 animate-pulse' : ''}`} style={pct === null ? undefined : { width: `${pct}%` }} />
+                </div>
+              </div>
+            ) : (
+              <button className="btn btn-primary mt-2" disabled={busy !== null} onClick={() => install(result.version)}>{t('updates.install')}</button>
+            )}
+          </div>
+        )}
+        {installed && (
+          <div className="rounded border border-ok/40 bg-ok/10 p-2">
+            <p className="mb-2">{t('updates.restartPrompt', { version: installed })}</p>
+            <div className="flex gap-2">
+              <button className="btn btn-primary" onClick={() => api.restartAfterUpdate().catch((e) => toast('error', errMsg(e)))}>{t('updates.restartNow')}</button>
+              <button className="btn" onClick={() => setResult(null)}>{t('updates.later')}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }
