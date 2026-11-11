@@ -114,6 +114,31 @@
     "test": "Test connection", "testHint": "Sends a fixed test prompt with no data", "testOk": "Connected to {{model}} ({{ms}} ms)",
     "redactLiterals": "Redact literal values", "redactLiteralsHint": "Replaces strings and numbers in SQL (and quoted values in errors and plans) with ? before sending."
   },
+  "filter": {
+    "title": "Filters", "column": "Column", "anyColumn": "Any column", "rawSql": "Raw SQL", "operator": "Operator", "value": "Value",
+    "and": "and", "rawPlaceholder": "SQL condition, e.g. age > 30 AND name LIKE 'A%'", "listPlaceholder": "a, b, c", "enable": "Enable filter",
+    "apply": "Apply", "applyAll": "Apply All", "applyMenu": "More apply options", "applyEnabled": "Apply enabled only", "enableAll": "Enable all",
+    "disableAll": "Disable all", "remove": "Remove filter", "add": "Add filter", "clear": "Clear", "export": "Export", "sql": "SQL",
+    "sqlTitle": "Query for the current filters", "openInQuery": "Open in query tab", "copy": "Copy", "copied": "SQL copied",
+    "show": "Show", "insert": "Insert", "removeHint": "Remove", "up": "Up", "down": "Down", "filtered": "filtered",
+    "rawRejected": "Raw SQL filter rejected: {{msg}}", "opContains": "Contains", "opNotContains": "Not contains",
+    "opBeginsWith": "Begins with", "opEndsWith": "Ends with"
+  },
+  "tableWs": {
+    "data": "Data", "structure": "Structure", "index": "Index", "addRow": "Add row", "rowsSelected": "{{sel}} of {{total}} rows selected",
+    "rowsLoading": "{{sel}} of … rows selected", "estimate": "Estimated from table statistics. Click for an exact count.",
+    "toggleFilter": "Filter bar", "toggleDetail": "Row details", "prevPage": "Previous page", "nextPage": "Next page",
+    "pageSize": "{{n}} / page", "range": "{{from}}–{{to}}", "rangeOf": "{{from}}–{{to}} of {{total}}",
+    "idxName": "Name", "idxColumns": "Columns", "idxUnique": "Unique", "idxPrimary": "Primary", "idxDefinition": "Definition", "noIndexes": "No indexes",
+    "detailTitle": "Row details", "searchField": "Search for field", "noSelection": "Select a row to see its fields here.",
+    "multiple": "multiple values", "setNull": "Set NULL", "setEmpty": "Set empty string", "setDefault": "Set DEFAULT (new rows only)",
+    "fieldMenu": "Field options", "rowsSelectedShort": "{{n}} rows selected", "noFields": "No matching fields", "editJson": "Edit JSON", "done": "Done",
+    "pendingDiscard": "Discard pending changes", "pendingPreview": "Preview pending changes", "pendingCommit": "Commit pending changes",
+    "pendingCount": "{{n}} pending", "pendingTitle": "Statements to run", "openInWindow": "Open in Window", "pendingNone": "No pending changes",
+    "tls": "TLS", "noTls": "no TLS", "warnProduction": "Production connection: changes affect live data",
+    "warnPlaintext": "Unencrypted connection to a remote host", "sidebarItems": "Items", "sidebarQueries": "Queries", "sidebarHistory": "History",
+    "noQueries": "No saved queries yet. Save one from a query tab.", "noHistory": "No query history for this connection.", "schemasRail": "Databases"
+  },
   "palette": { "placeholder": "Type a command, table or connection…", "noMatches": "No matches" },
   "status": { "connected": "Connected", "disconnected": "Not connected", "latency": "{{ms}} ms" }
 }

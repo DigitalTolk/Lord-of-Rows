@@ -2,44 +2,67 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { confirmDecision } from '../components/confirm';
 import { DataGrid } from '../components/DataGrid';
+import { FilterBar } from '../components/FilterBar';
 import { copyAs } from '../components/Results';
-import { Dialog, ErrorBox, Spinner } from '../components/ui';
+import { RowDetailPanel } from '../components/RowDetailPanel';
+import { IndexList, TableBottomBar, type RowCount, type TableMode } from '../components/TableBottomBar';
+import { ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { StructureView } from './StructureView';
 import { addRow, buildChanges, emptyStaged, History, pendingCount, setCell, setInsertedCell, toggleDelete, type StagedState } from '../lib/changes';
+import { RAW_SQL, toConditions, type FilterRow } from '../lib/filters';
 import { api } from '../lib/ipc';
-import type { ExportFormat, FilterCondition, FilterOp, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
-import { parseInput } from '../lib/value';
+import { displayCombo } from '../lib/keys';
+import { selectTab, useTableWs, type PendingActions } from '../lib/tableWorkspace';
+import type { ExportFormat, FilterCondition, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
 
-const OPS: [FilterOp, string][] = [['eq', '='], ['ne', '≠'], ['lt', '<'], ['le', '≤'], ['gt', '>'], ['ge', '≥'], ['contains', 'contains'], ['starts_with', 'starts with'], ['ends_with', 'ends with'], ['is_null', 'is NULL'], ['is_not_null', 'is not NULL'], ['in', 'in (a,b,c)']];
-
-interface FilterDraft { column: string; op: FilterOp; text: string }
+/** Above this estimated size the exact COUNT(*) is only run on request. */
+const AUTO_COUNT_LIMIT = 1_000_000;
 
 export function TableView({ tab }: { tab: Tab }) {
   const { t } = useTranslation();
-  const { sessions, toast, settings } = useApp();
+  const { sessions, toast, settings, openTab } = useApp();
   const s = tab.sessionId ? sessions[tab.sessionId] : undefined;
   const target = tab.target!;
+  const ws = useTableWs(selectTab(tab.id));
+  const wsApi = useTableWs.getState();
+  const applied = ws.applied;
   const [desc, setDesc] = useState<TableDescription | null>(null);
   const [rs, setRs] = useState<ResultSet | null>(null);
-  const [count, setCount] = useState<number | null>(null);
+  const [count, setCount] = useState<RowCount | null>(null);
+  const [counting, setCounting] = useState(false);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(Number(settings['grid.pageSize'] ?? 500));
   const [sort, setSort] = useState<[string, SortDir][]>([]);
-  const [filters, setFilters] = useState<FilterDraft[]>([]);
-  const [applied, setApplied] = useState<FilterCondition[]>([]);
   const [staged, setStaged] = useState<StagedState>(emptyStaged());
   const [selRows, setSelRows] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [review, setReview] = useState<{ statements: string[] } | null>(null);
+  const [detailW, setDetailW] = useState(320);
   const hist = useRef(new History<StagedState>());
-  const [mode, setMode] = useState<'data' | 'structure'>('data');
+  const countKey = useRef<string | null>(null);
+  const [mode, setMode] = useState<TableMode>('data');
   const isKeyValue = s?.config.engine === 'redis';
   const editable = !!s?.capabilities.inline_edit && !s.config.read_only && !isKeyValue;
   const keyCols = desc?.primary_key ?? [];
   const pending = pendingCount(staged);
+  const columns = rs?.columns ?? [];
+
+  const runCount = useCallback(
+    async (filters: FilterCondition[]) => {
+      if (!s) return;
+      setCounting(true);
+      try {
+        setCount({ n: await api.countRows(s.session_id, target, filters), exact: true });
+      } catch {
+        /* keep the estimate */
+      } finally {
+        setCounting(false);
+      }
+    },
+    [s, target],
+  );
 
   const load = useCallback(async () => {
     if (!s) return;
@@ -49,32 +72,45 @@ export function TableView({ tab }: { tab: Tab }) {
       const d = desc ?? (await api.describeTable(s.session_id, target).catch(() => null));
       // Without an explicit sort, order by primary key so paging is stable.
       const order: [string, SortDir][] = sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
-      const [r, c] = await Promise.all([
-        api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order, filters: applied }),
-        api.countRows(s.session_id, target, applied).catch(() => null),
-      ]);
+      const r = await api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order, filters: applied });
       setDesc(d);
       setRs(r);
-      setCount(c);
       setStaged(emptyStaged());
       hist.current.clear();
+      // Row count: once per filter set (not per page). Unfiltered tables show the
+      // statistics estimate first (~); the exact COUNT(*) runs lazily, and only on
+      // request for very large tables.
+      const key = JSON.stringify(applied);
+      if (countKey.current !== key) {
+        countKey.current = key;
+        const est = !applied.length && d?.estimated_rows != null && d.estimated_rows >= 0 ? d.estimated_rows : null;
+        setCount(est != null ? { n: est, exact: false } : null);
+        if (est == null || est <= AUTO_COUNT_LIMIT) void runCount(applied);
+      }
     } catch (e) {
       setError(errMsg(e));
     } finally {
       setLoading(false);
     }
-  }, [s, target, page, pageSize, sort, applied, desc]);
+  }, [s, target, page, pageSize, sort, applied, desc, runCount]);
 
   useEffect(() => {
     void load();
   }, [page, pageSize, sort, applied, s?.session_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Drop this tab's workspace state when the tab closes.
+  useEffect(() => {
+    const id = tab.id;
+    return () => {
+      useTableWs.getState().drop(id);
+    };
+  }, [tab.id]);
 
   const change = (next: StagedState) => {
     hist.current.push(staged);
     setStaged(next);
   };
 
-  const columns = rs?.columns ?? [];
   const onEdit = (row: number, col: string, v: Value) => {
     if (!rs) return;
     if (keyCols.length === 0) {
@@ -84,40 +120,56 @@ export function TableView({ tab }: { tab: Tab }) {
     change(setCell(staged, row, col, v, rs.rows[row][columns.findIndex((c) => c.name === col)]));
   };
 
-  const applyFilters = () => {
+  // ---------------------------------------------------------------- filters
+
+  /** Convert + validate rows, then make them the applied filter set. */
+  const applyRows = async (rows: FilterRow[]): Promise<boolean> => {
+    if (!s) return false;
     try {
-      setApplied(
-        filters.filter((f) => f.column).map((f) => {
-          const col = columns.find((c) => c.name === f.column);
-          if (f.op === 'in') return { column: f.column, op: f.op, values: f.text.split(',').map((x) => parseInput(x.trim(), col)) };
-          if (f.op === 'is_null' || f.op === 'is_not_null') return { column: f.column, op: f.op, values: [] };
-          return { column: f.column, op: f.op, value: ['contains', 'starts_with', 'ends_with'].includes(f.op) ? { t: 'text', v: f.text } : parseInput(f.text, col), values: [] };
-        }),
-      );
+      for (const r of rows.filter((x) => x.column === RAW_SQL && x.value.trim())) {
+        try {
+          await api.validateFilterSql(s.session_id, r.value);
+        } catch (e) {
+          setError(t('filter.rawRejected', { msg: errMsg(e) }));
+          return false;
+        }
+      }
+      const conds = toConditions(rows, columns);
+      wsApi.patch(tab.id, { applied: conds });
       setPage(0);
+      setError(null);
+      return true;
     } catch (e) {
       setError(errMsg(e));
+      return false;
     }
   };
 
-  const startReview = async () => {
-    if (!s || !rs) return;
-    try {
-      const changes = buildChanges(staged, columns, rs.rows, keyCols);
-      const p = await api.previewChanges(s.session_id, target, changes);
-      setReview({ statements: p.statements });
-    } catch (e) {
-      setError(errMsg(e));
-    }
+  // Quick Filter / external `addFilter(..., { apply: true })` requests.
+  const lastApply = useRef(ws.applySeq);
+  useEffect(() => {
+    if (ws.applySeq === lastApply.current) return;
+    lastApply.current = ws.applySeq;
+    void applyRows(useTableWs.getState().tabs[tab.id]?.rows.filter((r) => r.enabled) ?? []);
+  }, [ws.applySeq]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const order = (): [string, SortDir][] => (sort.length ? sort : keyCols.map((c) => [c, 'asc']));
+  const sqlFor = async (rows: FilterRow[]) => {
+    if (!s) return '';
+    return api.tableSelectSql(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order(), filters: toConditions(rows, columns) });
   };
+  const openSql = (sql: string, title = target.table) => openTab({ kind: 'query', title, sessionId: s?.session_id, sql });
+
+  // ---------------------------------------------------------------- commit
 
   const commit = async () => {
     if (!s || !rs) return;
-    setReview(null);
     try {
       const changes = buildChanges(staged, columns, rs.rows, keyCols);
+      if (!changes.length) return;
       const p = await api.previewChanges(s.session_id, target, changes);
       let token: string | null = null;
+      // Never bypassed: production / risky edits ask (or block) exactly as before.
       if (p.decision.decision !== 'allow') {
         const c = await confirmDecision(p.decision, { production: s.config.environment === 'production', sqlPreview: p.statements.join(';\n') + ';' });
         if (!c) return;
@@ -129,11 +181,40 @@ export function TableView({ tab }: { tab: Tab }) {
         return;
       }
       toast('ok', t('grid.committed', { n: r.rows_affected }));
+      if (changes.some((c) => c.op !== 'update')) countKey.current = null;
       await load();
     } catch (e) {
       setError(errMsg(e));
     }
   };
+
+  // The top toolbar drives pending changes through stable wrappers around the latest closures.
+  const latest = useRef({ commit, staged, rs, columns, keyCols, s });
+  latest.current = { commit, staged, rs, columns, keyCols, s };
+  useEffect(() => {
+    const actions: PendingActions = {
+      discard: () => {
+        const cur = latest.current.staged;
+        if (pendingCount(cur) === 0) return;
+        hist.current.push(cur);
+        setStaged(emptyStaged());
+      },
+      statements: async () => {
+        const L = latest.current;
+        if (!L.s || !L.rs) return [];
+        const changes = buildChanges(L.staged, L.columns, L.rs.rows, L.keyCols);
+        return (await api.previewChanges(L.s.session_id, target, changes)).statements;
+      },
+      commit: () => latest.current.commit(),
+      openInQueryTab: (sql) => openTab({ kind: 'query', title: `${target.table} changes`, sessionId: latest.current.s?.session_id, sql }),
+    };
+    useTableWs.getState().patch(tab.id, { actions });
+  }, [tab.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    useTableWs.getState().patch(tab.id, { pending });
+  }, [tab.id, pending]);
+
+  // ---------------------------------------------------------------- misc actions
 
   const copy = async (rows: number[], cols: string[], fmt: ExportFormat = 'tsv') => {
     if (!rs) return;
@@ -160,27 +241,41 @@ export function TableView({ tab }: { tab: Tab }) {
     }
   };
 
-  // Keyboard: undo/redo/commit
+  const undo = () => {
+    const p = hist.current.undo(staged);
+    if (p) setStaged(p);
+  };
+  const redo = () => {
+    const n = hist.current.redo(staged);
+    if (n) setStaged(n);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
-    if (mod && e.key === 'z' && !e.shiftKey) {
-      const p = hist.current.undo(staged);
-      if (p) setStaged(p);
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    const inField = e.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+    if (k === 'z' && !e.shiftKey && !inField) {
+      undo();
       e.preventDefault();
-    } else if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-      const n = hist.current.redo(staged);
-      if (n) setStaged(n);
+    } else if ((k === 'y' || (k === 'z' && e.shiftKey)) && !inField) {
+      redo();
       e.preventDefault();
-    } else if (mod && e.key === 's' && pending) {
+    } else if (k === 's') {
       e.preventDefault();
-      void startReview();
-    } else if (mod && e.key === 'r') {
+      if (pending) void commit();
+    } else if (k === 'r' && !e.shiftKey) {
       e.preventDefault();
       void load();
+    } else if (k === 'f' && !e.shiftKey && mode === 'data') {
+      e.preventDefault();
+      wsApi.toggleFilterBar(tab.id);
+    } else if (k === 'd' && e.shiftKey && mode === 'data') {
+      e.preventDefault();
+      wsApi.toggleDetail(tab.id);
     }
   };
 
-  const pages = count != null ? Math.max(1, Math.ceil(count / pageSize)) : null;
   const duplicateSelected = () => {
     if (!rs || !selRows.length) return;
     let next = staged;
@@ -202,13 +297,25 @@ export function TableView({ tab }: { tab: Tab }) {
     setSort(nextDir ? [...rest, [col, nextDir]] : rest);
   };
 
+  const resizeDetail = (e: React.MouseEvent) => {
+    const startX = e.clientX;
+    const startW = detailW;
+    const move = (m: MouseEvent) => setDetailW(Math.min(720, Math.max(220, startW - (m.clientX - startX))));
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
   const header = `${target.schema ? target.schema + '.' : ''}${target.table}`;
 
   if (!s) return <div className="p-4 text-muted">{t('status.disconnected')}</div>;
   return (
     <div className="flex h-full min-h-0 flex-col" onKeyDown={onKeyDown}>
       <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-0.5 border-b border-border bg-panel px-2">
-        <button className="icon-btn" title="Refresh (⌘/Ctrl+R)" aria-label={t('common.refresh')} onClick={() => load()}><Icon name="refresh" size={15} /></button>
+        <button className="icon-btn" title="Refresh (⌘/Ctrl+R)" aria-label={t('common.refresh')} onClick={() => { countKey.current = null; void load(); }}><Icon name="refresh" size={15} /></button>
         {editable && (
           <>
             <span className="mx-1 h-4 border-l border-border" />
@@ -216,105 +323,95 @@ export function TableView({ tab }: { tab: Tab }) {
             <button className="icon-btn" title={t('grid.duplicateRow')} aria-label={t('grid.duplicateRow')} onClick={duplicateSelected} disabled={!selRows.length}><Icon name="copy" size={15} /></button>
             <button className="icon-btn" title={t('grid.deleteRows')} aria-label={t('grid.deleteRows')} onClick={() => change(toggleDelete(staged, selRows.filter((r) => r < (rs?.rows.length ?? 0))))} disabled={!selRows.length || keyCols.length === 0}><Icon name="trash" size={15} /></button>
             <span className="mx-1 h-4 border-l border-border" />
-            <button className="icon-btn" title="Undo (⌘/Ctrl+Z)" aria-label={t('grid.undo')} onClick={() => { const p = hist.current.undo(staged); if (p) setStaged(p); }}>↶</button>
-            <button className="icon-btn" title="Redo (⌘/Ctrl+Shift+Z)" aria-label={t('grid.redo')} onClick={() => { const n = hist.current.redo(staged); if (n) setStaged(n); }}>↷</button>
+            <button className="icon-btn" title="Undo (⌘/Ctrl+Z)" aria-label={t('grid.undo')} onClick={undo}>↶</button>
+            <button className="icon-btn" title="Redo (⌘/Ctrl+Shift+Z)" aria-label={t('grid.redo')} onClick={redo}>↷</button>
           </>
         )}
         {pending > 0 && (
-          <div className="ml-2 flex items-center gap-1.5" aria-live="polite">
-            <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn">{t('grid.pending', { n: pending })}</span>
-            <button className="btn h-6" onClick={() => change(emptyStaged())}>{t('grid.discard')}</button>
-            <button className="btn btn-primary h-6" onClick={startReview} title="⌘/Ctrl+S">{t('grid.commit')}…</button>
-          </div>
+          <span className="ml-2 rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn" aria-live="polite" title={`${t('tableWs.pendingCommit')} (${displayCombo('Mod+S')})`}>{t('grid.pending', { n: pending })}</span>
         )}
         <div className="ml-auto flex items-center gap-1">
-          <button className={`icon-btn ${filters.length ? 'bg-accent/15 text-accent' : ''}`} title={t('grid.filterAdd')} aria-label={t('grid.filterAdd')} onClick={() => setFilters(filters.length ? [] : [{ column: columns[0]?.name ?? '', op: 'eq', text: '' }])}><Icon name="filter" size={15} /></button>
-          <select className="input h-7 w-auto" aria-label={t('common.export')} value="" onChange={(e) => e.target.value && exportAll(e.target.value as ExportFormat)}>
-            <option value="">{t('common.export')}…</option>
-            <option value="csv">CSV</option><option value="tsv">TSV</option><option value="json">JSON</option><option value="json_lines">JSON Lines</option>
-            <option value="sql_insert">SQL INSERT</option><option value="xlsx">Excel (XLSX)</option><option value="markdown">Markdown</option><option value="xml">XML</option>
-          </select>
+          <button className={`icon-btn ${ws.filterOpen ? 'bg-accent/15 text-accent' : ''}`} title={`${t('tableWs.toggleFilter')} (${displayCombo('Mod+F')})`} aria-label={t('grid.filterAdd')} aria-pressed={ws.filterOpen} onClick={() => wsApi.toggleFilterBar(tab.id)}><Icon name="filter" size={15} /></button>
         </div>
       </div>
       {editable && desc && keyCols.length === 0 && <div className="border-b border-border bg-warn/10 px-2 py-1 text-sm text-warn">{t('grid.noKey')}</div>}
-      {filters.length > 0 && (
-        <div className="space-y-1 border-b border-border bg-panel p-2">
-          {filters.map((f, i) => (
-            <div key={i} className="flex gap-1">
-              <select className="input w-48" aria-label="Column" value={f.column} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, column: e.target.value } : x)))}>
-                {columns.map((c) => <option key={c.name}>{c.name}</option>)}
-              </select>
-              <select className="input w-36" aria-label="Operator" value={f.op} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, op: e.target.value as FilterOp } : x)))}>
-                {OPS.map(([o, l]) => <option key={o} value={o}>{l}</option>)}
-              </select>
-              {!['is_null', 'is_not_null'].includes(f.op) && (
-                <input className="input" aria-label={t('grid.filterValue')} placeholder={t('grid.filterValue')} value={f.text} onChange={(e) => setFilters(filters.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)))} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} />
-              )}
-              <button className="btn" aria-label="Remove filter" onClick={() => setFilters(filters.filter((_, j) => j !== i))}>✕</button>
-            </div>
-          ))}
-          <div className="flex gap-1">
-            <button className="btn btn-primary" onClick={applyFilters}>{t('common.apply')}</button>
-            <button className="btn" onClick={() => { setFilters([]); setApplied([]); }}>Clear</button>
-          </div>
-        </div>
+      {mode === 'data' && ws.filterOpen && (
+        <FilterBar
+          tabId={tab.id}
+          columns={columns}
+          onApply={applyRows}
+          onClear={() => { wsApi.patch(tab.id, { applied: [] }); setPage(0); }}
+          onExport={(f) => void exportAll(f)}
+          sqlFor={sqlFor}
+          onOpenSql={(sql) => openSql(sql)}
+        />
       )}
       <ErrorBox error={error} />
       {mode === 'structure' ? (
         <div className="min-h-0 flex-1"><StructureView tab={tab} /></div>
+      ) : mode === 'index' ? (
+        <IndexList indexes={desc?.indexes ?? null} loading={loading} />
       ) : loading && !rs ? (
         <div className="p-4"><Spinner label={t('common.loading')} /></div>
       ) : rs ? (
-        <DataGrid
-          columns={columns}
-          rows={rs.rows}
-          staged={staged}
-          editable={editable}
-          sort={sort}
-          onSort={sortBy}
-          onEdit={onEdit}
-          onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
-          onSelectRows={setSelRows}
-          onCopy={(r, c) => copy(r, c)}
-          ariaLabel={`Table ${header}`}
-        />
-      ) : null}
-      <div className="flex h-[30px] shrink-0 items-center gap-2 border-t border-border bg-panel px-2 text-[0.88rem]">
-        <div className="seg" role="tablist" aria-label="View">
-          <button role="tab" aria-selected={mode === 'data'} onClick={() => setMode('data')}>Data</button>
-          <button role="tab" aria-selected={mode === 'structure'} onClick={() => setMode('structure')}>Structure</button>
-        </div>
-        {mode === 'data' && (
-          <>
-            <span className="text-muted">{count != null ? `${count.toLocaleString()} ${t('common.rows')}` : ''}{applied.length ? ' (filtered)' : ''}</span>
-            {loading && <Spinner />}
-            <div className="ml-auto flex items-center gap-1">
-              <button className="icon-btn h-6 w-6" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label="Previous page"><Icon name="chevronRight" size={14} className="rotate-180" /></button>
-              <span className="tabular-nums text-muted">{page * pageSize + 1}–{page * pageSize + (rs?.rows.length ?? 0)}{count != null ? ` of ${count.toLocaleString()}` : ''}</span>
-              <button className="icon-btn h-6 w-6" disabled={pages != null ? page + 1 >= pages : (rs?.rows.length ?? 0) < pageSize} onClick={() => setPage(page + 1)} aria-label="Next page"><Icon name="chevronRight" size={14} /></button>
-              <select className="input h-6 w-auto py-0 text-[0.85rem]" aria-label={t('grid.pageSize')} value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}>
-                {[100, 500, 1000, 5000, 10000, 50000].map((n) => <option key={n} value={n}>{n} / page</option>)}
-              </select>
-            </div>
-          </>
-        )}
-      </div>
-      {review && (
-        <Dialog
-          title={t('grid.review')}
-          wide
-          onClose={() => setReview(null)}
-          footer={
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <DataGrid
+              columns={columns}
+              rows={rs.rows}
+              staged={staged}
+              editable={editable}
+              sort={sort}
+              onSort={sortBy}
+              onEdit={onEdit}
+              onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
+              onSelectRows={setSelRows}
+              onCopy={(r, c) => copy(r, c)}
+              onQuickFilter={(f) => { wsApi.addFilter(tab.id, f, { apply: true }); }}
+              ariaLabel={`Table ${header}`}
+            />
+          </div>
+          {ws.detailOpen && (
             <>
-              <button className="btn" onClick={() => setReview(null)}>{t('common.cancel')}</button>
-              <button className="btn btn-primary" onClick={commit}>{t('grid.commit')}</button>
+              <div role="separator" aria-orientation="vertical" aria-label="Resize row details" className="w-[4px] shrink-0 cursor-col-resize hover:bg-accent/40" onMouseDown={resizeDetail} />
+              <div style={{ width: detailW }} className="min-h-0 shrink-0">
+                <RowDetailPanel
+                  columns={columns}
+                  rows={rs.rows}
+                  staged={staged}
+                  selection={selRows}
+                  defs={desc?.columns}
+                  editable={editable}
+                  canEditExisting={keyCols.length > 0}
+                  onStage={change}
+                  onClose={() => wsApi.toggleDetail(tab.id, false)}
+                />
+              </div>
             </>
-          }
-        >
-          <p className="mb-2 text-sm text-muted">These statements run in one transaction. Updates and deletes include the originally loaded values, so rows changed by someone else are not overwritten.</p>
-          <pre className="max-h-[60vh] overflow-auto rounded border border-border bg-panel p-2 font-mono text-xs">{review.statements.map((x) => x + ';').join('\n')}</pre>
-        </Dialog>
-      )}
+          )}
+        </div>
+      ) : null}
+      <TableBottomBar
+        mode={mode}
+        onMode={setMode}
+        canAdd={editable}
+        onAddRow={() => change(addRow(staged))}
+        selected={selRows.length}
+        count={count}
+        counting={counting}
+        filtered={applied.length > 0}
+        onExactCount={() => void runCount(applied)}
+        loaded={rs?.rows.length ?? 0}
+        loading={loading}
+        page={page}
+        pageSize={pageSize}
+        onPage={setPage}
+        onPageSize={(n) => { setPageSize(n); setPage(0); }}
+        filterOpen={ws.filterOpen}
+        onToggleFilter={() => wsApi.toggleFilterBar(tab.id)}
+        detailOpen={ws.detailOpen}
+        onToggleDetail={() => wsApi.toggleDetail(tab.id)}
+      />
     </div>
   );
 }

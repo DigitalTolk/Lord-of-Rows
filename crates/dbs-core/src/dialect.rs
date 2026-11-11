@@ -106,20 +106,51 @@ pub struct GeneratedStatement {
 }
 
 impl GeneratedStatement {
-    /// Inline literals for display only.
+    /// Inline literals for display only. Single left-to-right pass over the
+    /// generated SQL, so a literal that itself contains `?` or `$1` is never
+    /// re-substituted.
     pub fn preview(&self, d: Dialect) -> String {
-        let mut out = self.sql.clone();
-        // Replace from highest index down so `$10` isn't clobbered by `$1`.
-        if matches!(d, Dialect::Postgres | Dialect::Sqlite | Dialect::SqlServer) {
-            for (i, p) in self.params.iter().enumerate().rev() {
-                out = out.replace(&d.placeholder(i + 1), &d.literal(p));
+        let src = self.sql.as_str();
+        let mut out = String::with_capacity(src.len() + 16 * self.params.len());
+        let mut next = 0usize;
+        let mut i = 0usize;
+        let bytes = src.as_bytes();
+        let digits_at = |j: usize| {
+            let mut k = j;
+            while k < bytes.len() && bytes[k].is_ascii_digit() {
+                k += 1;
             }
-        } else {
-            for p in &self.params {
-                if let Some(pos) = out.find('?') {
-                    out.replace_range(pos..pos + 1, &d.literal(p));
+            k
+        };
+        while i < bytes.len() {
+            let (prefix_len, numbered) = match d {
+                Dialect::Postgres if bytes[i] == b'$' => (1, true),
+                Dialect::Sqlite if bytes[i] == b'?' => (1, true),
+                Dialect::SqlServer if src[i..].starts_with("@P") => (2, true),
+                Dialect::MySql | Dialect::Generic if bytes[i] == b'?' => (1, false),
+                _ => (0, false),
+            };
+            if prefix_len > 0 {
+                if numbered {
+                    let end = digits_at(i + prefix_len);
+                    if end > i + prefix_len {
+                        let n: usize = src[i + prefix_len..end].parse().unwrap_or(0);
+                        if let Some(p) = n.checked_sub(1).and_then(|n| self.params.get(n)) {
+                            out.push_str(&d.literal(p));
+                            i = end;
+                            continue;
+                        }
+                    }
+                } else if let Some(p) = self.params.get(next) {
+                    out.push_str(&d.literal(p));
+                    next += 1;
+                    i += 1;
+                    continue;
                 }
             }
+            let ch = src[i..].chars().next().unwrap_or_default();
+            out.push(ch);
+            i += ch.len_utf8().max(1);
         }
         out
     }
@@ -262,5 +293,21 @@ mod tests {
         let t = TableTarget { schema: None, table: "t".into() };
         let s = build_change_sql(Dialect::Postgres, &t, &RowChange::Insert { values: vals }).unwrap();
         assert!(s.preview(Dialect::Postgres).ends_with("VALUES (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)"));
+    }
+
+    #[test]
+    fn preview_never_resubstitutes_inside_literals() {
+        let t = TableTarget { schema: Some("db".into()), table: "t".into() };
+        let ch = RowChange::Update {
+            key: vec![("id".into(), Value::Int(4))],
+            original: vec![("col".into(), Value::Text("$2 ?".into()))],
+            changes: vec![("col".into(), Value::Text("what? $1".into()))],
+        };
+        for d in [Dialect::MySql, Dialect::Postgres, Dialect::Sqlite] {
+            let p = build_change_sql(d, &t, &ch).unwrap().preview(d);
+            assert!(p.contains("'what? $1'") && p.contains("'$2 ?'") && p.contains("= 4"), "{d:?}: {p}");
+        }
+        let my = build_change_sql(Dialect::MySql, &t, &ch).unwrap().preview(Dialect::MySql);
+        assert!(my.starts_with("UPDATE `db`.`t` SET `col` = 'what? $1' WHERE `id` = 4"), "{my}");
     }
 }

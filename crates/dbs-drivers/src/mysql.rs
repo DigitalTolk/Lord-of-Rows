@@ -351,11 +351,19 @@ impl DatabaseConnection for MySqlConnection {
     async fn server_info(&self) -> DbResult<ServerInfo> {
         let r = self.text_rows("SELECT VERSION(), DATABASE(), CURRENT_USER()", vec![]).await?;
         let r = r.into_iter().next().unwrap_or_default();
+        // Best effort: "" when the session is plaintext; None if the status is unavailable.
+        let tls_version = self
+            .text_rows("SHOW SESSION STATUS LIKE 'Ssl_version'", vec![])
+            .await
+            .ok()
+            .and_then(|rows| rows.into_iter().next())
+            .and_then(|row| row.get(1).cloned().flatten());
         Ok(ServerInfo {
             engine: self.engine,
             version: r.first().cloned().flatten().unwrap_or_default(),
             current_database: r.get(1).cloned().flatten(),
             current_user: r.get(2).cloned().flatten(),
+            tls_version,
         })
     }
 

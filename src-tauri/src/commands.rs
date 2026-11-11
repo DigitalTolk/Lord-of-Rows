@@ -674,14 +674,53 @@ pub async fn explain_sql(
 
 // ---------------------------------------------------------------- table data
 
+/// Every table read that accepts filters goes through this: "Raw SQL" filter
+/// expressions are spliced into the WHERE clause, so they must pass the safety
+/// validator (single boolean read expression) first. All other filters are
+/// parameterised by `dbs_core::build_filter`.
+pub(crate) fn check_filters(d: Dialect, filters: &[FilterCondition]) -> R<()> {
+    if filters.len() > 200 {
+        return Err(DbError::invalid("too many filters"));
+    }
+    for f in filters.iter().filter(|f| f.op == FilterOp::Raw) {
+        let expr = match &f.value {
+            Some(Value::Text(s)) => s.as_str(),
+            _ => return Err(DbError::invalid("raw SQL filter needs an expression")),
+        };
+        dbs_safety::validate_filter_expression(expr, d).map_err(|m| DbError::new(ErrorKind::PolicyBlocked, m))?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn fetch_table(st: State<'_, AppState>, session_id: String, target: TableTarget, page: PageRequest) -> R<ResultSet> {
-    st.session(&session_id)?.conn.fetch_table(&target, &page).await
+    let s = st.session(&session_id)?;
+    check_filters(s.conn.dialect(), &page.filters)?;
+    s.conn.fetch_table(&target, &page).await
 }
 
 #[tauri::command]
 pub async fn count_rows(st: State<'_, AppState>, session_id: String, target: TableTarget, filters: Vec<FilterCondition>) -> R<u64> {
-    st.session(&session_id)?.conn.count_rows(&target, &filters).await
+    let s = st.session(&session_id)?;
+    check_filters(s.conn.dialect(), &filters)?;
+    s.conn.count_rows(&target, &filters).await
+}
+
+/// The SELECT the table view runs for this page/filter set, with literals
+/// inlined, for display ("SQL" button in the filter bar). Never executed here.
+#[tauri::command]
+pub fn table_select_sql(st: State<'_, AppState>, session_id: String, target: TableTarget, page: PageRequest) -> R<String> {
+    let s = st.session(&session_id)?;
+    let d = s.conn.dialect();
+    check_filters(d, &page.filters)?;
+    page_query_preview(d, &target, &page)
+}
+
+/// Validate a raw SQL filter expression without running anything (live feedback in the filter bar).
+#[tauri::command]
+pub fn validate_filter_sql(st: State<'_, AppState>, session_id: String, expr: String) -> R<()> {
+    let s = st.session(&session_id)?;
+    dbs_safety::validate_filter_expression(&expr, s.conn.dialect()).map_err(|m| DbError::new(ErrorKind::PolicyBlocked, m))
 }
 
 #[derive(Serialize)]
@@ -831,6 +870,7 @@ pub async fn export_table(
     gzip: bool,
 ) -> R<ExportReport> {
     let s = st.session(&session_id)?;
+    check_filters(s.conn.dialect(), &filters)?;
     let g = st.grant(&grant, GrantMode::Write)?;
     let mut opts = options;
     if opts.table.is_none() {
@@ -1355,6 +1395,19 @@ mod tests {
         let p = parse_connection_url("mysql://root@localhost/x".into()).unwrap();
         assert_eq!(p.config.tls.mode, TlsMode::Disable);
         assert!(parse_connection_url("javascript://alert(1)".into()).is_err());
+    }
+
+    #[test]
+    fn raw_filters_are_validated_before_reaching_a_driver() {
+        let raw = |e: &str| FilterCondition { op: FilterOp::Raw, value: Some(Value::Text(e.into())), ..Default::default() };
+        assert!(check_filters(Dialect::MySql, &[raw("age > 3")]).is_ok());
+        let e = check_filters(Dialect::MySql, &[raw("1=1; DROP TABLE t")]).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::PolicyBlocked);
+        assert!(check_filters(Dialect::Postgres, &[raw("id IN (DELETE FROM t RETURNING id)")]).is_err());
+        assert!(check_filters(Dialect::Postgres, &[FilterCondition { op: FilterOp::Raw, value: None, ..Default::default() }]).is_err());
+        // Non-raw filters are parameterised, so any value is fine here.
+        let eq = FilterCondition { column: "a".into(), op: FilterOp::Eq, value: Some(Value::Text("1; DROP".into())), ..Default::default() };
+        assert!(check_filters(Dialect::Postgres, &[eq]).is_ok());
     }
 
     #[test]

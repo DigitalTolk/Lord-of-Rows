@@ -85,12 +85,14 @@ async fn crud_scenario(c: &dyn DatabaseConnection, schema: Option<&str>, table: 
     assert_eq!(rs.rows[2][name_idx], Value::Null);
 
     // Server-side filter + count.
-    let f = vec![FilterCondition { column: "name".into(), op: FilterOp::StartsWith, value: Some(Value::Text("ali".into())), values: vec![] }];
+    let f =
+        vec![FilterCondition { column: "name".into(), op: FilterOp::StartsWith, value: Some(Value::Text("ali".into())), values: vec![], ..Default::default() }];
     assert_eq!(c.count_rows(&t, &f).await.unwrap(), 1);
-    let f2 = vec![FilterCondition { column: "name".into(), op: FilterOp::IsNull, value: None, values: vec![] }];
+    let f2 = vec![FilterCondition { column: "name".into(), op: FilterOp::IsNull, value: None, values: vec![], ..Default::default() }];
     assert_eq!(c.count_rows(&t, &f2).await.unwrap(), 1);
     // LIKE wildcards in user input are literal.
-    let f3 = vec![FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("%".into())), values: vec![] }];
+    let f3 =
+        vec![FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("%".into())), values: vec![], ..Default::default() }];
     assert_eq!(c.count_rows(&t, &f3).await.unwrap(), 0);
 
     // Update with optimistic concurrency: succeeds when original matches.

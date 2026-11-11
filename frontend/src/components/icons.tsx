@@ -40,6 +40,12 @@ const P: Record<string, string> = {
   moon: 'M20 14.2A8 8 0 1 1 9.8 4a6.4 6.4 0 0 0 10.2 10.2z',
   monitor: 'M3 5h18v11H3zM8.5 20h7M12 16v4',
   contrast: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18',
+  eye: 'M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
+  xCircle: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9 9l6 6M15 9l-6 6',
+  panelRight: 'M4 5h16v14H4zM15 5v14M17 9h1M17 12h1',
+  warning: 'M12 4L2.8 19.5h18.4zM12 10v4.5M12 17h.01',
+  minus: 'M5 12h14',
+  chevronLeft: 'M15 6l-6 6 6 6',
 };
 
 export type IconName = keyof typeof P;

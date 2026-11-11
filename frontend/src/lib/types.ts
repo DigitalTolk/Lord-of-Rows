@@ -144,7 +144,8 @@ export interface Capabilities {
   sessions_monitor: boolean; kill_session: boolean; native_backup: boolean; object_kinds: ObjectKind[];
 }
 
-export interface ServerInfo { engine: Engine; version: string; current_database?: string | null; current_user?: string | null }
+/** `tls_version`: negotiated protocol ("TLSv1.3"), "" = plaintext, null/undefined = unknown. */
+export interface ServerInfo { engine: Engine; version: string; current_database?: string | null; current_user?: string | null; tls_version?: string | null }
 
 export type Risk = 'read' | 'session' | 'write' | 'schema' | 'unknown' | 'admin' | 'destructive';
 export interface Classified { index: number; verb: string; risk: Risk; flags: string[]; start: number; end: number; excerpt: string }
@@ -166,8 +167,11 @@ export interface SessionOpened {
 }
 
 export type SortDir = 'asc' | 'desc';
-export type FilterOp = 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge' | 'contains' | 'starts_with' | 'ends_with' | 'is_null' | 'is_not_null' | 'in';
-export interface FilterCondition { column: string; op: FilterOp; value?: Value | null; values: Value[] }
+export type FilterOp =
+  | 'eq' | 'ne' | 'lt' | 'le' | 'gt' | 'ge' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'like' | 'not_like'
+  | 'is_null' | 'is_not_null' | 'in' | 'not_in' | 'between' | 'raw';
+/** `any_columns` non-empty = "Any column" (OR over text casts). `op: 'raw'` = validated SQL expression in `value` (text). */
+export interface FilterCondition { column: string; op: FilterOp; value?: Value | null; values: Value[]; any_columns?: string[] }
 export interface PageRequest { offset: number; limit: number; order_by: [string, SortDir][]; filters: FilterCondition[] }
 
 export type RowChange =

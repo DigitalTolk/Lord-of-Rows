@@ -47,6 +47,14 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Multiple result sets, messages, notices, SQLSTATE errors | TESTED | E2E |
 | Virtualized grid, PK-ordered paging, sort, filters | TESTED (paging); sort/filter IMPLEMENTED_UNVERIFIED (backend UT) | E2E, UT `page_query_is_parameterised` |
 | Staged edits, SQL review, commit, optimistic-concurrency conflicts | TESTED | E2E edit/commit/conflict, IT `crud_scenario` |
+| Table filter bar (⌘F): multi-row AND, =/<>/</>/<=/>=/IN/NOT IN/IS [NOT] NULL/BETWEEN/LIKE/NOT LIKE/contains/not contains/begins/ends, per-tab persistence, Apply / Apply All, Export, generated SQL | backend + model UT; UI IMPLEMENTED_UNVERIFIED (E2E written, not yet run) | UT `new_operators_per_dialect`, vitest `filters.test.ts`, E2E `50-table-workspace` (pending run) |
+| "Any column" filter (OR over text casts, parameterised) | UT; E2E pending run | UT `any_column_ors_text_casts_with_parameters` |
+| "Raw SQL" filter: backend validator (single boolean read expression; no `;`, comments, placeholders, writes, side-effect functions); enforced in fetch/count/export/SQL preview | UT; E2E pending run | UT `dbs-safety::filter_expr` (6), `raw_filters_are_validated_before_reaching_a_driver`. Limitation: cannot prove user-defined functions are side-effect free |
+| Row detail panel (search, type labels, NULL/empty/DEFAULT menu, JSON highlight, multi-row "multiple values"); edits stage like grid cells | vitest; E2E pending run | vitest `rowDetail.test.ts`, `TableWorkspace.test.tsx` |
+| Pending changes in top toolbar: Discard · eye preview (exact SQL, Open in Window) · Commit (⌘S, still goes through safety confirmation) with count badge | vitest; E2E pending run | vitest `TableWorkspace.test.tsx`, E2E `10-workflows` edit/conflict updated to the new flow |
+| Table bottom bar: Data/Structure/Index, add row, "n of ~N rows selected" (estimate then lazy exact count), filter/detail toggles, paging + page size | IMPLEMENTED_UNVERIFIED (helpers UT) | vitest `selectionStatus`, E2E pending run |
+| Status pill (env · server version · TLS version · connection · db · schema · table, warning for production / plaintext remote) | helpers UT; TLS version from `Ssl_version` (MySQL) / `pg_stat_ssl` (PG) IMPLEMENTED_UNVERIFIED | vitest |
+| Sidebar Items / Queries (saved snippets) / History; left rail with opened databases/schemas (icon + name, click to switch) | vitest (rail); E2E pending run | vitest `ConnectionRail.test.tsx` |
 | Structure view + designer (DDL preview, reversibility) | TESTED (view), designer UT | E2E Structure/DDL, UT `dbs-schema` |
 | Schema diff & migrations | IMPLEMENTED_UNVERIFIED in UI; engine TESTED | UT `dbs-schema` (7) |
 | ER diagram | TESTED | E2E |

@@ -91,7 +91,8 @@ describe('browsing and querying', () => {
       await clickText(b, 'customers', { exact: true, selector: '[role=treeitem]' });
       await waitText(b, '500 rows');
       await waitText(b, 'user1@example.com');
-      assert.match(await resultsText(b), /1–500 of 500/);
+      // The exact count arrives lazily (an estimate marked ~ may show first).
+      await until(async () => /1–500 of 500/.test(await resultsText(b)), 'exact row count');
     }));
 
   test('Structure view shows columns, indexes and DDL', () =>
@@ -186,7 +187,8 @@ describe('editing data', () => {
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
       });
       await waitText(b, '1 pending change');
-      await clickText(b, 'Commit…');
+      // Pending changes live in the top toolbar: the eye button previews the exact SQL.
+      await clickSel(b, 'button[aria-label="Preview pending changes"]');
       await waitText(b, 'UPDATE "shop"."customers" SET "name" = \'E2E Edited\' WHERE "id" = 1 AND "name" = ');
       await clickText(b, 'Commit', { exact: true });
       await waitText(b, 'Committed 1 row');
@@ -224,7 +226,8 @@ describe('editing data', () => {
       await runSql(b, "update customers set name = 'Theirs' where id = 2");
       await sleep(500);
       await clickText(b, 'customers', { exact: true, selector: '[role=tab]' });
-      await clickText(b, 'Commit…');
+      // Pending changes live in the top toolbar: the eye button previews the exact SQL.
+      await clickSel(b, 'button[aria-label="Preview pending changes"]');
       await clickText(b, 'Commit', { exact: true });
       await waitText(b, 'changed or deleted by someone else');
       await clickText(b, 'Query', { selector: '[role=tab]' });

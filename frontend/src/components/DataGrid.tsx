@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { ColumnMeta, SortDir, Value } from '../lib/types';
 import { displayValue, editableText, isNull, isNumeric, parseInput } from '../lib/value';
 import type { StagedState } from '../lib/changes';
+import type { QuickFilter } from '../lib/filters';
 import { CellEditor } from './CellEditor';
 
 export interface GridProps {
@@ -17,6 +18,11 @@ export interface GridProps {
   onEditInserted?: (i: number, col: string, v: Value) => void;
   onSelectRows?: (rows: number[]) => void;
   onCopy?: (rows: number[], cols: string[]) => void;
+  /**
+   * Quick Filter hook for the context menu: adds a filter row to the table tab's
+   * filter bar and applies it (see lib/tableWorkspace.ts `addFilter`).
+   */
+  onQuickFilter?: (f: QuickFilter) => void;
   ariaLabel?: string;
 }
 

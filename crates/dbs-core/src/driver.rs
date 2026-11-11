@@ -174,34 +174,57 @@ pub enum SortDir {
     Desc,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOp {
+    #[default]
     Eq,
     Ne,
     Lt,
     Le,
     Gt,
     Ge,
+    /// `LIKE '%v%'` with the user's wildcards escaped.
     Contains,
+    NotContains,
     StartsWith,
     EndsWith,
+    /// `LIKE v` with the user's own pattern (wildcards are live).
+    Like,
+    NotLike,
     IsNull,
     IsNotNull,
     In,
+    NotIn,
+    /// `BETWEEN values[0] AND values[1]`.
+    Between,
+    /// A user-written boolean SQL expression in `value` (text). It is spliced into
+    /// the WHERE clause verbatim, so every entry point MUST validate it first with
+    /// `dbs_safety::validate_filter_expression` (the Tauri commands do).
+    Raw,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct FilterCondition {
+    #[serde(default)]
     pub column: String,
     pub op: FilterOp,
     #[serde(default)]
     pub value: Option<Value>,
     #[serde(default)]
     pub values: Vec<Value>,
+    /// "Any column": when non-empty, `column` is ignored and the condition matches
+    /// a row if it holds for at least one of these columns (each cast to text,
+    /// combined with OR).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub any_columns: Vec<String>,
 }
 
 pub const MAX_PAGE_SIZE: u64 = 50_000;
+/// Upper bound on a raw filter expression (bytes).
+pub const MAX_RAW_FILTER_LEN: usize = 4000;
+/// Upper bound on the number of columns an "Any column" filter may search.
+pub const MAX_ANY_COLUMNS: usize = 1000;
 
 /// Build `SELECT * FROM t WHERE ... ORDER BY ... LIMIT/OFFSET` with parameters.
 pub fn build_page_query(d: Dialect, target: &TableTarget, page: &PageRequest) -> DbResult<GeneratedStatement> {
@@ -229,63 +252,149 @@ pub fn build_page_query(d: Dialect, target: &TableTarget, page: &PageRequest) ->
     Ok(GeneratedStatement { sql, params })
 }
 
+/// Human-readable form of [`build_page_query`] for display (filter bar "SQL"
+/// button): parameters are inlined as literals and raw expressions verbatim.
+/// Never executed.
+pub fn page_query_preview(d: Dialect, target: &TableTarget, page: &PageRequest) -> DbResult<String> {
+    let mut p = page.clone();
+    let mut raws = Vec::new();
+    for (i, f) in p.filters.iter_mut().enumerate() {
+        if f.op == FilterOp::Raw {
+            let sentinel = format!("\u{1}RAW{i}\u{1}");
+            raws.push((sentinel.clone(), raw_expr(f)?.to_string()));
+            f.value = Some(Value::Text(sentinel));
+        }
+    }
+    let mut out = build_page_query(d, target, &p)?.preview(d);
+    for (sentinel, expr) in raws {
+        out = out.replace(&sentinel, &expr);
+    }
+    Ok(out)
+}
+
+/// Cast an (already quoted) column to text for "Any column" searches.
+fn text_cast(d: Dialect, col: &str) -> String {
+    match d {
+        Dialect::MySql => format!("CAST({col} AS CHAR)"),
+        Dialect::SqlServer => format!("CAST({col} AS NVARCHAR(MAX))"),
+        _ => format!("CAST({col} AS TEXT)"),
+    }
+}
+
+fn raw_expr(f: &FilterCondition) -> DbResult<&str> {
+    let expr = match &f.value {
+        Some(Value::Text(s)) => s.trim(),
+        _ => return Err(DbError::invalid("raw SQL filter needs an expression")),
+    };
+    if expr.is_empty() || expr.len() > MAX_RAW_FILTER_LEN || expr.contains('\0') {
+        return Err(DbError::invalid("raw SQL filter must be 1-4000 characters"));
+    }
+    if !f.any_columns.is_empty() {
+        return Err(DbError::invalid("raw SQL filter cannot target columns"));
+    }
+    Ok(expr)
+}
+
 /// Returns (" WHERE ..." or "", params). `start` is the number of params already used.
+/// Conditions are combined with AND. Every value is a bound parameter; only
+/// identifiers (quoted) and validated raw expressions are spliced into the text.
 pub fn build_filter(d: Dialect, filters: &[FilterCondition], start: usize) -> DbResult<(String, Vec<Value>)> {
     if filters.is_empty() {
         return Ok((String::new(), vec![]));
     }
     let mut params: Vec<Value> = Vec::new();
     let mut parts = Vec::new();
-    let like_escape = |s: &str| s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
     for f in filters {
-        let col = d.quote_ident(&f.column)?;
-        let need = || f.value.clone().ok_or_else(|| DbError::invalid("filter value required"));
-        let push = |v: Value, params: &mut Vec<Value>| {
-            params.push(v);
-            d.placeholder(start + params.len())
-        };
-        let esc = if d == Dialect::MySql { "" } else { " ESCAPE '\\'" };
-        let part = match f.op {
-            FilterOp::IsNull => format!("{col} IS NULL"),
-            FilterOp::IsNotNull => format!("{col} IS NOT NULL"),
-            FilterOp::Contains | FilterOp::StartsWith | FilterOp::EndsWith => {
-                let raw = need()?.to_plain().unwrap_or_default();
-                let e = like_escape(&raw);
-                let pat = match f.op {
-                    FilterOp::Contains => format!("%{e}%"),
-                    FilterOp::StartsWith => format!("{e}%"),
-                    _ => format!("%{e}"),
-                };
-                let p = push(Value::Text(pat), &mut params);
-                let lhs = match d {
-                    Dialect::Postgres => format!("CAST({col} AS TEXT)"),
-                    _ => col.clone(),
-                };
-                format!("{lhs} LIKE {p}{esc}")
+        let part = if f.op == FilterOp::Raw {
+            format!("({})", raw_expr(f)?)
+        } else if !f.any_columns.is_empty() {
+            if f.any_columns.len() > MAX_ANY_COLUMNS {
+                return Err(DbError::invalid("too many columns for an \"any column\" filter"));
             }
-            FilterOp::In => {
-                if f.values.is_empty() || f.values.len() > 1000 {
-                    return Err(DbError::invalid("IN filter needs 1-1000 values"));
-                }
-                let ps: Vec<_> = f.values.iter().map(|v| push(v.clone(), &mut params)).collect();
-                format!("{col} IN ({})", ps.join(", "))
-            }
-            op => {
-                let p = push(need()?, &mut params);
-                let sym = match op {
-                    FilterOp::Eq => "=",
-                    FilterOp::Ne => "<>",
-                    FilterOp::Lt => "<",
-                    FilterOp::Le => "<=",
-                    FilterOp::Gt => ">",
-                    _ => ">=",
-                };
-                format!("{col} {sym} {p}")
-            }
+            let ors = f
+                .any_columns
+                .iter()
+                .map(|c| {
+                    let col = text_cast(d, &d.quote_ident(c)?);
+                    predicate(d, &col, f, true, start, &mut params)
+                })
+                .collect::<DbResult<Vec<_>>>()?;
+            format!("({})", ors.join(" OR "))
+        } else {
+            let col = d.quote_ident(&f.column)?;
+            predicate(d, &col, f, false, start, &mut params)?
         };
         parts.push(part);
     }
     Ok((format!(" WHERE {}", parts.join(" AND ")), params))
+}
+
+/// One condition on one (quoted, possibly text-cast) column expression.
+fn predicate(d: Dialect, col: &str, f: &FilterCondition, as_text: bool, start: usize, params: &mut Vec<Value>) -> DbResult<String> {
+    let like_escape = |s: &str| s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+    let coerce = |v: Value| if as_text { Value::Text(v.to_plain().unwrap_or_default()) } else { v };
+    let need = || f.value.clone().map(coerce).ok_or_else(|| DbError::invalid("filter value required"));
+    let mut push = |v: Value| {
+        params.push(v);
+        d.placeholder(start + params.len())
+    };
+    let esc = if d == Dialect::MySql { "" } else { " ESCAPE '\\'" };
+    // LIKE needs a text operand; non-text columns are cast on Postgres (others coerce).
+    let like_lhs = match d {
+        Dialect::Postgres if !as_text => format!("CAST({col} AS TEXT)"),
+        _ => col.to_string(),
+    };
+    Ok(match f.op {
+        FilterOp::IsNull => format!("{col} IS NULL"),
+        FilterOp::IsNotNull => format!("{col} IS NOT NULL"),
+        FilterOp::Contains | FilterOp::NotContains | FilterOp::StartsWith | FilterOp::EndsWith => {
+            let raw = f.value.as_ref().ok_or_else(|| DbError::invalid("filter value required"))?.to_plain().unwrap_or_default();
+            let e = like_escape(&raw);
+            let pat = match f.op {
+                FilterOp::Contains | FilterOp::NotContains => format!("%{e}%"),
+                FilterOp::StartsWith => format!("{e}%"),
+                _ => format!("%{e}"),
+            };
+            let p = push(Value::Text(pat));
+            let not = if f.op == FilterOp::NotContains { "NOT " } else { "" };
+            format!("{like_lhs} {not}LIKE {p}{esc}")
+        }
+        FilterOp::Like | FilterOp::NotLike => {
+            let pat = f.value.as_ref().ok_or_else(|| DbError::invalid("filter value required"))?.to_plain().unwrap_or_default();
+            let p = push(Value::Text(pat));
+            let not = if f.op == FilterOp::NotLike { "NOT " } else { "" };
+            format!("{like_lhs} {not}LIKE {p}")
+        }
+        FilterOp::In | FilterOp::NotIn => {
+            if f.values.is_empty() || f.values.len() > 1000 {
+                return Err(DbError::invalid("IN filter needs 1-1000 values"));
+            }
+            let ps: Vec<_> = f.values.iter().map(|v| push(coerce(v.clone()))).collect();
+            let not = if f.op == FilterOp::NotIn { "NOT " } else { "" };
+            format!("{col} {not}IN ({})", ps.join(", "))
+        }
+        FilterOp::Between => {
+            let [lo, hi] = f.values.as_slice() else {
+                return Err(DbError::invalid("BETWEEN needs exactly two values"));
+            };
+            let a = push(coerce(lo.clone()));
+            let b = push(coerce(hi.clone()));
+            format!("{col} BETWEEN {a} AND {b}")
+        }
+        FilterOp::Raw => return Err(DbError::invalid("raw SQL filter cannot target columns")),
+        op => {
+            let p = push(need()?);
+            let sym = match op {
+                FilterOp::Eq => "=",
+                FilterOp::Ne => "<>",
+                FilterOp::Lt => "<",
+                FilterOp::Le => "<=",
+                FilterOp::Gt => ">",
+                _ => ">=",
+            };
+            format!("{col} {sym} {p}")
+        }
+    })
 }
 
 #[cfg(test)]
@@ -300,8 +409,14 @@ mod tests {
             limit: 50,
             order_by: vec![("id".into(), SortDir::Desc)],
             filters: vec![
-                FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("50%' OR 1=1".into())), values: vec![] },
-                FilterCondition { column: "x".into(), op: FilterOp::IsNull, value: None, values: vec![] },
+                FilterCondition {
+                    column: "name".into(),
+                    op: FilterOp::Contains,
+                    value: Some(Value::Text("50%' OR 1=1".into())),
+                    values: vec![],
+                    ..Default::default()
+                },
+                FilterCondition { column: "x".into(), op: FilterOp::IsNull, value: None, values: vec![], ..Default::default() },
             ],
         };
         let s = build_page_query(Dialect::Postgres, &t, &page).unwrap();
@@ -317,6 +432,95 @@ mod tests {
         let t = TableTarget { schema: None, table: "t".into() };
         let s = build_page_query(Dialect::MySql, &t, &PageRequest { limit: 10_000_000, ..Default::default() }).unwrap();
         assert!(s.sql.ends_with("LIMIT 50000 OFFSET 0"));
+    }
+
+    fn cond(column: &str, op: FilterOp, value: Option<Value>, values: Vec<Value>) -> FilterCondition {
+        FilterCondition { column: column.into(), op, value, values, any_columns: vec![] }
+    }
+
+    #[test]
+    fn new_operators_per_dialect() {
+        let f = vec![
+            cond("a", FilterOp::NotIn, None, vec![Value::Int(1), Value::Int(2)]),
+            cond("b", FilterOp::Between, None, vec![Value::Int(3), Value::Int(9)]),
+            cond("c", FilterOp::NotContains, Some(Value::Text("x_y".into())), vec![]),
+            cond("d", FilterOp::Like, Some(Value::Text("ab%".into())), vec![]),
+            cond("e", FilterOp::NotLike, Some(Value::Text("%z".into())), vec![]),
+        ];
+        let (pg, p) = build_filter(Dialect::Postgres, &f, 0).unwrap();
+        assert_eq!(
+            pg,
+            " WHERE \"a\" NOT IN ($1, $2) AND \"b\" BETWEEN $3 AND $4 AND CAST(\"c\" AS TEXT) NOT LIKE $5 ESCAPE '\\' AND CAST(\"d\" AS TEXT) LIKE $6 AND CAST(\"e\" AS TEXT) NOT LIKE $7"
+        );
+        assert_eq!(p[4], Value::Text("%x\\_y%".into()));
+        assert_eq!(p[5], Value::Text("ab%".into()), "LIKE keeps the user's wildcards");
+        let (my, p) = build_filter(Dialect::MySql, &f, 0).unwrap();
+        assert_eq!(my, " WHERE `a` NOT IN (?, ?) AND `b` BETWEEN ? AND ? AND `c` NOT LIKE ? AND `d` LIKE ? AND `e` NOT LIKE ?");
+        assert_eq!(p.len(), 7);
+        let (lite, _) = build_filter(Dialect::Sqlite, &f, 2).unwrap();
+        assert!(lite.starts_with(" WHERE \"a\" NOT IN (?3, ?4) AND \"b\" BETWEEN ?5 AND ?6"), "{lite}");
+        assert!(build_filter(Dialect::Postgres, &[cond("b", FilterOp::Between, None, vec![Value::Int(1)])], 0).is_err());
+        assert!(build_filter(Dialect::Postgres, &[cond("b", FilterOp::NotIn, None, vec![])], 0).is_err());
+    }
+
+    #[test]
+    fn any_column_ors_text_casts_with_parameters() {
+        let f = vec![FilterCondition {
+            op: FilterOp::Contains,
+            value: Some(Value::Text("o'k".into())),
+            any_columns: vec!["id".into(), "na`me".into()],
+            ..Default::default()
+        }];
+        let (my, p) = build_filter(Dialect::MySql, &f, 0).unwrap();
+        assert_eq!(my, " WHERE (CAST(`id` AS CHAR) LIKE ? OR CAST(`na``me` AS CHAR) LIKE ?)");
+        assert_eq!(p, vec![Value::Text("%o'k%".into()), Value::Text("%o'k%".into())]);
+        let (pg, _) = build_filter(Dialect::Postgres, &f, 0).unwrap();
+        assert_eq!(pg, " WHERE (CAST(\"id\" AS TEXT) LIKE $1 ESCAPE '\\' OR CAST(\"na`me\" AS TEXT) LIKE $2 ESCAPE '\\')");
+        let (lite, _) = build_filter(Dialect::Sqlite, &f, 0).unwrap();
+        assert_eq!(lite, " WHERE (CAST(\"id\" AS TEXT) LIKE ?1 ESCAPE '\\' OR CAST(\"na`me\" AS TEXT) LIKE ?2 ESCAPE '\\')");
+        // Equality compares the text form; numbers are sent as text parameters.
+        let eq = vec![FilterCondition { op: FilterOp::Eq, value: Some(Value::Int(4)), any_columns: vec!["a".into()], ..Default::default() }];
+        let (sql, p) = build_filter(Dialect::Postgres, &eq, 0).unwrap();
+        assert_eq!(sql, " WHERE (CAST(\"a\" AS TEXT) = $1)");
+        assert_eq!(p, vec![Value::Text("4".into())]);
+        // Combined with a normal filter using AND.
+        let both = vec![eq[0].clone(), cond("b", FilterOp::IsNull, None, vec![])];
+        assert_eq!(build_filter(Dialect::MySql, &both, 0).unwrap().0, " WHERE (CAST(`a` AS CHAR) = ?) AND `b` IS NULL");
+    }
+
+    #[test]
+    fn raw_filter_is_wrapped_and_previewed() {
+        let t = TableTarget { schema: Some("app".into()), table: "users".into() };
+        let page = PageRequest {
+            offset: 0,
+            limit: 300,
+            order_by: vec![("id".into(), SortDir::Asc)],
+            filters: vec![
+                cond("", FilterOp::Raw, Some(Value::Text("  age > 3 OR name = 'a?b'  ".into())), vec![]),
+                cond("name", FilterOp::Eq, Some(Value::Text("x?".into())), vec![]),
+                cond("id", FilterOp::Gt, Some(Value::Int(4)), vec![]),
+            ],
+        };
+        let g = build_page_query(Dialect::MySql, &t, &page).unwrap();
+        assert_eq!(g.sql, "SELECT * FROM `app`.`users` WHERE (age > 3 OR name = 'a?b') AND `name` = ? AND `id` > ? ORDER BY `id` ASC LIMIT 300 OFFSET 0");
+        assert_eq!(g.params.len(), 2);
+        let preview = page_query_preview(Dialect::MySql, &t, &page).unwrap();
+        assert_eq!(preview, "SELECT * FROM `app`.`users` WHERE (age > 3 OR name = 'a?b') AND `name` = 'x?' AND `id` > 4 ORDER BY `id` ASC LIMIT 300 OFFSET 0");
+        let pg = page_query_preview(Dialect::Postgres, &t, &page).unwrap();
+        assert!(pg.contains("WHERE (age > 3 OR name = 'a?b') AND \"name\" = 'x?' AND \"id\" > 4"), "{pg}");
+        assert!(build_filter(Dialect::MySql, &[cond("", FilterOp::Raw, Some(Value::Text("   ".into())), vec![])], 0).is_err());
+        assert!(build_filter(Dialect::MySql, &[cond("", FilterOp::Raw, None, vec![])], 0).is_err());
+        let long = "a".repeat(MAX_RAW_FILTER_LEN + 1);
+        assert!(build_filter(Dialect::MySql, &[cond("", FilterOp::Raw, Some(Value::Text(long)), vec![])], 0).is_err());
+    }
+
+    #[test]
+    fn filter_condition_deserializes_without_new_fields() {
+        let f: FilterCondition = serde_json::from_str(r#"{"column":"a","op":"not_in","values":[{"t":"int","v":1}]}"#).unwrap();
+        assert_eq!(f.op, FilterOp::NotIn);
+        assert!(f.any_columns.is_empty());
+        let raw: FilterCondition = serde_json::from_str(r#"{"op":"raw","value":{"t":"text","v":"1=1"}}"#).unwrap();
+        assert_eq!(raw.op, FilterOp::Raw);
     }
 
     #[test]
