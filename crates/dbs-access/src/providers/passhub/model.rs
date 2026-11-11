@@ -144,6 +144,14 @@ impl Service {
     }
 }
 
+/// `GET /approvals/decided` response.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+pub struct DecidedPage {
+    pub items: Vec<AccessRequest>,
+    pub next: Option<String>,
+}
+
 #[derive(Deserialize, Default)]
 #[serde(default)]
 pub(crate) struct ServiceList {

@@ -43,7 +43,7 @@ impl AccessProvider for PasshubProvider {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities { approvals: true, create_database: true, cancel: true, targets: true }
+        Capabilities { approvals: true, create_database: true, cancel: true, targets: true, decided_history: true }
     }
 
     async fn sign_in(&self, ctx: SignInContext<'_>) -> AccessResult<SignedIn> {
@@ -135,6 +135,12 @@ impl AccessProvider for PasshubProvider {
         Ok(mapping::request(&self.client.reject(request_id, reason).await?, now_unix()))
     }
 
+    async fn list_decided(&self, cursor: Option<&str>, limit: u32) -> AccessResult<crate::Page<AccessRequest>> {
+        let now = now_unix();
+        let p = self.client.decided(cursor, limit).await?;
+        Ok(crate::Page { items: p.items.iter().map(|r| mapping::request(r, now)).collect(), next: p.next.filter(|n| !n.is_empty()) })
+    }
+
     async fn connection_plan(&self, request_id: &str) -> AccessResult<ConnectionPlan> {
         let now = now_unix();
         let wire = self.client.request(request_id).await?;
@@ -208,6 +214,11 @@ mod tests {
                 ("GET", "/api/v1/requests/r2") => Reply::json(200, r#"{"requestId":"r2","status":"pending"}"#),
                 ("GET", "/api/v1/credentials?requestId=r1") => Reply::json(200, r#"[{"credentialId":"c1","username":"dev_r1","credentialType":"db_password","status":"active","viewCount":0,"maxViews":5}]"#),
                 ("POST", "/api/v1/credentials/c1/reveal") => Reply::json(200, r#"{"password":"pw-1","revealsRemaining":4}"#),
+                ("GET", "/api/v1/approvals/decided?limit=50") => Reply::json(
+                    200,
+                    r#"{"items":[{"requestId":"d1","status":"rejected","rejectReason":"not now","reviewedAt":"2027-01-01T10:00:00Z","requesterName":"Robin"}],"next":"c2"}"#,
+                ),
+                ("GET", "/api/v1/approvals/decided?limit=50&cursor=c2") => Reply::json(200, r#"{"items":[{"requestId":"d2","status":"expired"}],"next":null}"#),
                 ("GET", "/api/v1/services/s1/targets") => Reply::json(503, r#"{"error":"targets not configured"}"#),
                 ("GET", "/api/v1/services/s2/targets") => Reply::json(200, r#"{"ok":false,"error":"connection refused"}"#),
                 ("GET", "/api/v1/services/s3/targets") => Reply::json(200, r#"{"ok":true,"targets":["app","audit"]}"#),
@@ -290,5 +301,23 @@ mod tests {
         assert!(t.targets.is_empty() && t.error.as_deref().unwrap().contains("targets not configured"), "{t:?}");
         assert_eq!(p.resource_targets("s2").await.unwrap().error.as_deref(), Some("connection refused"));
         assert_eq!(p.resource_targets("s3").await.unwrap().targets, vec!["app", "audit"]);
+    }
+
+    #[tokio::test]
+    async fn decided_history_pages_and_old_servers() {
+        let srv = mock_passhub().await;
+        let p = PasshubProvider::new(&srv.url(), Some("phd_x".into())).unwrap();
+        let page = p.list_decided(None, 50).await.unwrap();
+        assert_eq!(page.items[0].status, RequestStatus::Rejected);
+        assert_eq!(page.items[0].status_detail.as_deref(), Some("not now"));
+        assert_eq!(page.items[0].decided_at.as_deref(), Some("2027-01-01T10:00:00Z"));
+        assert_eq!(page.next.as_deref(), Some("c2"));
+        let last = p.list_decided(Some("c2"), 50).await.unwrap();
+        assert_eq!((last.items[0].status, last.next), (RequestStatus::Expired, None));
+        // An older passhub (no endpoint): 404 -> Unsupported, so the UI hides the tab.
+        let old = MockServer::start(|_| Reply::json(404, r#"{"error":"not found"}"#)).await;
+        let p = PasshubProvider::new(&old.url(), Some("phd_x".into())).unwrap();
+        assert!(matches!(p.list_decided(None, 50).await, Err(AccessError::Unsupported(_))));
+        assert!(p.list_decided(Some("bad\ncursor"), 50).await.is_err());
     }
 }

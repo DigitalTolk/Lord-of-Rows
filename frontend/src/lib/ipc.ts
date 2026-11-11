@@ -180,6 +180,8 @@ export const api = {
   accessGetRequest: (providerId: string, requestId: string) => call<T.AccessRequestView>('access_get_request', { providerId, requestId }),
   accessCancelRequest: (providerId: string, requestId: string) => call<T.AccessRequest>('access_cancel_request', { providerId, requestId }),
   accessListApprovals: (providerId: string) => call<T.AccessRequest[]>('access_list_approvals', { providerId }),
+  /** Requests I decided, newest first; rejects with code access_unsupported when the provider can't list them. */
+  accessListDecided: (providerId: string, cursor: string | null, limit = 50) => call<T.AccessPage<T.AccessRequest>>('access_list_decided', { providerId, cursor, limit }),
   accessApprove: (providerId: string, requestId: string) => call<T.AccessRequest>('access_approve', { providerId, requestId }),
   accessReject: (providerId: string, requestId: string, reason: string) => call<T.AccessRequest>('access_reject', { providerId, requestId, reason }),
   accessConnectCheck: (providerId: string, requestId: string) => call<T.AccessConnectCheck>('access_connect_check', { providerId, requestId }),

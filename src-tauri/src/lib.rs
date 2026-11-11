@@ -123,6 +123,7 @@ pub fn run() {
             access::access_get_request,
             access::access_cancel_request,
             access::access_list_approvals,
+            access::access_list_decided,
             access::access_approve,
             access::access_reject,
             access::access_connect_check,

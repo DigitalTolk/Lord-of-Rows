@@ -343,7 +343,9 @@ export type KvEdit =
 // ---- access providers (dbs-access)
 
 export interface AccessProviderKind { kind: string; label: string; default_name: string }
-export interface AccessCapabilities { approvals: boolean; create_database: boolean; cancel: boolean; targets: boolean }
+export interface AccessCapabilities { approvals: boolean; create_database: boolean; cancel: boolean; targets: boolean; decided_history: boolean }
+/** One page of a cursor-paged list (`next` = cursor of the next page). */
+export interface AccessPage<T> { items: T[]; next?: string | null }
 export interface AccessProviderInfo { id: string; kind: string; name: string; base_url: string; capabilities: AccessCapabilities; has_session: boolean }
 export interface AccessUser { id: string; email: string; name: string; role: string; can_approve: boolean; /** e.g. 'no_approver' */ request_blocked?: string | null }
 export interface AccessStatus { signed_in: boolean; user?: AccessUser | null; signing_in: boolean; error?: DbError | null }
@@ -373,6 +375,8 @@ export interface AccessRequest {
   /** Unix seconds. */
   expires_at?: number | null;
   lifetime_hours?: number | null;
+  /** When it was approved / rejected (RFC 3339). */
+  decided_at?: string | null;
 }
 /** A request of mine plus the saved connection made from it. */
 export interface AccessRequestView extends AccessRequest { connection_id?: string | null; connection_expired: boolean }

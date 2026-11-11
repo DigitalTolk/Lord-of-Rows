@@ -6,8 +6,8 @@ import type { EnvironmentKind } from '../lib/types';
 import { Chip } from './ConnectionList';
 import { Icon } from './icons';
 
-/** Active · Pending · History as a tablist (arrow keys / Home / End move and select). */
-export function SegmentTabs({ value, counts, onChange, segments }: { value: Segment; counts: Record<Segment, number>; onChange: (s: Segment) => void; segments: Segment[] }) {
+/** Segments as a tablist (arrow keys / Home / End move and select), each with a count. */
+export function SegmentTabs<S extends string = Segment>({ value, counts, onChange, segments }: { value: S; counts: Partial<Record<S, number | string>>; onChange: (s: S) => void; segments: S[] }) {
   const { t } = useTranslation();
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -25,7 +25,7 @@ export function SegmentTabs({ value, counts, onChange, segments }: { value: Segm
       {segments.map((s) => (
         <button key={s} ref={(el) => { refs.current[s] = el; }} role="tab" aria-selected={value === s} tabIndex={value === s ? 0 : -1} data-segment={s} onClick={() => onChange(s)}>
           {t(`access.seg.${s}`)}
-          <span className={`ms-1.5 inline-flex min-w-[18px] justify-center rounded-full px-1 text-[0.7rem] font-semibold leading-[18px] ${value === s ? 'bg-accent/15 text-accent' : 'bg-hover text-muted'}`}>{counts[s]}</span>
+          {counts[s] !== undefined && <span className={`ms-1.5 inline-flex min-w-[18px] justify-center rounded-full px-1 text-[0.7rem] font-semibold leading-[18px] ${value === s ? 'bg-accent/15 text-accent' : 'bg-hover text-muted'}`}>{counts[s]}</span>}
         </button>
       ))}
     </div>

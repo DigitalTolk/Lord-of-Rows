@@ -128,6 +128,26 @@ impl Client {
         Ok(v.unwrap_or_default())
     }
 
+    /// Requests the caller decided, newest decision first. An older passhub without the
+    /// endpoint answers 404, reported as `Unsupported`.
+    pub async fn decided(&self, cursor: Option<&str>, limit: u32) -> AccessResult<DecidedPage> {
+        let query = {
+            let mut q = url::form_urlencoded::Serializer::new(String::new());
+            q.append_pair("limit", &limit.clamp(1, 100).to_string());
+            if let Some(c) = cursor {
+                if c.is_empty() || c.len() > 1024 || c.chars().any(char::is_control) {
+                    return Err(AccessError::Invalid("invalid page cursor".into()));
+                }
+                q.append_pair("cursor", c);
+            }
+            q.finish()
+        };
+        match self.call(Method::GET, &format!("/approvals/decided?{query}"), None).await {
+            Err(AccessError::NotFound(_)) => Err(AccessError::Unsupported("This passhub has no decision history yet".into())),
+            r => r,
+        }
+    }
+
     pub async fn approve(&self, id: &str) -> AccessResult<AccessRequest> {
         check_id(id)?;
         self.call(Method::POST, &format!("/requests/{id}/approve"), None).await

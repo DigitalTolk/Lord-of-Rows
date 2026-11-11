@@ -207,6 +207,17 @@ pub struct Capabilities {
     pub cancel: bool,
     /// Requested databases are picked from `resource_targets`.
     pub targets: bool,
+    /// Approvers can list the requests they decided (`list_decided`). A provider may
+    /// still answer `Unsupported` at runtime (older server); the UI then hides it.
+    pub decided_history: bool,
+}
+
+/// One page of a cursor-paged list.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    /// Cursor for the next page; `None` = last page.
+    pub next: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -343,6 +354,8 @@ pub struct AccessRequest {
     pub expires_at: Option<i64>,
     /// Approved lifetime, if the provider says.
     pub lifetime_hours: Option<i64>,
+    /// When the request was approved or rejected (RFC 3339).
+    pub decided_at: Option<String>,
 }
 
 impl AccessRequest {
@@ -446,6 +459,11 @@ pub trait AccessProvider: Send + Sync {
     }
     async fn reject(&self, _request_id: &str, _reason: &str) -> AccessResult<AccessRequest> {
         Err(AccessError::Unsupported("This provider has no approvals in the app".into()))
+    }
+    /// Requests the signed-in approver decided, newest decision first (when
+    /// `capabilities().decided_history`). `cursor` comes from the previous page.
+    async fn list_decided(&self, _cursor: Option<&str>, _limit: u32) -> AccessResult<Page<AccessRequest>> {
+        Err(AccessError::Unsupported("This provider has no decision history".into()))
     }
 
     /// Connection details for a ready request, without the secret. Fails with

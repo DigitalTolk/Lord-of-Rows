@@ -136,6 +136,7 @@ pub fn request(r: &Wire, now: i64) -> AccessRequest {
         created_at: r.created_at.clone(),
         expires_at: (r.expires_at > 0).then_some(r.expires_at),
         lifetime_hours: (r.access_ttl_hours > 0).then_some(r.access_ttl_hours),
+        decided_at: r.reviewed_at.clone().filter(|t| !t.is_empty()),
     }
 }
 

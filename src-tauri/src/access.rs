@@ -373,6 +373,12 @@ pub async fn access_list_approvals(st: State<'_, AppState>, provider_id: Uuid) -
     call!(st, provider_id, |p| p.list_approvals())
 }
 
+/// Requests the signed-in approver decided, newest first (`Unsupported` when the provider can't say).
+#[tauri::command]
+pub async fn access_list_decided(st: State<'_, AppState>, provider_id: Uuid, cursor: Option<String>, limit: Option<u32>) -> R<dbs_access::Page<AccessRequest>> {
+    call!(st, provider_id, |p| p.list_decided(cursor.as_deref(), limit.unwrap_or(50)))
+}
+
 #[tauri::command]
 pub async fn access_approve(st: State<'_, AppState>, provider_id: Uuid, request_id: String) -> R<AccessRequest> {
     call!(st, provider_id, |p| p.approve(&request_id))

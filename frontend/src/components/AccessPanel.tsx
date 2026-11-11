@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
-import { ageLabel, ageSeconds, draftFrom, durationLabel, envsPresent, HISTORY_PAGE, isEnded, isFiltered, matchesFilter, requestPhase, savedSegment, saveSegment, segmentCounts, segmentRequests, timeLeft, type ListFilter, type Segment } from '../lib/access';
+import { ageLabel, ageSeconds, draftFrom, errCode, durationLabel, envsPresent, HISTORY_PAGE, isEnded, isFiltered, matchesFilter, requestPhase, savedSegment, saveSegment, segmentCounts, segmentRequests, timeLeft, type ListFilter, type Segment } from '../lib/access';
 import { canApprove, currentProvider, useAccess } from '../lib/accessStore';
 import type { AccessLevel, AccessProviderKind, AccessRequest, AccessRequestStatus, AccessRequestView, EnvironmentKind } from '../lib/types';
 import { errMsg, useApp } from '../store';
@@ -570,7 +570,19 @@ export async function connectRequest(r: Pick<AccessRequest, 'id'>, t: (k: string
   }
 }
 
+type ApprovalSegment = 'waiting' | 'decided';
+
 function Approvals() {
+  const caps = useAccess((s) => currentProvider(s)?.capabilities);
+  const unavailable = useAccess((s) => s.decidedUnavailable);
+  const waiting = useAccess((s) => s.approvals?.length ?? 0);
+  const [seg, setSeg] = useState<ApprovalSegment>('waiting');
+  const showDecided = !!caps?.decided_history && !unavailable;
+  const tabs = showDecided ? <SegmentTabs<ApprovalSegment> value={seg} segments={['waiting', 'decided']} counts={{ waiting }} onChange={setSeg} /> : null;
+  return showDecided && seg === 'decided' ? <DecidedApprovals tabs={tabs} /> : <WaitingApprovals tabs={tabs} />;
+}
+
+function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
   const { t } = useTranslation();
   const approvals = useAccess((s) => s.approvals);
   const me = useAccess((s) => s.status?.user?.id);
@@ -599,17 +611,20 @@ function Approvals() {
   if (approvals === null) return <div className="py-6 text-center"><Spinner label={t('common.loading')} /></div>;
   if (approvals.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 px-6 py-10 text-center text-muted">
-        <Icon name="shield" size={32} strokeWidth={1.2} />
-        <p>{t('access.noApprovals')}</p>
-      </div>
+      <>
+        {tabs && <div className="pb-2">{tabs}</div>}
+        <div className="flex flex-col items-center gap-2 px-6 py-10 text-center text-muted">
+          <Icon name="shield" size={32} strokeWidth={1.2} />
+          <p>{t('access.noApprovals')}</p>
+        </div>
+      </>
     );
   }
   const shown = approvals.filter((r) => matchesFilter(r, f));
   return (
     <>
       <FilterRow query={f.query} onQuery={setQuery} envs={f.envs} onToggleEnv={toggleEnv} available={envsPresent(approvals)} onClear={clear} filtered={isFiltered(f)} searchRef={searchRef}>
-        <span className="text-xs text-muted">{t('access.waitingCount', { count: approvals.length })}</span>
+        {tabs ?? <span className="text-xs text-muted">{t('access.waitingCount', { count: approvals.length })}</span>}
       </FilterRow>
       {shown.length === 0 && <NoMatches onClear={clear} />}
       <ul className="flex flex-col gap-2" aria-label={t('access.approvals')}>
@@ -642,6 +657,92 @@ function Approvals() {
       </ul>
       {rejecting && <RejectDialog r={rejecting} who={who(rejecting)} onClose={() => setRejecting(null)} />}
     </>
+  );
+}
+
+/** Requests I approved or rejected (newest decision first), paged from the provider. */
+function DecidedApprovals({ tabs }: { tabs: React.ReactNode }) {
+  const { t } = useTranslation();
+  const pid = useAccess((s) => s.providerId);
+  const now = useNow();
+  const [items, setItems] = useState<AccessRequest[] | null>(null);
+  const [next, setNext] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { f, setQuery, toggleEnv, clear } = useListFilter();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const load = async (cursor: string | null) => {
+    if (!pid) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await api.accessListDecided(pid, cursor, 50);
+      setItems((cur) => (cursor ? [...(cur ?? []), ...page.items] : page.items));
+      setNext(page.next ?? null);
+    } catch (e) {
+      if (errCode(e) === 'access_unsupported') useAccess.setState({ decidedUnavailable: true });
+      else setError(useAccess.getState().fail(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    void load(null);
+  }, [pid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const list = items ?? [];
+  const shown = list.filter((r) => matchesFilter(r, f));
+  return (
+    <>
+      <FilterRow query={f.query} onQuery={setQuery} envs={f.envs} onToggleEnv={toggleEnv} available={envsPresent(list)} onClear={clear} filtered={isFiltered(f)} searchRef={searchRef}>
+        {tabs}
+      </FilterRow>
+      <ErrorBox error={error} />
+      {items === null ? (
+        <div className="py-6 text-center"><Spinner label={t('common.loading')} /></div>
+      ) : list.length === 0 ? (
+        <p className="px-6 py-8 text-center text-muted">{t('access.noDecided')}</p>
+      ) : shown.length === 0 ? (
+        <NoMatches onClear={clear} />
+      ) : (
+        <ul className="flex flex-col gap-2" aria-label={t('access.seg.decided')}>
+          {shown.map((r) => <DecidedCard key={r.id} r={r} now={now} />)}
+        </ul>
+      )}
+      {next && (
+        <div className="pt-2 text-center">
+          <button className="btn h-7" disabled={loading} onClick={() => void load(next)}>{loading ? <Spinner /> : null}{t('access.loadMore')}</button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function DecidedCard({ r, now }: { r: AccessRequest; now: number }) {
+  const { t } = useTranslation();
+  const rejected = r.status === 'rejected';
+  const later = !rejected && ['expired', 'revoked', 'cancelled', 'failed'].includes(requestPhase(r, now)) ? requestPhase(r, now) : null;
+  const who = r.requester.name || r.requester.email || r.requester.id;
+  const decided = r.decided_at ? ageLabel(ageSeconds(r.decided_at, now * 1000)) : null;
+  const dbs = r.databases.join(', ');
+  return (
+    <li className="rounded-lg border border-border px-3 py-2" aria-label={`${who} · ${r.resource_name}`} data-outcome={rejected ? 'rejected' : 'approved'}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate font-medium">{who}</span>
+        <span className={`inline-flex h-[18px] items-center rounded-full border px-1.5 text-[0.68rem] font-semibold ${rejected ? 'border-danger/50 text-danger' : 'border-ok/50 text-ok'}`}>
+          {rejected ? t('access.outcomeRejected') : t('access.outcomeApproved')}
+        </span>
+        {later && <span className="text-xs text-muted">{t('access.nowState', { state: t(`access.phase.${later}`) })}</span>}
+        {decided && <span className="ms-auto shrink-0 text-xs text-muted">{t('access.decidedAgo', { time: t(decided.key, decided.vars) })}</span>}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[0.84rem]">
+        <span className="truncate">{r.resource_name}</span>
+        {r.environment_name && <EnvBadge env={r.environment} />}
+        <AccessChip level={r.access} />
+      </div>
+      {dbs && <div className="truncate text-[0.82rem] text-muted" title={dbs}>{dbs}</div>}
+      {rejected && r.status_detail && <p className="mt-1 break-words text-xs"><q>{r.status_detail}</q></p>}
+    </li>
   );
 }
 

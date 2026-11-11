@@ -88,6 +88,10 @@ export async function startMockPasshub({ dbHost = 'postgres', dbPort = 5432, dbU
     }
     if (req.method === 'GET' && path === '/api/v1/requests') return json(200, state.requests.filter((r) => r.userId === me.userId).map((r) => ({ ...enrich(r), provisioningLog: undefined })));
     if (req.method === 'GET' && path === '/api/v1/approvals') return json(200, state.requests.filter((r) => r.status === 'pending' && r.userId !== me.userId).map(enrich));
+    if (req.method === 'GET' && path === '/api/v1/approvals/decided') {
+      const mine = state.requests.filter((r) => r.reviewedBy === me.userId).sort((a, b) => b.reviewedAt.localeCompare(a.reviewedAt));
+      return json(200, { items: mine.map(enrich), next: null });
+    }
     if ((m = path.match(/^\/api\/v1\/requests\/([\w-]+)(?:\/(approve|reject|revoke))?$/))) {
       const r = state.requests.find((x) => x.requestId === m[1]);
       if (!r) return json(404, { error: 'request not found' });
@@ -95,6 +99,8 @@ export async function startMockPasshub({ dbHost = 'postgres', dbPort = 5432, dbU
       if (m[2] === 'approve' || m[2] === 'reject') {
         if (r.userId === me.userId) return json(403, { error: 'cannot approve your own request' });
         r.status = m[2] === 'approve' ? 'approved' : 'rejected';
+        r.reviewedBy = me.userId;
+        r.reviewedAt = new Date().toISOString();
         if (m[2] === 'reject') r.rejectReason = JSON.parse(body || '{}').reason;
         return json(200, r);
       }

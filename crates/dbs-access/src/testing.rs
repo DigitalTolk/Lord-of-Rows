@@ -215,7 +215,7 @@ impl AccessProvider for FakeProvider {
         "fake"
     }
     fn capabilities(&self) -> Capabilities {
-        Capabilities { approvals: true, create_database: false, cancel: true, targets: true }
+        Capabilities { approvals: true, create_database: false, cancel: true, targets: true, decided_history: false }
     }
     async fn sign_in(&self, _ctx: SignInContext<'_>) -> AccessResult<SignedIn> {
         Ok(SignedIn { token: "fake-token".into(), user: self.current_user().await?, expires_at: None })

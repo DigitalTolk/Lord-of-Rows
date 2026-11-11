@@ -1371,7 +1371,9 @@
     "seg": {
       "active": "Aktiv",
       "pending": "Ausstehend",
-      "history": "Verlauf"
+      "history": "Verlauf",
+      "waiting": "Wartend",
+      "decided": "Entschieden"
     },
     "empty": {
       "active": "Kein aktiver Zugriff",
@@ -1390,6 +1392,12 @@
     "endedTitle": "Zugriff beendet",
     "endedBody": "Dein zeitlich begrenzter Zugriff auf {{name}} ist abgelaufen, daher wurde die Verbindung geschlossen. Deine Tabs und ihr Text bleiben erhalten.",
     "closeConnection": "Verbindung schließen",
-    "renewHint": "Dein Zugriff endet bald: beantrage ihn jetzt erneut, um weiterarbeiten zu können."
+    "renewHint": "Dein Zugriff endet bald: beantrage ihn jetzt erneut, um weiterarbeiten zu können.",
+    "noDecided": "Du hast noch keine Anträge entschieden.",
+    "loadMore": "Mehr zeigen",
+    "outcomeApproved": "Genehmigt",
+    "outcomeRejected": "Abgelehnt",
+    "nowState": "jetzt {{state}}",
+    "decidedAgo": "entschieden {{time}}"
   }
 }

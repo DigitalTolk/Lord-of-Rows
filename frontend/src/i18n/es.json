@@ -1436,7 +1436,9 @@
     "seg": {
       "active": "Activas",
       "pending": "Pendientes",
-      "history": "Historial"
+      "history": "Historial",
+      "waiting": "En espera",
+      "decided": "Decididas"
     },
     "empty": {
       "active": "Sin accesos activos",
@@ -1457,6 +1459,12 @@
     "endedTitle": "Acceso terminado",
     "endedBody": "Tu acceso temporal a {{name}} ha terminado y la conexión se ha cerrado. Tus pestañas y su texto se conservan.",
     "closeConnection": "Cerrar conexión",
-    "renewHint": "Tu acceso termina pronto: solicítalo de nuevo ahora para seguir trabajando."
+    "renewHint": "Tu acceso termina pronto: solicítalo de nuevo ahora para seguir trabajando.",
+    "noDecided": "Aún no has decidido ninguna solicitud.",
+    "loadMore": "Mostrar más",
+    "outcomeApproved": "Aprobada",
+    "outcomeRejected": "Rechazada",
+    "nowState": "ahora {{state}}",
+    "decidedAgo": "decidida {{time}}"
   }
 }

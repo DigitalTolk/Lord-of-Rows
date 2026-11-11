@@ -4,8 +4,8 @@
 // picker (DocumentDB / SSM services are not offered), filing a request, the pending →
 // provisioning → ready transitions picked up by polling, Connect (password fetched once
 // into the keychain, the connection opens), a second Connect reusing it without another
-// reveal, the approvals inbox (reject needs a reason), and a revoked request ending the
-// saved connection (password wiped, "Expired" in the launcher).
+// reveal, the approvals inbox (reject needs a reason; the Decided tab lists it), and a
+// revoked request ending the saved connection (password wiped, "Expired" in the launcher).
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { startMockPasshub } from '../fixtures/mock-passhub.mjs';
@@ -131,6 +131,14 @@ describe('access requests (passhub provider)', () => {
       const other = ph.state.requests.find((r) => r.requestId === 'req-other');
       assert.equal(other.status, 'rejected');
       assert.equal(other.rejectReason, 'Use the reporting replica instead');
+      // Decided: my decisions with their outcome and reason.
+      await clickText(b, 'Decided', { selector: '[role=tab]' });
+      await until(() => b.execute(() => document.querySelector('li[data-outcome="rejected"]')?.innerText ?? ''), 'decided row');
+      const row = await b.execute(() => document.querySelector('li[data-outcome="rejected"]').innerText);
+      assert.match(row, /Robin/);
+      assert.match(row, /Rejected/);
+      assert.match(row, /Use the reporting replica instead/);
+      await clickText(b, 'Waiting', { selector: '[role=tab]' });
       await clickText(b, 'My requests', { selector: '[role=tab]' });
     }));
 

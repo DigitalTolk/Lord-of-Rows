@@ -33,6 +33,8 @@ interface AccessStore {
   visible: number;
   /** Requests that just became ready (highlighted once). */
   justReady: string[];
+  /** The provider answered that it has no decision history (older server): hide Decided. */
+  decidedUnavailable: boolean;
 
   loadProviders(): Promise<void>;
   selectProvider(id: string): Promise<void>;
@@ -55,7 +57,7 @@ export const readyListeners = new Set<(r: AccessRequestView[]) => void>();
 /** Called after managed connections were marked expired. */
 export const expiredListeners = new Set<(ids: string[]) => void>();
 
-const reset = { status: null, requests: null, approvals: null, error: null, notice: null };
+const reset = { status: null, requests: null, approvals: null, error: null, notice: null, decidedUnavailable: false };
 
 export const useAccess = create<AccessStore>((set, get) => ({
   providers: null,

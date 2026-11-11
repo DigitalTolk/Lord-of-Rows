@@ -4,7 +4,7 @@ import '../i18n';
 import type { AccessProviderInfo, AccessRequestView, AccessStatus } from '../lib/types';
 
 const NOW = Math.floor(Date.now() / 1000);
-const PROVIDER: AccessProviderInfo = { id: 'p1', kind: 'passhub', name: 'Company access', base_url: 'https://access.example.com', capabilities: { approvals: true, create_database: true, cancel: true, targets: true }, has_session: true };
+const PROVIDER: AccessProviderInfo = { id: 'p1', kind: 'passhub', name: 'Company access', base_url: 'https://access.example.com', capabilities: { approvals: true, create_database: true, cancel: true, targets: true, decided_history: false }, has_session: true };
 
 const req = (id: string, extra: Partial<AccessRequestView> = {}): AccessRequestView => ({
   id,
@@ -29,6 +29,8 @@ const state = vi.hoisted(() => ({
   status: { signed_in: false, signing_in: false } as AccessStatus,
   requests: [] as AccessRequestView[],
   approvals: [] as AccessRequestView[],
+  decided: [] as AccessRequestView[],
+  decidedUnsupported: false,
 }));
 const api = vi.hoisted(() => ({
   accessProviders: vi.fn(async () => state.providers),
@@ -47,6 +49,10 @@ const api = vi.hoisted(() => ({
   listConnections: vi.fn(async () => []),
   accessListResources: vi.fn(async () => [{ id: 'res-1', name: 'billing', environment_name: 'staging', environment: 'staging', engine: 'postgres', host: 'db.example.com', access_levels: ['read_only', 'read_write'] }]),
   accessResourceTargets: vi.fn(async () => ({ targets: ['ledger'], error: null })),
+  accessListDecided: vi.fn(async (_p: string, cursor: string | null): Promise<{ items: AccessRequestView[]; next: string | null }> => {
+    if (state.decidedUnsupported) throw Object.assign(new Error('no history'), { err: { kind: 'unsupported', message: 'no history', code: 'access_unsupported' } });
+    return cursor ? { items: state.decided.slice(1), next: null } : { items: state.decided.slice(0, 1), next: state.decided.length > 1 ? 'c2' : null };
+  }),
 }));
 vi.mock('../lib/ipc', () => ({ api, IpcError: class extends Error {} }));
 
@@ -70,6 +76,8 @@ beforeEach(() => {
   state.status = { signed_in: false, signing_in: false };
   state.requests = [];
   state.approvals = [];
+  state.decided = [];
+  state.decidedUnsupported = false;
   vi.clearAllMocks();
 });
 afterEach(cleanup);
@@ -309,5 +317,56 @@ describe('AccessPanel', () => {
     fireEvent.click(within(screen.getByRole('listitem', { name: 'billing' })).getByRole('button', { name: 'Request again' }));
     expect(useAccess.getState().sheet).toEqual({ draft: { resourceId: 'res-1', access: 'read_write', databases: ['ledger'], reason: 'month end' } });
     useAccess.setState({ sheet: null });
+  });
+
+  describe('approvals: Waiting / Decided', () => {
+    const manager = () => {
+      state.providers = [{ ...PROVIDER, capabilities: { ...PROVIDER.capabilities, decided_history: true } }];
+      state.status = { signed_in: true, signing_in: false, user: { id: 'm1', email: 'manager@example.com', name: 'Manager', role: 'manager', can_approve: true } };
+    };
+
+    it('Decided lists my decisions with outcome, later state, reason, and pages', async () => {
+      manager();
+      state.approvals = [req('w1')];
+      state.decided = [
+        req('d1', { status: 'rejected', status_detail: 'use the replica', requester: { id: 'u2', name: 'Robin', email: '' }, decided_at: new Date(Date.now() - 2 * 3600e3 - 60e3).toISOString() }),
+        req('d2', { status: 'expired', resource_name: 'billing', requester: { id: 'u3', name: 'Sam', email: '' } }),
+      ];
+      await show();
+      fireEvent.click(screen.getByRole('tab', { name: /^Approvals/ }));
+      const waiting = screen.getByRole('tab', { name: /Waiting/ });
+      expect(waiting.getAttribute('aria-selected')).toBe('true');
+      expect(waiting.textContent).toBe('Waiting1');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('tab', { name: /Decided/ }));
+      });
+      const robin = screen.getByRole('listitem', { name: 'Robin · orders' });
+      expect(robin.getAttribute('data-outcome')).toBe('rejected');
+      expect(within(robin).getByText('use the replica')).toBeTruthy();
+      expect(robin.textContent).toContain('decided 2 h ago');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+      });
+      const sam = screen.getByRole('listitem', { name: 'Sam · billing' });
+      expect(sam.getAttribute('data-outcome')).toBe('approved');
+      expect(within(sam).getByText('now Expired')).toBeTruthy();
+      expect(api.accessListDecided).toHaveBeenLastCalledWith('p1', 'c2', 50);
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search requests' }), { target: { value: 'sam' } });
+      expect(within(screen.getByRole('list', { name: 'Decided' })).getAllByRole('listitem')).toHaveLength(1);
+    });
+
+    it('an older provider without decision history hides the Decided tab', async () => {
+      manager();
+      state.approvals = [req('w1')];
+      state.decidedUnsupported = true;
+      await show();
+      fireEvent.click(screen.getByRole('tab', { name: /^Approvals/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('tab', { name: /Decided/ }));
+      });
+      expect(screen.queryByRole('tab', { name: /Decided/ })).toBeNull();
+      expect(screen.getByText('1 waiting')).toBeTruthy();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });

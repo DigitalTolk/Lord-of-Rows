@@ -1371,7 +1371,9 @@
     "seg": {
       "active": "Active",
       "pending": "Pending",
-      "history": "History"
+      "history": "History",
+      "waiting": "Waiting",
+      "decided": "Decided"
     },
     "empty": {
       "active": "No active access",
@@ -1390,6 +1392,12 @@
     "endedTitle": "Access ended",
     "endedBody": "Your time-limited access to {{name}} has ended, so the connection was closed. Your tabs and their text are kept.",
     "closeConnection": "Close connection",
-    "renewHint": "Your access ends soon: request it again now so you can keep working."
+    "renewHint": "Your access ends soon: request it again now so you can keep working.",
+    "noDecided": "You haven't decided any requests yet.",
+    "loadMore": "Show more",
+    "outcomeApproved": "Approved",
+    "outcomeRejected": "Rejected",
+    "nowState": "now {{state}}",
+    "decidedAgo": "decided {{time}}"
   }
 }
