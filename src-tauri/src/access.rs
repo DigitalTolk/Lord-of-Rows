@@ -6,7 +6,7 @@
 //! (`SecretKind::AccessToken`, owner = provider id) and never reaches the webview.
 //! The connect / expiry / reconcile rules are provider-independent (`dbs_access::manage`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use dbs_access::manage::{self, ConnectCheck, ConnectOutcome, RequestView, Stores};
@@ -33,12 +33,17 @@ pub const KEY_PROVIDERS: &str = "access.providers";
 pub struct AccessState {
     /// Sign-ins waiting for the browser, per provider.
     logins: Mutex<HashMap<Uuid, CancellationToken>>,
+    /// Session tokens per provider, read from the keychain at most once per app run (each
+    /// keychain read can show an OS prompt, and the UI polls). `None` = known signed out.
+    tokens: Mutex<HashMap<Uuid, Option<String>>>,
+    /// Managed connections whose password is known to be in the keychain (`Stores::known_passwords`).
+    pub(crate) known_passwords: Mutex<HashSet<Uuid>>,
     /// Serialises "Connect" so two clicks can never fetch a secret twice.
     connect_lock: tokio::sync::Mutex<()>,
 }
 
 fn stores(st: &AppState) -> Stores<'_> {
-    Stores { store: &st.store, secrets: st.secrets.as_ref(), session: &st.session_secrets }
+    Stores { store: &st.store, secrets: st.secrets.as_ref(), session: &st.session_secrets, known_passwords: Some(&st.access.known_passwords) }
 }
 
 fn providers(st: &AppState) -> Vec<ProviderConfig> {
@@ -53,8 +58,26 @@ fn provider_config(st: &AppState, id: Uuid) -> R<ProviderConfig> {
     providers(st).into_iter().find(|p| p.id == id).ok_or_else(|| DbError::new(ErrorKind::NotFound, "access provider not found"))
 }
 
+/// The provider's session token (cached; the keychain is read once per provider per run).
 fn token(st: &AppState, id: Uuid) -> R<Option<String>> {
-    Ok(st.secrets.get(id, SecretKind::AccessToken)?.map(|s| s.into_inner()))
+    if let Some(t) = st.access.tokens.lock().unwrap().get(&id) {
+        return Ok(t.clone());
+    }
+    let t = st.secrets.get(id, SecretKind::AccessToken)?.map(|s| s.into_inner());
+    st.access.tokens.lock().unwrap().insert(id, t.clone());
+    Ok(t)
+}
+
+fn set_token(st: &AppState, id: Uuid, tok: &str) -> R<()> {
+    st.secrets.set(id, SecretKind::AccessToken, tok)?;
+    st.access.tokens.lock().unwrap().insert(id, Some(tok.to_string()));
+    Ok(())
+}
+
+/// Forgets the token (cache first, so a failing keychain delete still signs out for this run).
+fn forget_token(st: &AppState, id: Uuid) -> R<()> {
+    st.access.tokens.lock().unwrap().insert(id, None);
+    st.secrets.delete(id, SecretKind::AccessToken)
 }
 
 /// A provider client with the saved token, or "signed out".
@@ -68,7 +91,7 @@ fn signed_in(st: &AppState, id: Uuid) -> R<(ProviderConfig, Box<dyn AccessProvid
 /// A signed-out answer means the token expired or was revoked: forget it.
 fn on_error(st: &AppState, id: Uuid, e: AccessError) -> DbError {
     if e == AccessError::SignedOut {
-        let _ = st.secrets.delete(id, SecretKind::AccessToken);
+        let _ = forget_token(st, id);
     }
     e.into()
 }
@@ -149,7 +172,7 @@ fn update_provider(st: &AppState, id: Uuid, name: String, base_url: String) -> R
     let old = provider_config(st, id)?;
     let new = ProviderConfig { name, base_url, ..old.clone() }.validated()?;
     if new.base_url != old.base_url && token(st, id)?.is_some() {
-        st.secrets.delete(id, SecretKind::AccessToken)?;
+        forget_token(st, id)?;
         audit(st, Category::CredentialDeleted, Outcome::Success, None, |e| e.detail = Some("access provider token (URL changed)".into()));
     }
     let list: Vec<ProviderConfig> = providers(st).into_iter().map(|p| if p.id == id { new.clone() } else { p }).collect();
@@ -169,7 +192,7 @@ pub async fn access_providers_remove(st: State<'_, AppState>, id: Uuid) -> R<()>
 }
 
 fn remove_provider(st: &AppState, id: Uuid) -> R<()> {
-    st.secrets.delete(id, SecretKind::AccessToken)?;
+    forget_token(st, id)?;
     let list: Vec<ProviderConfig> = providers(st).into_iter().filter(|p| p.id != id).collect();
     save_providers(st, &list)?;
     audit(st, Category::SettingsChanged, Outcome::Success, None, |e| e.detail = Some("access provider removed".into()));
@@ -265,7 +288,7 @@ pub async fn access_sign_in(st: State<'_, AppState>, provider_id: Uuid) -> R<Acc
             return Err(e.into());
         }
     };
-    st.secrets.set(provider_id, SecretKind::AccessToken, &signed.token)?;
+    set_token(&st, provider_id, &signed.token)?;
     audit(&st, Category::CredentialChanged, Outcome::Success, None, |e| e.detail = Some(format!("access sign-in ({})", cfg.kind)));
     Ok(signed.user.clone())
 }
@@ -286,7 +309,7 @@ pub async fn access_sign_out(st: State<'_, AppState>, provider_id: Uuid) -> R<()
             tracing::warn!("access sign-out: {e}");
         }
     }
-    st.secrets.delete(provider_id, SecretKind::AccessToken)?;
+    forget_token(&st, provider_id)?;
     audit(&st, Category::CredentialDeleted, Outcome::Success, None, |e| e.detail = Some("access sign-out".into()));
     Ok(())
 }
@@ -380,7 +403,7 @@ pub async fn access_connect_check(st: State<'_, AppState>, provider_id: Uuid, re
 
 fn signed_out_cleanup(st: &AppState, id: Uuid, e: DbError) -> DbError {
     if e.code.as_deref() == Some(AccessError::SignedOut.code()) {
-        let _ = st.secrets.delete(id, SecretKind::AccessToken);
+        let _ = forget_token(st, id);
     }
     e
 }
@@ -458,7 +481,7 @@ mod tests {
         assert!(views[0].capabilities.approvals);
         assert!(!views[0].has_session);
 
-        st.secrets.set(p.id, SecretKind::AccessToken, "tok").unwrap();
+        set_token(&st, p.id, "tok").unwrap();
         update_provider(&st, p.id, "Renamed".into(), "https://access.example.com/".into()).unwrap();
         assert!(token(&st, p.id).unwrap().is_some(), "same URL keeps the session");
         assert_eq!(provider_config(&st, p.id).unwrap().name, "Renamed");
@@ -467,7 +490,7 @@ mod tests {
         update_provider(&st, p.id, "Renamed".into(), "https://other.example.com".into()).unwrap();
         assert!(token(&st, p.id).unwrap().is_none(), "the token never goes to another server");
 
-        st.secrets.set(p.id, SecretKind::AccessToken, "tok").unwrap();
+        set_token(&st, p.id, "tok").unwrap();
         remove_provider(&st, p.id).unwrap();
         assert!(providers(&st).is_empty());
         assert!(token(&st, p.id).unwrap().is_none());
@@ -479,12 +502,12 @@ mod tests {
         let st = crate::commands::tests::test_state();
         let p = add_provider(&st, new("passhub", "https://access.example.com")).unwrap();
         assert_eq!(signed_in(&st, p.id).err().unwrap().code.as_deref(), Some("access_signed_out"));
-        st.secrets.set(p.id, SecretKind::AccessToken, "tok").unwrap();
+        set_token(&st, p.id, "tok").unwrap();
         assert!(signed_in(&st, p.id).is_ok());
         let e = on_error(&st, p.id, AccessError::SignedOut);
         assert_eq!(e.code.as_deref(), Some("access_signed_out"));
         assert!(token(&st, p.id).unwrap().is_none());
-        st.secrets.set(p.id, SecretKind::AccessToken, "tok").unwrap();
+        set_token(&st, p.id, "tok").unwrap();
         let _ = on_error(&st, p.id, AccessError::Unreachable("vpn".into()));
         assert!(token(&st, p.id).unwrap().is_some(), "offline keeps the session");
     }
@@ -505,5 +528,47 @@ mod tests {
         let e = guard(&st, &cfg).unwrap_err();
         assert_eq!(e.code.as_deref(), Some(manage::EXPIRED_CODE));
         assert!(st.secrets.get(cfg.id, SecretKind::DbPassword).unwrap().is_none());
+    }
+
+    #[test]
+    fn polling_reads_the_keychain_token_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        struct Counting(dbs_secrets::MemoryStore, Arc<AtomicUsize>);
+        impl dbs_secrets::SecretStore for Counting {
+            fn set(&self, o: Uuid, k: SecretKind, v: &str) -> DbResult<()> {
+                self.0.set(o, k, v)
+            }
+            fn get(&self, o: Uuid, k: SecretKind) -> DbResult<Option<dbs_secrets::Secret>> {
+                self.1.fetch_add(1, Ordering::SeqCst);
+                self.0.get(o, k)
+            }
+            fn delete(&self, o: Uuid, k: SecretKind) -> DbResult<()> {
+                self.0.delete(o, k)
+            }
+            fn backend_name(&self) -> &'static str {
+                "counting"
+            }
+        }
+        let reads = Arc::new(AtomicUsize::new(0));
+        let mut st = crate::commands::tests::test_state();
+        st.secrets = Box::new(Counting(Default::default(), reads.clone()));
+        let p = add_provider(&st, new("passhub", "https://access.example.com")).unwrap();
+        // A token saved by an earlier run (not in the cache yet).
+        st.secrets.set(p.id, SecretKind::AccessToken, "tok").unwrap();
+        for _ in 0..20 {
+            assert!(signed_in(&st, p.id).is_ok());
+            assert!(list_views(&st).unwrap()[0].has_session);
+        }
+        assert_eq!(reads.load(Ordering::SeqCst), 1, "N polls -> 1 keychain read");
+        // A 401 forgets it without reading again; so does a later poll.
+        let _ = on_error(&st, p.id, AccessError::SignedOut);
+        assert!(signed_in(&st, p.id).is_err());
+        assert!(!list_views(&st).unwrap()[0].has_session);
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        // Signing in fills the cache directly.
+        set_token(&st, p.id, "tok2").unwrap();
+        assert_eq!(token(&st, p.id).unwrap().as_deref(), Some("tok2"));
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
     }
 }

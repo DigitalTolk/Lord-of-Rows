@@ -8,6 +8,9 @@
 //!   an extended expiry is copied.
 //! * [`check_open`]: opening an expired managed connection is refused.
 
+use std::collections::HashSet;
+use std::sync::Mutex;
+
 use dbs_core::{ConnectionConfig, DbError, DbResult, ErrorKind, ManagedBy, TlsConfig};
 use dbs_secrets::{MemoryStore, SecretKind, SecretStore};
 use dbs_store::AppStore;
@@ -25,6 +28,22 @@ pub struct Stores<'a> {
     pub store: &'a AppStore,
     pub secrets: &'a dyn SecretStore,
     pub session: &'a MemoryStore,
+    /// Managed connections whose password is known to be in `secrets`, so repeated
+    /// checks don't read the keychain again (each read can show an OS prompt).
+    pub known_passwords: Option<&'a Mutex<HashSet<Uuid>>>,
+}
+
+impl Stores<'_> {
+    fn remember(&self, id: Uuid, present: bool) {
+        if let Some(k) = self.known_passwords {
+            let mut k = k.lock().unwrap();
+            if present {
+                k.insert(id);
+            } else {
+                k.remove(&id);
+            }
+        }
+    }
 }
 
 pub fn managed_connections(store: &AppStore, provider_id: Option<Uuid>) -> DbResult<Vec<ConnectionConfig>> {
@@ -41,7 +60,14 @@ pub fn find_managed(store: &AppStore, provider_id: Uuid, request_id: &str) -> Db
 }
 
 fn has_password(s: &Stores, id: Uuid) -> DbResult<bool> {
-    Ok(s.session.get(id, SecretKind::DbPassword)?.is_some() || s.secrets.get(id, SecretKind::DbPassword)?.is_some())
+    if s.known_passwords.is_some_and(|k| k.lock().unwrap().contains(&id)) || s.session.get(id, SecretKind::DbPassword)?.is_some() {
+        return Ok(true);
+    }
+    let found = s.secrets.get(id, SecretKind::DbPassword)?.is_some();
+    if found {
+        s.remember(id, true);
+    }
+    Ok(found)
 }
 
 /// Whether a managed connection's access is over at `now`.
@@ -157,12 +183,14 @@ pub async fn connect(p: &dyn AccessProvider, pcfg: &ProviderConfig, s: &Stores<'
         in_memory = true;
     } else {
         s.session.delete(id, SecretKind::DbPassword)?;
+        s.remember(id, true);
     }
     Ok(ConnectOutcome { connection_id: id, reused: false, reveals_remaining: creds.reveals_remaining, password_in_memory: in_memory })
 }
 
 /// Flags a managed connection expired and wipes its password.
 pub fn expire(s: &Stores, mut cfg: ConnectionConfig) -> DbResult<()> {
+    s.remember(cfg.id, false);
     s.secrets.delete(cfg.id, SecretKind::DbPassword)?;
     s.session.delete(cfg.id, SecretKind::DbPassword)?;
     if let Some(m) = cfg.managed_by.as_mut() {
@@ -254,13 +282,14 @@ mod tests {
         store: AppStore,
         secrets: MemoryStore,
         session: MemoryStore,
+        known: Mutex<HashSet<Uuid>>,
     }
     impl Ctx {
         fn new() -> Self {
-            Ctx { store: AppStore::open_in_memory().unwrap(), secrets: MemoryStore::default(), session: MemoryStore::default() }
+            Ctx { store: AppStore::open_in_memory().unwrap(), secrets: MemoryStore::default(), session: MemoryStore::default(), known: Mutex::default() }
         }
         fn s(&self) -> Stores<'_> {
-            Stores { store: &self.store, secrets: &self.secrets, session: &self.session }
+            Stores { store: &self.store, secrets: &self.secrets, session: &self.session, known_passwords: Some(&self.known) }
         }
     }
 
@@ -294,6 +323,7 @@ mod tests {
         renamed.name = "My orders".into();
         c.store.save_connection(&renamed).unwrap();
         c.secrets.delete(o.connection_id, SecretKind::DbPassword).unwrap();
+        c.known.lock().unwrap().remove(&o.connection_id); // as after an app restart
         let o3 = connect(&p, &cfg, &c.s(), "r1", NOW).await.unwrap();
         assert_eq!((o3.reused, o3.connection_id), (false, o.connection_id));
         assert_eq!(c.store.get_connection(o.connection_id).unwrap().name, "My orders");
@@ -346,7 +376,7 @@ mod tests {
         let p = FakeProvider::new();
         p.add_request("r1", RequestStatus::Ready, None);
         let (store, session) = (AppStore::open_in_memory().unwrap(), MemoryStore::default());
-        let s = Stores { store: &store, secrets: &Refusing, session: &session };
+        let s = Stores { store: &store, secrets: &Refusing, session: &session, known_passwords: None };
         let o = connect(&p, &pcfg(), &s, "r1", NOW).await.unwrap();
         assert!(o.password_in_memory);
         assert!(session.get(o.connection_id, SecretKind::DbPassword).unwrap().is_some());
@@ -409,5 +439,46 @@ mod tests {
     fn error_codes_reach_the_ui() {
         let e: DbError = AccessError::NotReady("x".into()).into();
         assert_eq!(e.code.as_deref(), Some("access_not_ready"));
+    }
+
+    /// Counts keychain reads (each can show an OS prompt for unsigned builds).
+    struct Counting(MemoryStore, std::sync::atomic::AtomicUsize);
+    impl SecretStore for Counting {
+        fn set(&self, o: Uuid, k: SecretKind, v: &str) -> DbResult<()> {
+            self.0.set(o, k, v)
+        }
+        fn get(&self, o: Uuid, k: SecretKind) -> DbResult<Option<dbs_secrets::Secret>> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.0.get(o, k)
+        }
+        fn delete(&self, o: Uuid, k: SecretKind) -> DbResult<()> {
+            self.0.delete(o, k)
+        }
+        fn backend_name(&self) -> &'static str {
+            "counting"
+        }
+    }
+
+    #[tokio::test]
+    async fn repeated_checks_read_the_keychain_once() {
+        let p = FakeProvider::new();
+        p.add_request("r1", RequestStatus::Ready, Some(NOW + 3600));
+        let (store, session, known) = (AppStore::open_in_memory().unwrap(), MemoryStore::default(), Mutex::default());
+        let secrets = Counting(MemoryStore::default(), Default::default());
+        let s = Stores { store: &store, secrets: &secrets, session: &session, known_passwords: Some(&known) };
+        let cfg = pcfg();
+        let id = connect(&p, &cfg, &s, "r1", NOW).await.unwrap().connection_id;
+        for _ in 0..10 {
+            assert!(reusable(&s, cfg.id, "r1", NOW).unwrap().is_some());
+        }
+        assert_eq!(secrets.1.load(std::sync::atomic::Ordering::SeqCst), 0, "a password we stored is known");
+        known.lock().unwrap().clear(); // next app run
+        for _ in 0..10 {
+            assert!(reusable(&s, cfg.id, "r1", NOW).unwrap().is_some());
+        }
+        assert_eq!(secrets.1.load(std::sync::atomic::Ordering::SeqCst), 1, "one read per run");
+        assert_eq!(sweep(&s, NOW + 3600).unwrap(), vec![id]);
+        assert!(!known.lock().unwrap().contains(&id), "expiry forgets it");
+        assert!(reusable(&s, cfg.id, "r1", NOW).unwrap().is_none());
     }
 }

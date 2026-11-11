@@ -108,6 +108,7 @@ pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<Connec
     st.store.save_connection(&cfg)?;
     if let Some(pw) = req.password {
         check_len(&pw, 4096, "password")?;
+        st.access.known_passwords.lock().unwrap().remove(&cfg.id);
         if pw.is_empty() {
             st.secrets.delete(cfg.id, SecretKind::DbPassword)?;
             st.session_secrets.delete(cfg.id, SecretKind::DbPassword)?;
@@ -139,6 +140,7 @@ pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<Connec
 pub fn delete_connection(st: State<'_, AppState>, id: Uuid) -> R<()> {
     let cfg = st.store.get_connection(id).ok();
     st.store.delete_connection(id)?;
+    st.access.known_passwords.lock().unwrap().remove(&id);
     st.secrets.delete_all(id)?;
     st.session_secrets.delete_all(id)?;
     audit(&st, Category::ConnectionDeleted, Outcome::Success, cfg.as_ref(), |e| e.connection_id = Some(id.to_string()));
