@@ -15,7 +15,7 @@ export function baseName(path: string): string {
 }
 
 /**
- * second line: `host : database`, `SSH : database` when tunnelled,
+ * Second line: `host : database`, `SSH : database` when tunnelled,
  * the file name for SQLite/DuckDB, and `endpoint or region` for DynamoDB.
  */
 export function connectionSubtitle(cfg: ConnectionConfig): string {

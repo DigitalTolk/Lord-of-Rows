@@ -142,7 +142,7 @@ input[type='checkbox'], input[type='radio'], input[type='range'], progress { acc
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
-/* Table refresh: the reloaded rows fade in ("refreshed" cue). */
+/* Table refresh: the reloaded rows fade in as a "refreshed" cue. */
 @keyframes grid-refresh {
   0% { opacity: 0.25; transform: translateY(3px); }
   100% { opacity: 1; transform: none; }

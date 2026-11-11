@@ -383,7 +383,7 @@ describe('multiple databases', () => {
 describe('tools', () => {
   test('command palette opens a table', () =>
     fail('palette', async () => {
-      await b.keys(['Control', 'p']); // Ctrl+K is now "Open database"; Ctrl+P / Ctrl+Shift+P open the palette
+      await b.keys(['Control', 'p']); // Ctrl+K is "Open database"; Ctrl+P / Ctrl+Shift+P open the palette
       await until(() => b.execute(() => !!document.querySelector('[aria-label="Command palette"]')), 'palette');
       await b.execute(() => {
         const input = document.querySelector('[aria-label="Command palette"] input');

@@ -24,7 +24,7 @@ export function OpenDatabaseHost() {
 }
 
 /**
- * "Open database": search box, every database/schema of the connection
+ * "Open database" picker: search box, every database/schema of the connection
  * (system ones grouped at the bottom), Postgres also lists the server's other databases
  * (opened as a new session). ↑/↓ move, Enter / double-click open, Esc cancels.
  */

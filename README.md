@@ -1,9 +1,7 @@
 # Lord of the Rows
 
-**Lord of the Rows** is DigitalTolk's own desktop database client, built in-house from scratch with
-Tauri 2 (Rust backend) and React/TypeScript. Its everyday workflow is inspired by the spirit of
-the app, but it is an independent tool: all code, design and artwork are original, and it is not
-affiliated with or endorsed by the app.
+**Lord of the Rows** is DigitalTolk's own desktop database client, designed and built in-house
+from scratch with Tauri 2 (Rust backend) and React/TypeScript. All code, design and artwork are original.
 
 **Status:** macOS builds are signed with DigitalTolk's Developer ID and notarized by Apple
 (universal: Apple Silicon + Intel; `scripts/release-macos.sh`). Tested end to end on Linux in Docker
