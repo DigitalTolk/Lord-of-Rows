@@ -78,7 +78,7 @@ fn explain_network(msg: &str) -> String {
     let l = msg.to_ascii_lowercase();
     let advice = if l.contains("no route to host") || l.contains("os error 65") {
         if cfg!(target_os = "macos") {
-            Some("The server could not be reached. If it is on your local network or VPN (e.g. 192.168.x.x / 10.x), macOS may be blocking DB Studio: open System Settings → Privacy & Security → Local Network and enable DB Studio, then try again.")
+            Some("The server could not be reached. If it is on your local network or VPN (e.g. 192.168.x.x / 10.x), macOS may be blocking Lord of the Rows: open System Settings → Privacy & Security → Local Network and enable Lord of the Rows, then try again.")
         } else {
             Some("The server could not be reached: check the host, VPN and firewall.")
         }
