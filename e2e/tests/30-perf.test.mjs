@@ -76,7 +76,12 @@ test('performance budget measurements', async () => {
         }),
     );
     out.scroll100k = scroll;
-    out.lastRowVisible = await b.execute(() => document.querySelector('[role=tabpanel]:not([hidden]) [role=grid]').innerText.includes('100000'));
+    // The virtualized grid renders the rows for the new scroll position on the next frame(s).
+    out.lastRowVisible = await until(
+      async () => b.execute(() => document.querySelector('[role=tabpanel]:not([hidden]) [role=grid]').innerText.includes('100000')),
+      'last row rendered',
+      2000,
+    ).catch(() => false);
 
     // UI stays responsive while a long query runs (round-trip to the page).
     await runSql(b, 'select pg_sleep(5)');
