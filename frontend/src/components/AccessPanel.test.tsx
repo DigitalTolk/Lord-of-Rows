@@ -45,6 +45,8 @@ const api = vi.hoisted(() => ({
   accessConnect: vi.fn(async () => ({ connection_id: 'conn-1', reused: false, reveals_remaining: 3, password_in_memory: false })),
   accessReject: vi.fn(async () => state.approvals[0]),
   listConnections: vi.fn(async () => []),
+  accessListResources: vi.fn(async () => [{ id: 'res-1', name: 'billing', environment_name: 'staging', environment: 'staging', engine: 'postgres', host: 'db.example.com', access_levels: ['read_only', 'read_write'] }]),
+  accessResourceTargets: vi.fn(async () => ({ targets: ['ledger'], error: null })),
 }));
 vi.mock('../lib/ipc', () => ({ api, IpcError: class extends Error {} }));
 
@@ -293,5 +295,19 @@ describe('AccessPanel', () => {
       fireEvent.change(screen.getByRole('searchbox', { name: 'Search requests' }), { target: { value: 'robin' } });
       expect(within(screen.getByRole('list', { name: 'Approvals' })).getAllByRole('listitem')).toHaveLength(1);
     });
+  });
+
+  it('a ready request with under 30 minutes left offers a pre-filled Request again', async () => {
+    state.providers = [PROVIDER];
+    state.status = { signed_in: true, signing_in: false, user: { id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false } };
+    state.requests = [
+      req('soon', { status: 'ready', resource_name: 'billing', expires_at: NOW + 20 * 60, access: 'read_write', databases: ['ledger'], reason: 'month end' }),
+      req('later', { status: 'ready', resource_name: 'orders', expires_at: NOW + 5 * 3600 }),
+    ];
+    await show();
+    expect(within(screen.getByRole('listitem', { name: 'orders' })).queryByRole('button', { name: 'Request again' })).toBeNull();
+    fireEvent.click(within(screen.getByRole('listitem', { name: 'billing' })).getByRole('button', { name: 'Request again' }));
+    expect(useAccess.getState().sheet).toEqual({ draft: { resourceId: 'res-1', access: 'read_write', databases: ['ledger'], reason: 'month end' } });
+    useAccess.setState({ sheet: null });
   });
 });

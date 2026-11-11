@@ -474,6 +474,9 @@ function RequestCard({ r, now, highlight }: { r: AccessRequestView; now: number;
               {showLog ? t('access.hideLog') : t('access.showLog')}
             </button>
           )}
+          {phase === 'ready' && left && left.secs < 30 * 60 && (
+            <button className="btn h-7" title={t('access.renewHint')} onClick={() => useAccess.setState({ sheet: { draft: draftFrom(r) } })}>{t('access.requestAgain')}</button>
+          )}
           {phase === 'ready' && (
             <button className="btn btn-primary h-7" disabled={busy} onClick={() => void connect()}>
               {busy ? <Spinner /> : <Icon name="power" size={14} />} {r.connection_id && !r.connection_expired ? t('access.open') : t('access.connect')}

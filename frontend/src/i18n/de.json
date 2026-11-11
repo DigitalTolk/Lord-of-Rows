@@ -1389,6 +1389,7 @@
     "endsSoon": "Der Zugriff auf {{name}} endet in {{time}}.",
     "endedTitle": "Zugriff beendet",
     "endedBody": "Dein zeitlich begrenzter Zugriff auf {{name}} ist abgelaufen, daher wurde die Verbindung geschlossen. Deine Tabs und ihr Text bleiben erhalten.",
-    "closeConnection": "Verbindung schließen"
+    "closeConnection": "Verbindung schließen",
+    "renewHint": "Dein Zugriff endet bald: beantrage ihn jetzt erneut, um weiterarbeiten zu können."
   }
 }

@@ -1389,6 +1389,7 @@
     "endsSoon": "Access to {{name}} ends in {{time}}.",
     "endedTitle": "Access ended",
     "endedBody": "Your time-limited access to {{name}} has ended, so the connection was closed. Your tabs and their text are kept.",
-    "closeConnection": "Close connection"
+    "closeConnection": "Close connection",
+    "renewHint": "Your access ends soon: request it again now so you can keep working."
   }
 }
