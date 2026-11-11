@@ -77,7 +77,7 @@ export function Welcome() {
             }}>
               <Icon name="download" size={15} /> {t('welcome.fromUrl')}
             </button>
-            <button className="btn h-8 w-full" onClick={() => openTab({ kind: 'settings', title: t('settings.title') })}>
+            <button className="btn h-8 w-full" onClick={() => { openTab({ kind: 'settings', title: t('settings.title') }); useApp.setState({ launcher: false }); }}>
               <Icon name="gear" size={15} /> {t('settings.title')}
             </button>
           </div>

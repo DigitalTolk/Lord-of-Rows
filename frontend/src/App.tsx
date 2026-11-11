@@ -194,7 +194,10 @@ export default function App() {
   };
 
   const hasSessions = Object.keys(st.sessions).length > 0;
-  const showLauncher = st.launcher || !hasSessions;
+  // Settings and the audit log need no connection: when one of them is active, show the workspace.
+  const activeKind = st.tabs.find((x) => x.id === st.activeTab)?.kind;
+  const standaloneTab = activeKind === 'settings' || activeKind === 'audit';
+  const showLauncher = st.launcher || (!hasSessions && !standaloneTab);
   const sidebarSession = st.activeSession && st.sessions[st.activeSession] ? st.activeSession : undefined;
 
   return (
@@ -206,7 +209,7 @@ export default function App() {
       {showLauncher ? (
         <div className="relative min-h-0 flex-1">
           <Welcome />
-          {hasSessions && (
+          {(hasSessions || standaloneTab) && (
             <button className="btn absolute end-4 top-4" onClick={() => useApp.setState({ launcher: false })}>{t('shell.backToWorkspace')}</button>
           )}
         </div>
