@@ -1,35 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { StoredConnection } from '../lib/types';
 import { errMsg, useApp } from '../store';
 import { ask } from './ask';
-import { ENGINE_LABELS } from './ConnectionDialog';
-import { EngineBadge } from './EngineBadge';
+import { ConnectionList, type ConnAction } from './ConnectionList';
 import logo from '../assets/logo.svg';
 import { Icon } from './icons';
-import { EnvBadge, Spinner } from './ui';
 import { ThemeToggle } from './ThemeToggle';
 
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
   const { t } = useTranslation();
   const { connections, info, openSession, toast, reloadConnections, openTab } = useApp();
-  const [q, setQ] = useState('');
   const [sel, setSel] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ c: StoredConnection; x: number; y: number } | null>(null);
-
-  const groups = useMemo(() => {
-    const s = q.toLowerCase();
-    const list = connections.filter((c) => !s || [c.config.name, c.config.host, c.config.database, c.config.group, ...c.config.tags].some((x) => x?.toLowerCase().includes(s)));
-    const m = new Map<string, StoredConnection[]>();
-    for (const c of list) {
-      const g = c.config.favorite ? '★ Favorites' : c.config.group || 'Connections';
-      m.set(g, [...(m.get(g) ?? []), c]);
-    }
-    return [...m.entries()].sort(([a], [b]) => (a.startsWith('★') ? -1 : b.startsWith('★') ? 1 : a.localeCompare(b)));
-  }, [connections, q]);
 
   const connect = async (id: string) => {
     setBusy(id);
@@ -52,8 +37,7 @@ export function Welcome() {
     }
   };
 
-  const action = async (k: string, c: StoredConnection) => {
-    setMenu(null);
+  const action = async (k: ConnAction, c: StoredConnection) => {
     const cfg = c.config;
     if (k === 'connect') return connect(cfg.id);
     if (k === 'edit') return useApp.setState({ connectionDialog: { id: cfg.id } });
@@ -102,62 +86,7 @@ export function Welcome() {
 
         {/* Connection list */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-2 border-b border-border p-3">
-            <div className="relative flex-1">
-              <Icon name="search" size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted" />
-              <input className="input pl-7" placeholder={t('conn.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />
-            </div>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label={t('conn.title')}>
-            {connections.length === 0 && (
-              <div className="flex h-full flex-col items-center justify-center gap-2 text-muted">
-                <Icon name="db" size={36} strokeWidth={1.2} />
-                <p>{t('conn.empty')}</p>
-              </div>
-            )}
-            {groups.map(([g, list]) => (
-              <div key={g}>
-                <div className="section-title">{g}</div>
-                {list.map((c) => {
-                  const cfg = c.config;
-                  const active = sel === cfg.id;
-                  return (
-                    <div
-                      key={cfg.id}
-                      role="option"
-                      aria-selected={active}
-                      tabIndex={0}
-                      onClick={() => setSel(cfg.id)}
-                      onDoubleClick={() => connect(cfg.id)}
-                      onKeyDown={(e) => e.key === 'Enter' && connect(cfg.id)}
-                      onContextMenu={(e) => { e.preventDefault(); setSel(cfg.id); setMenu({ c, x: e.clientX, y: e.clientY }); }}
-                      className={`group mx-2 flex cursor-default items-center gap-3 rounded-lg px-2 py-1.5 ${active ? 'row-selected' : 'hover:bg-hover'}`}
-                    >
-                      <div className="relative">
-                        <EngineBadge engine={cfg.engine} size={34} />
-                        {cfg.color && <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg" style={{ background: cfg.color }} />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-medium">{cfg.name}</span>
-                          {cfg.read_only && <Icon name="lock" size={12} />}
-                        </div>
-                        <div className={`truncate text-[0.85rem] ${active ? 'text-on-solid/80' : 'text-muted'}`}>
-                          {ENGINE_LABELS[cfg.engine]} · {cfg.engine === 'sqlite' ? cfg.database : `${cfg.username ? cfg.username + '@' : ''}${cfg.host ?? ''}${cfg.database ? ' / ' + cfg.database : ''}`}
-                        </div>
-                      </div>
-                      <EnvBadge env={cfg.environment} />
-                      {busy === cfg.id ? <Spinner /> : (
-                        <button className={`icon-btn opacity-0 group-hover:opacity-100 ${active ? 'text-on-solid hover:bg-on-solid/20 hover:text-on-solid' : ''}`} aria-label={t('common.connect')} onClick={(e) => { e.stopPropagation(); connect(cfg.id); }}>
-                          <Icon name="power" size={15} />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+          <ConnectionList sel={sel} onSelect={setSel} busy={busy} onConnect={(id) => void connect(id)} onAction={(k, c) => void action(k, c)} />
           <div className="flex items-center gap-1 border-t border-border bg-panel px-2 py-1.5">
             <button className="icon-btn" aria-label={t('conn.new')} onClick={() => useApp.setState({ connectionDialog: {} })}><Icon name="plus" /></button>
             <button className="icon-btn" aria-label={t('common.edit')} disabled={!sel} onClick={() => sel && useApp.setState({ connectionDialog: { id: sel } })}><Icon name="edit" /></button>
@@ -167,13 +96,6 @@ export function Welcome() {
           </div>
         </div>
       </div>
-      {menu && (
-        <div role="menu" className="fixed z-50 w-48 rounded-lg border border-border bg-raised p-1 shadow-xl" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
-          {[['connect', t('common.connect')], ['edit', t('common.edit')], ['duplicate', t('common.duplicate')], ['favorite', menu.c.config.favorite ? 'Remove from favorites' : 'Add to favorites'], ['delete', t('common.delete')]].map(([k, l]) => (
-            <button key={k} role="menuitem" className={`menu-item ${k === 'delete' ? 'text-danger' : ''}`} onClick={() => action(k, menu.c)}>{l}</button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

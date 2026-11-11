@@ -26,6 +26,20 @@
     "exportDefs": "Export definitions", "importDefs": "Import definitions", "ssh": "SSH tunnel", "sshUnavailable": "SSH tunnelling is not implemented in this build yet.",
     "copyUrl": "Copy URL (no password)", "recent": "Recent", "favorites": "Favorites", "all": "All connections", "plaintextWarning": "Credentials and data will be sent unencrypted."
   },
+  "connList": {
+    "newConnection": "New connection", "newGroup": "New group", "groupName": "Group name", "groupExists": "A group named \"{{name}}\" already exists",
+    "rename": "Rename…", "renameTitle": "Rename group", "renamePrompt": "New name for \"{{name}}\"",
+    "deleteGroup": "Delete group…", "deleteGroupTitle": "Delete group",
+    "deleteGroupConfirm": "Delete group \"{{name}}\"? Its {{count}} connection(s) move to Ungrouped. No connection is deleted.",
+    "color": "Colour", "colorDefault": "Default", "moveUp": "Move group up", "moveDown": "Move group down",
+    "moveTo": "Move to group", "noGroup": "No group", "newGroupEllipsis": "New group…", "ungrouped": "Ungrouped",
+    "dropUngrouped": "Drop here to remove from its group", "groupMenu": "Group actions", "connMenu": "Connection actions",
+    "groupCount": "{{count}} connection(s)", "addFavorite": "Add to favorites", "removeFavorite": "Remove from favorites",
+    "envFilter": "Filter by environment", "envAll": "All", "noMatches": "No connections match the search or filter",
+    "production": "Production connection", "favorite": "Favorite", "readOnly": "Read-only",
+    "envShort": { "local": "Local", "development": "Dev", "testing": "Testing", "staging": "Staging", "production": "Prod", "custom": "Custom" },
+    "colors": { "blue": "Blue", "green": "Green", "purple": "Purple", "orange": "Orange", "red": "Red", "yellow": "Yellow", "teal": "Teal", "grey": "Grey" }
+  },
   "tree": { "filter": "Filter objects…", "schemas": "Schemas", "openData": "Open data", "openStructure": "Structure", "copyName": "Copy name",
     "copyQualified": "Copy qualified name", "genSelect": "Generate SELECT", "genInsert": "Generate INSERT", "genUpdate": "Generate UPDATE",
     "genDelete": "Generate DELETE", "showDdl": "Show DDL", "drop": "Drop…", "truncate": "Truncate…", "empty": "No objects" },
