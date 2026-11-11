@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { ask } from '../components/ask';
 import { ErrorBox, Field, Spinner, Toolbar } from '../components/ui';
 import { api, IpcError } from '../lib/ipc';
-import { fmtBytes } from '../lib/format';
 import { errMsg, useApp, type Tab } from '../store';
 
 export function BackupView({ tab }: { tab: Tab }) {
@@ -32,7 +31,7 @@ export function BackupView({ tab }: { tab: Tab }) {
     setError(null);
     try {
       const r = await api.runBackup(s.session_id, f.grant, { scope, tables: tables.split(',').map((x) => x.trim()).filter(Boolean), compress });
-      setLog([`${r.tool}: ${fmtBytes(r.bytes)} → ${f.display_path}`, r.verified ? `✓ ${t('backup.verified')}` : `⚠ ${t('backup.notVerified')}`, ...r.notes]);
+      setLog([`${r.tool}: ${(r.bytes / 1024 / 1024).toFixed(2)} MB → ${f.display_path}`, r.verified ? `✓ ${t('backup.verified')}` : `⚠ ${t('backup.notVerified')}`, ...r.notes]);
       toast('ok', t('backup.complete'));
     } catch (e) {
       setError(errMsg(e));
@@ -83,7 +82,7 @@ export function BackupView({ tab }: { tab: Tab }) {
           <div className="flex gap-2">
             <button className="btn btn-primary" onClick={backup} disabled={busy}>{t('backup.run')}</button>
             <button className="btn text-danger" onClick={restore} disabled={busy || s.config.read_only}>{t('backup.restore')}</button>
-            {busy && <Spinner label={t('backup.working')} />}
+            {busy && <Spinner />}
           </div>
           <ErrorBox error={error} />
           <p className="mt-3 text-xs text-muted">{t('backup.logicalNote')}</p>

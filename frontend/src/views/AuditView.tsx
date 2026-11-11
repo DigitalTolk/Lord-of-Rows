@@ -4,7 +4,7 @@ import { ask } from '../components/ask';
 import { ErrorBox, Toolbar } from '../components/ui';
 import { api } from '../lib/ipc';
 import type { AuditEntry, AuditFilter } from '../lib/types';
-import { fmtDateTime, fmtNumber } from '../lib/format';
+import { fmtNumber } from '../lib/format';
 import { errMsg, useApp } from '../store';
 
 const CATEGORIES = ['connection_created', 'connection_modified', 'connection_deleted', 'connection_opened', 'connection_failed', 'credential_changed', 'credential_deleted', 'query_executed', 'ddl_executed', 'dml_executed', 'data_edited', 'safety_blocked', 'safety_confirmed', 'import', 'export', 'backup', 'restore', 'privilege_change', 'session_killed', 'settings_changed', 'security_policy_changed', 'plugin_installed', 'plugin_permission_changed', 'plugin_removed', 'audit_exported', 'audit_purged', 'ai_request'];
@@ -80,13 +80,13 @@ export function AuditView() {
               {rows.map((r) => (
                 <tr key={r.seq} tabIndex={0} onClick={() => setSel(r)} onKeyDown={(e) => e.key === 'Enter' && setSel(r)} className={`cursor-default border-b border-border/50 hover:bg-raised ${sel?.seq === r.seq ? 'bg-accent/15' : ''}`}>
                   <td className="px-2 text-muted">{r.seq}</td>
-                  <td className="px-2 font-mono text-xs" title={r.ts}>{fmtDateTime(r.ts)}</td>
+                  <td className="px-2 font-mono text-xs">{r.ts}</td>
                   <td className="px-2">{t(`audit.categories.${r.category}`, { defaultValue: r.category })}</td>
                   <td className={`px-2 ${r.outcome === 'success' ? 'text-ok' : 'text-danger'}`}>{t(`audit.${r.outcome}`, { defaultValue: r.outcome })}</td>
-                  <td className="px-2">{r.environment ? t(`env.${r.environment}`, { defaultValue: r.environment }) : ''}</td>
+                  <td className="px-2">{r.environment}</td>
                   <td className="px-2">{r.object}</td>
-                  <td className="px-2 text-end">{fmtNumber(r.rows_affected)}</td>
-                  <td className="px-2 text-end">{fmtNumber(r.duration_ms)}</td>
+                  <td className="px-2 text-end">{r.rows_affected}</td>
+                  <td className="px-2 text-end">{r.duration_ms}</td>
                 </tr>
               ))}
             </tbody>

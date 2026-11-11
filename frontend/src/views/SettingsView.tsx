@@ -7,8 +7,8 @@ import { api } from '../lib/ipc';
 import type { AiProvider, AiStatus } from '../lib/types';
 import { DEFAULT_KEYS, type KeyAction } from '../lib/keys';
 import type { UpdateChannel, UpdateCheck, UpdateProgress } from '../lib/types';
-import { channelOf, endpointKey, PROGRESS_EVENT, progressPercent } from '../lib/updates';
-import { fmtBytes, fmtDate, fmtNumber } from '../lib/format';
+import { channelOf, endpointKey, formatBytes, PROGRESS_EVENT, progressPercent } from '../lib/updates';
+import { fmtNumber } from '../lib/format';
 import { LANGUAGE_SETTING, LANGUAGES, parseLanguagePref, systemLanguage } from '../i18n';
 import { PluginsSettings } from './PluginsSettings';
 import { errMsg, useApp } from '../store';
@@ -132,9 +132,9 @@ export function SettingsView() {
     <div className="flex h-full min-h-0 flex-col">
       <Toolbar><span className="font-semibold">{t('settings.title')}</span></Toolbar>
       <div className="grid min-h-0 flex-1 grid-cols-[200px_1fr]">
-        <nav className="border-e border-border p-2" aria-label={t('settings.sections')}>
+        <nav className="border-e border-border p-2" aria-label={t('settings.title')}>
           {SECTIONS.map((x) => (
-            <button key={x} className={`block w-full rounded px-2 py-1 text-start ${section === x ? 'bg-accent/15 font-semibold' : 'hover:bg-panel'}`} aria-current={section === x ? 'page' : undefined} onClick={() => setSection(x)}>{t(`settings.${x}`)}</button>
+            <button key={x} className={`block w-full rounded px-2 py-1 text-start ${section === x ? 'bg-accent/15 font-semibold' : 'hover:bg-panel'}`} aria-current={section === x} onClick={() => setSection(x)}>{t(`settings.${x}`)}</button>
           ))}
         </nav>
         <section className="max-w-xl overflow-auto p-4" aria-label={t(`settings.${section}`)}>
@@ -179,7 +179,7 @@ export function SettingsView() {
             </>
           )}
           {section === 'grid' && (
-            <Field label={t('grid.pageSize')}><select className="input" value={get('grid.pageSize', 500)} onChange={(e) => set('grid.pageSize', Number(e.target.value))}>{[100, 500, 1000, 5000, 10000].map((n) => <option key={n} value={n}>{fmtNumber(n)}</option>)}</select></Field>
+            <Field label={t('grid.pageSize')}><select className="input" value={get('grid.pageSize', 500)} onChange={(e) => set('grid.pageSize', Number(e.target.value))}>{[100, 500, 1000, 5000, 10000].map((n) => <option key={n}>{n}</option>)}</select></Field>
           )}
           {section === 'query' && (
             <Field label={t('settings.maxRows')} hint={t('settings.maxRowsHint')}>
@@ -331,7 +331,7 @@ function UpdatesSection() {
         {result?.status === 'available' && !installed && (
           <div className="rounded border border-border p-2">
             <p className="font-semibold">{t('updates.available', { version: result.version, current: result.current_version })}</p>
-            {result.date && <p className="text-xs text-muted">{fmtDate(result.date)}</p>}
+            {result.date && <p className="text-xs text-muted">{new Date(result.date).toLocaleDateString()}</p>}
             {result.notes && (
               <>
                 <p className="label mt-2">{t('updates.notes')}</p>
@@ -343,7 +343,7 @@ function UpdatesSection() {
               <div className="mt-2">
                 <p className="text-xs">
                   {progress?.phase === 'verifying' ? t('updates.verifying') : progress?.phase === 'installing' ? t('updates.installing') : t('updates.downloading')}
-                  {progress?.phase === 'downloading' && ` ${fmtBytes(progress.downloaded)}${progress.total ? ` / ${fmtBytes(progress.total)}` : ''}`}
+                  {progress?.phase === 'downloading' && ` ${formatBytes(progress.downloaded)}${progress.total ? ` / ${formatBytes(progress.total)}` : ''}`}
                 </p>
                 <div className="mt-1 h-2 w-full overflow-hidden rounded bg-panel" role="progressbar" aria-label={t('updates.downloading')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined}>
                   <div className={`h-full bg-accent ${pct === null ? 'w-1/3 animate-pulse' : ''}`} style={pct === null ? undefined : { width: `${pct}%` }} />

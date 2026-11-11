@@ -15,7 +15,9 @@ function flatten(t: Tree, prefix = '', out: Record<string, string> = {}): Record
   return out;
 }
 
-const placeholders = (s: string) => [...s.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]).sort();
+// `{{formatted}}` is the locale-formatted `{{count}}`: a locale may use either (English keeps
+// the raw number where it always showed one; other languages use grouped digits).
+const placeholders = (s: string) => [...new Set([...s.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => (m[1] === 'formatted' ? 'count' : m[1])))].sort();
 const EN = flatten(en as Tree);
 
 /** Split English keys into plain keys and plural bases (keys that have an `_other` form). */
@@ -24,10 +26,11 @@ const isPluralForm = (k: string) => PLURAL_SUFFIX.test(k) && pluralBases.has(k.r
 const plainKeys = Object.keys(EN).filter((k) => !isPluralForm(k));
 
 describe('English source', () => {
-  it('uses only one/other plural forms and never "(s)"', () => {
-    for (const [k, v] of Object.entries(EN)) {
+  // English keeps its pre-localisation wording (E2E and users rely on it), including "(s)" forms;
+  // the other languages carry real plural forms.
+  it('uses only one/other plural forms', () => {
+    for (const k of Object.keys(EN)) {
       if (isPluralForm(k)) expect(k, k).toMatch(/_(one|other)$/);
-      expect(v, k).not.toMatch(/\w\(s\)/);
     }
     for (const b of pluralBases) expect(EN[`${b}_one`], `${b}_one`).toBeDefined();
   });

@@ -102,7 +102,7 @@ export function DashboardView({ tab }: { tab: Tab }) {
             <button className="btn" onClick={refresh} aria-label={t('common.refresh')} title={t('common.refresh')}>⟳</button>
             <label className="flex items-center gap-1">{t('dashboard.autoRefresh')}
               <select className="input w-auto" value={board.refreshSecs} onChange={(e) => persist({ ...board, refreshSecs: Number(e.target.value) })}>
-                {[0, 10, 30, 60, 300].map((n) => <option key={n} value={n}>{n ? t('dashboard.seconds', { n }) : t('monitor.off')}</option>)}
+                {[0, 10, 30, 60, 300].map((n) => <option key={n} value={n}>{n ? t('dashboard.seconds', { n }) : t('dashboard.off')}</option>)}
               </select>
             </label>
             <button className="btn" onClick={() => navigator.clipboard.writeText(JSON.stringify({ ...board, connectionId: undefined }, null, 2))}>{t('common.export')}</button>

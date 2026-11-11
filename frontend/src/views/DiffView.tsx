@@ -51,7 +51,7 @@ export function DiffView() {
     <fieldset className="rounded border border-border p-2">
       <legend className="px-1 text-xs text-muted">{label}</legend>
       <select className="input mb-1" aria-label={t('diff.connectionOf', { side: label })} value={v.session} onChange={(e) => set({ session: e.target.value, schema: sessions[e.target.value]?.activeSchema ?? '' })}>
-        {list.map((s) => <option key={s.session_id} value={s.session_id}>{s.config.name} ({t(`env.${s.config.environment}`)})</option>)}
+        {list.map((s) => <option key={s.session_id} value={s.session_id}>{s.config.name} ({s.config.environment})</option>)}
       </select>
       {(sessions[v.session]?.schemas.length ?? 0) > 0 && (
         <select className="input" aria-label={t('diff.schemaOf', { side: label })} value={v.schema} onChange={(e) => set({ ...v, schema: e.target.value })}>
@@ -75,7 +75,7 @@ export function DiffView() {
       <div className="flex items-center gap-2 px-2">
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={drops} onChange={(e) => setDrops(e.target.checked)} />{t('diff.includeDrops')}</label>
         <button className="btn btn-primary" onClick={compare} disabled={busy}>{t('diff.compare')}</button>
-        {busy && <Spinner label={t('diff.comparing')} />}
+        {busy && <Spinner />}
         {res?.forward_sql && <button className={`btn ms-auto ${destructive ? 'btn-danger' : ''}`} onClick={run}>{t('diff.run')}</button>}
       </div>
       <ErrorBox error={error ?? res?.plan_error?.message} />

@@ -124,7 +124,7 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
         });
         setResults(r.results);
         setStreamedRows(r.rowCount);
-        setMessages([r.cancelled ? t('query.cancelledAfter', { ms: fmtNumber(r.duration_ms) }) : t('query.completedIn', { ms: fmtNumber(r.duration_ms) })]);
+        setMessages([r.cancelled ? t('query.cancelledAfter', { ms: r.duration_ms }) : t('query.completedIn', { ms: r.duration_ms })]);
         // Refresh the object tree after DDL.
         if (ev.statements.some((x) => ['CREATE', 'ALTER', 'DROP', 'RENAME'].includes(x.verb))) void useApp.getState().loadObjects(s.session_id, s.activeSchema);
         if (r.error) throw new IpcError(r.error);
@@ -254,14 +254,14 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
     <div className="flex h-full min-h-0 flex-col">
       <div role="toolbar" className="flex h-[36px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
         <button className="btn btn-primary h-6 px-2" onClick={() => run('selection')} disabled={!s || !!running} title={`${t('query.runSelection')} (⌘/Ctrl+Enter)`}><Icon name="play" size={12} fill="currentColor" /> {t('query.run')}</button>
-        <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title={`${t('query.runAll')} (⌘/Ctrl+Shift+Enter)`}>{t('query.runAll')}</button>
+        <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
         <button className="icon-btn h-6 w-6" onClick={cancel} disabled={!running} title={`${t('query.cancel')} (⌘/Ctrl+.)`} aria-label={t('query.cancel')}><Icon name="stop" size={13} /></button>
         {running && <Spinner label={streamedRows > 0 ? t('query.loadingRows', { count: streamedRows, formatted: fmtNumber(streamedRows) }) : t('query.running')} />}
         <span className="sr-only" role="status" aria-live="polite">{running ? '' : error ? t('query.failed') : messages[0] ?? ''}</span>
         {!isRedis && (
           <>
             <span className="mx-1 h-4 border-s border-border" />
-            <button className="btn btn-ghost h-6 px-2" onClick={fmt} title={`${t('query.format')} (⌘/Ctrl+Alt+F)`}>{t('query.format')}</button>
+            <button className="btn btn-ghost h-6 px-2" onClick={fmt} title="⌘/Ctrl+Alt+F">{t('query.format')}</button>
             {pluginFormatters.length === 1 && (
               <button className="btn btn-ghost h-6 px-2" onClick={() => fmtWithPlugin(pluginFormatters[0].id)} title={t('query.pluginTitle', { id: pluginFormatters[0].id })}>{t('query.formatWith', { name: pluginFormatters[0].manifest.name })}</button>
             )}

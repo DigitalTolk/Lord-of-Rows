@@ -101,7 +101,7 @@ export function ImportView({ tab }: { tab: Tab }) {
           <Field label={t('io.targetTable')}><input className="input" value={target} onChange={(e) => setTarget(e.target.value)} /></Field>
           <label className="mb-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={create} onChange={(e) => setCreate(e.target.checked)} />{t('io.createTable')}</label>
           <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={atomic} onChange={(e) => setAtomic(e.target.checked)} />{t('io.atomic')}</label>
-          <button className="btn btn-primary w-full justify-center" onClick={() => run()} disabled={!preview || !target || busy}>{busy ? <Spinner label={t('io.importing')} /> : t('common.import')}</button>
+          <button className="btn btn-primary w-full justify-center" onClick={() => run()} disabled={!preview || !target || busy}>{busy ? <Spinner /> : t('common.import')}</button>
           <ErrorBox error={error} />
           {report && <pre role="status" className="mt-2 whitespace-pre-wrap rounded border border-ok/40 bg-ok/10 p-2 text-sm">{report}</pre>}
         </div>

@@ -455,7 +455,7 @@ export function ConnectionDialog() {
               <select
                 className="input col-span-2"
                 aria-label={t('cdlg.passwordStorage')}
-                title={pwMode === 'keychain' ? t('conn.rememberPassword', { backend: info?.secret_backend ?? t('welcome.keychain') }) : t('cdlg.notSaved')}
+                title={pwMode === 'keychain' ? t('conn.rememberPassword', { backend: info?.secret_backend ?? t('cdlg.keychain') }) : t('cdlg.notSaved')}
                 value={pwMode}
                 onChange={(e) => setPwMode(e.target.value as 'keychain' | 'ask')}
               >

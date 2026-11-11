@@ -158,7 +158,7 @@ export function AiPanel({ session, sources, onInsert, onClose }: { session?: Ope
         {answer && (
           <section aria-label={t('ai.answer')} className="rounded border border-border p-2">
             <div className="mb-1 flex items-center text-xs text-muted">
-              <span>{t('ai.answerFrom', { model: answer.model, ms: fmtNumber(answer.duration_ms) })}</span>
+              <span>{t('ai.answerFrom', { model: answer.model, ms: answer.duration_ms })}</span>
             </div>
             {/* Plain text only: model output is never rendered as HTML. */}
             <pre data-testid="ai-answer" dir="auto" className="max-h-96 overflow-auto whitespace-pre-wrap break-words font-sans text-[0.85rem]">{answer.text}</pre>

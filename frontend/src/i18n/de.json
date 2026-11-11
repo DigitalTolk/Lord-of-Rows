@@ -276,8 +276,7 @@
     "needConnection": "Öffnen Sie mindestens eine Verbindung, um Schemas zu vergleichen.",
     "changes_one": "{{formatted}} Änderung",
     "changes_other": "{{formatted}} Änderungen",
-    "scripts": "Migrationsskripte",
-    "comparing": "Schemas werden verglichen …"
+    "scripts": "Migrationsskripte"
   },
   "audit": {
     "title": "Prüfprotokoll",
@@ -333,7 +332,10 @@
       "security_policy_changed": "Sicherheitsrichtlinie geändert",
       "audit_exported": "Prüfprotokoll exportiert",
       "audit_purged": "Prüfprotokoll bereinigt",
-      "ai_request": "KI-Anfrage"
+      "ai_request": "KI-Anfrage",
+      "plugin_installed": "Plugin installiert",
+      "plugin_permission_changed": "Plugin-Berechtigung geändert",
+      "plugin_removed": "Plugin entfernt"
     }
   },
   "monitor": {
@@ -376,7 +378,6 @@
     "pngCopied": "PNG in die Zwischenablage kopiert",
     "layoutSaved": "Layout gespeichert",
     "showAll": "Alle anzeigen (fokussiert: {{table}})",
-    "loading": "Diagramm wird geladen …",
     "tableCount_one": "{{formatted}} Tabelle",
     "tableCount_other": "{{formatted}} Tabellen",
     "navHint": "Ziehen zum Verschieben · Mausrad zum Zoomen",
@@ -406,7 +407,6 @@
     "formatJson": "JSON (Array von Objekten)",
     "formatJsonLines": "JSON Lines",
     "refreshPreview": "Vorschau aktualisieren",
-    "importing": "Wird importiert …",
     "source": "Quelle",
     "targetColumn": "Zielspalte",
     "type": "Typ",
@@ -434,7 +434,6 @@
     "restored": "{{path}} wiederhergestellt",
     "tablesPlaceholder": "tabelle_a, tabelle_b",
     "compress": "Komprimieren",
-    "working": "Wird verarbeitet …",
     "logicalNote": "SQL-Exporte sind logische Momentaufnahmen, keine physischen Sicherungen. Verwenden Sie für die Notfallwiederherstellung die nativen Sicherungswerkzeuge Ihrer Datenbank (und testen Sie Wiederherstellungen)."
   },
   "settings": {
@@ -476,7 +475,6 @@
     "clearHistory": "Abfrageverlauf löschen",
     "language": "Sprache",
     "updates": "Updates",
-    "sections": "Einstellungsbereiche",
     "about": "Version {{version}} · {{platform}} · Anmeldedaten: {{backend}}",
     "languageHint": "Datums- und Zahlenformate folgen der gewählten Sprache.",
     "languageSystem": "Systemstandard ({{name}})",
@@ -607,7 +605,10 @@
     "disconnected": "Nicht verbunden",
     "lost": "Verbindung verloren",
     "policy": "Richtlinie: {{name}}",
-    "commands": "{{key}} Befehle"
+    "commands": "{{key}} Befehle",
+    "healthyDot": "verbunden",
+    "lostDot": "Verbindung verloren",
+    "latency": "{{ms}} ms"
   },
   "dashboard": {
     "title": "Dashboards",
@@ -627,11 +628,12 @@
     "seconds": "{{n}} s",
     "wider": "Breite ändern",
     "removeWidget": "Widget {{title}} entfernen",
-    "empty": "Legen Sie ein Dashboard an, um abfragebasierte Widgets hinzuzufügen."
+    "empty": "Legen Sie ein Dashboard an, um abfragebasierte Widgets hinzuzufügen.",
+    "off": "aus"
   },
   "history": {
     "title": "Verlauf & Snippets",
-    "toggleFavorite": "{{name}} als Favorit markieren",
+    "toggleFavorite": "Favorit umschalten",
     "deleteSnippet": "{{name}} löschen",
     "ok": "OK",
     "error": "Fehler",
@@ -706,9 +708,7 @@
   },
   "rail": {
     "label": "Offene Verbindungen",
-    "item": "{{name}} ({{env}})",
-    "tabs_one": "{{count}} offener Tab",
-    "tabs_other": "{{count}} offene Tabs"
+    "active": " (aktiv)"
   },
   "welcome": {
     "version": "Version {{version}}",
@@ -716,7 +716,6 @@
     "fromUrl": "Über URL verbinden",
     "footer": "Passwörter werden in {{backend}} gespeichert. Keine Telemetrie.",
     "keychain": "dem Schlüsselbund des Betriebssystems",
-    "connecting": "Verbindung wird hergestellt …",
     "hint": "Doppelklicken oder Eingabetaste drücken zum Verbinden"
   },
   "error": {
@@ -739,7 +738,10 @@
     "settings": "Einstellungen",
     "toggleSidebar": "Seitenleiste ein-/ausblenden",
     "newConnection": "Neue Verbindung",
-    "focusMode": "Fokusmodus"
+    "focusMode": "Fokusmodus",
+    "newWindow": "Neues Fenster",
+    "closeWindow": "Fenster schließen",
+    "splitEditor": "Editor teilen"
   },
   "ssh": {
     "trustTitle": "Diesem SSH-Host vertrauen?",
@@ -883,7 +885,8 @@
     "sQuery": "s Abfrage",
     "tags": "Tags",
     "commaSeparated": "durch Kommas getrennt",
-    "openLocalNetwork": "Einstellungen für lokales Netzwerk öffnen"
+    "openLocalNetwork": "Einstellungen für lokales Netzwerk öffnen",
+    "keychain": "Schlüsselbund"
   },
   "copyErr": {
     "partialBinary": "Ein Binärwert wurde nur teilweise geladen; er kann nicht als {{as}} kopiert werden.",

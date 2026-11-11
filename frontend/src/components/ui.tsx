@@ -55,7 +55,7 @@ export function Dialog({ title, onClose, children, footer, wide, icon }: { title
       >
         <div className="flex h-11 shrink-0 items-center justify-between px-4">
           <h2 id={titleId} className="flex items-center gap-2 text-[1.05rem] font-semibold">{icon}{title}</h2>
-          <button className="icon-btn" aria-label={t('common.close')} title={t('common.close')} onClick={onClose}><span aria-hidden>✕</span></button>
+          <button className="icon-btn" aria-label={t('common.close')} onClick={onClose}><span aria-hidden>✕</span></button>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">{children}</div>
         {footer && <div className="flex items-center justify-end gap-2 border-t border-border bg-panel px-4 py-2.5">{footer}</div>}

@@ -50,8 +50,8 @@ export function ConnectionRail() {
             onClick={() => switchSession(s.session_id)}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ id: s.session_id, x: e.clientX, y: e.clientY }); }}
             title={`${s.config.name}\n${s.server.version.split(' on ')[0]}${shortcut ? `\n${shortcut}` : ''}`}
-            aria-label={`${t('rail.item', { name: s.config.name, env: t(`env.${s.config.environment}`) })}, ${t('rail.tabs', { count })}${s.healthy ? '' : `, ${t('status.lost')}`}`}
-            aria-current={active ? 'true' : undefined}
+            aria-label={`${s.config.name}${active ? t('rail.active') : ''}`}
+            aria-current={active}
             className={`group relative flex w-[66px] shrink-0 flex-col items-center gap-0.5 rounded-xl px-0.5 py-1 transition-colors ${active ? 'bg-raised shadow-sm ring-1 ring-border' : 'hover:bg-hover'}`}
           >
             {active && <span className="absolute -start-[5px] top-2 h-6 w-[3px] rounded-e bg-accent" aria-hidden />}

@@ -321,7 +321,7 @@ export function TableView({ tab }: { tab: Tab }) {
           </>
         )}
         {pending > 0 && (
-          <span className="ms-2 rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn" aria-live="polite" title={`${t('tableWs.pendingCommit')} (${displayCombo('Mod+S')})`}>{t('grid.pending', { n: pending })}</span>
+          <span className="ms-2 rounded-full bg-warn/15 px-2 py-0.5 text-[0.85rem] font-medium text-warn" aria-live="polite" title={`${t('tableWs.pendingCommit')} (${displayCombo('Mod+S')})`}>{t('grid.pending', { count: pending, formatted: fmtNumber(pending) })}</span>
         )}
         <div className="ml-auto flex items-center gap-1">
           <button className={`icon-btn ${ws.filterOpen ? 'bg-accent/15 text-accent' : ''}`} title={`${t('tableWs.toggleFilter')} (${displayCombo('Mod+F')})`} aria-label={t('grid.filterAdd')} aria-pressed={ws.filterOpen} onClick={() => wsApi.toggleFilterBar(tab.id)}><Icon name="filter" size={15} /></button>

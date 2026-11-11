@@ -160,7 +160,7 @@ export function ERView({ tab }: { tab: Tab }) {
         <button className="btn" onClick={save}>{t('er.saveLayout')}</button>
         <button className="btn" onClick={() => exportSvg(false)}>{t('er.exportSvg')}</button>
         <button className="btn" onClick={() => exportSvg(true)}>{t('er.exportPng')}</button>
-        {busy && <Spinner label={t('er.loading')} />}
+        {busy && <Spinner />}
         <span className="ms-auto text-xs text-muted">{t('er.tableCount', { count: visible.length, formatted: fmtNumber(visible.length) })} · {t('er.navHint')}</span>
       </Toolbar>
       <ErrorBox error={error} />

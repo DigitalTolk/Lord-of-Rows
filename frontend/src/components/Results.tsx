@@ -74,7 +74,7 @@ export function Results({ results, messages, runId }: { results: StatementResult
 
   const [tab, setTab] = useState<'results' | 'messages'>('results');
   const allMessages = [
-    ...results.map((r) => `#${r.statement_index + 1} ${r.sql_excerpt.slice(0, 80)} — ${r.rows_affected != null ? t('query.rowsAffected', { count: r.rows_affected, formatted: fmtNumber(r.rows_affected) }) : r.result ? t('query.rowsReturned', { count: r.result.rows.length, formatted: fmtNumber(r.result.rows.length) }) : t('common.ok')} (${t('query.duration', { ms: fmtNumber(r.duration_ms) })})`),
+    ...results.map((r) => `#${r.statement_index + 1} ${r.sql_excerpt.slice(0, 80)} — ${r.rows_affected != null ? t('query.rowsAffected', { count: r.rows_affected, formatted: fmtNumber(r.rows_affected) }) : r.result ? t('query.rowsReturned', { count: r.result.rows.length, formatted: fmtNumber(r.result.rows.length) }) : t('common.ok')} (${t('query.duration', { ms: r.duration_ms })})`),
     ...results.flatMap((r) => r.notices),
     ...messages,
   ];
@@ -83,7 +83,7 @@ export function Results({ results, messages, runId }: { results: StatementResult
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[32px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2" role="tablist">
         <button role="tab" aria-selected={tab === 'results'} className={`btn btn-ghost ${tab === 'results' ? 'font-semibold' : ''}`} onClick={() => setTab('results')}>{t('results.title')}</button>
-        <button role="tab" aria-selected={tab === 'messages'} className={`btn btn-ghost ${tab === 'messages' ? 'font-semibold' : ''}`} onClick={() => setTab('messages')}>{t('query.messages')} ({fmtNumber(allMessages.length)})</button>
+        <button role="tab" aria-selected={tab === 'messages'} className={`btn btn-ghost ${tab === 'messages' ? 'font-semibold' : ''}`} onClick={() => setTab('messages')}>{t('query.messages')} ({allMessages.length})</button>
         {tab === 'results' && withRows.length > 1 && (
           <select className="input ms-2 w-auto" aria-label={t('results.resultSet')} value={idx} onChange={(e) => setIdx(Number(e.target.value))}>
             {withRows.map((r, i) => <option key={i} value={i}>{t('query.statement', { n: r.statement_index + 1 })}: {r.sql_excerpt.slice(0, 40)}</option>)}
@@ -111,7 +111,7 @@ export function Results({ results, messages, runId }: { results: StatementResult
               {current.streaming ? (
                 <span>{t('query.loadingRows', { count: rs.rows.length, formatted: fmtNumber(rs.rows.length) })}{search ? ` · ${t('query.rowsReturned', { count: filteredRows.length, formatted: fmtNumber(filteredRows.length) })}` : ''}</span>
               ) : (
-                <>{t('query.rowsReturned', { count: filteredRows.length, formatted: fmtNumber(filteredRows.length) })} · {t('query.duration', { ms: fmtNumber(current.duration_ms) })}</>
+                <>{t('query.rowsReturned', { count: filteredRows.length, formatted: fmtNumber(filteredRows.length) })} · {t('query.duration', { ms: current.duration_ms })}</>
               )}
               {rs.truncated && <span className="ms-2 text-warn">{t('query.truncated', { count: rs.rows.length, formatted: fmtNumber(rs.rows.length) })}</span>}
             </span>
@@ -134,7 +134,7 @@ export function Results({ results, messages, runId }: { results: StatementResult
         <div className="min-h-0 flex-1 overflow-auto p-2">
           <div className="mb-2 flex items-center gap-2">
             <button className="btn" aria-label={t('results.prevRecord')} title={t('results.prevRecord')} disabled={recordRow <= 0} onClick={() => setRecordRow((r) => r - 1)}><span aria-hidden className="rtl:rotate-180">◀</span></button>
-            <span>{t('results.recordOf', { n: fmtNumber(recordRow + 1), total: fmtNumber(filteredRows.length) })}</span>
+            <span>{t('results.recordOf', { n: recordRow + 1, total: filteredRows.length })}</span>
             <button className="btn" aria-label={t('results.nextRecord')} title={t('results.nextRecord')} disabled={recordRow >= filteredRows.length - 1} onClick={() => setRecordRow((r) => r + 1)}><span aria-hidden className="rtl:rotate-180">▶</span></button>
           </div>
           <table className="w-full text-sm">

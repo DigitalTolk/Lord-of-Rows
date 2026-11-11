@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
 import type { ColumnMeta, Value } from '../lib/types';
 import { displayValue } from '../lib/value';
-import { fmtNumber } from '../lib/format';
 
 export type ChartKind = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'kpi';
 
@@ -57,7 +56,7 @@ export function ChartView({ columns, rows, spec }: { columns: ColumnMeta[]; rows
     const v = data[0]?.[spec.y[0]];
     return (
       <div className="flex h-full flex-col items-center justify-center">
-        <div className="text-4xl font-bold tabular-nums">{typeof v === 'number' ? fmtNumber(v) : v ?? '—'}</div>
+        <div className="text-4xl font-bold tabular-nums">{v ?? '—'}</div>
         <div className="text-muted">{spec.y[0]}</div>
       </div>
     );

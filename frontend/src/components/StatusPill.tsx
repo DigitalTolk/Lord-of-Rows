@@ -69,7 +69,7 @@ export function StatusPill({ s, table, onClick, expanded }: { s: OpenSession; ta
       style={style}
       data-testid="status-pill"
     >
-      <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'} ring-1 ring-black/10`} role="img" aria-label={s.healthy ? t('status.connected') : t('status.lost')} />
+      <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'} ring-1 ring-black/10`} role="img" aria-label={s.healthy ? t('status.healthyDot') : t('status.lostDot')} />
       <span className="shrink-0 font-semibold tracking-wide">{env}</span>
       <span className="shrink-0 opacity-60" aria-hidden>|</span>
       <span className="truncate" dir="auto">{parts.join(' : ')}</span>

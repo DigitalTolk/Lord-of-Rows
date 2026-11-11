@@ -4,7 +4,6 @@ import { ask } from '../components/ask';
 import { ErrorBox, Toolbar } from '../components/ui';
 import { api } from '../lib/ipc';
 import type { SessionInfo } from '../lib/types';
-import { fmtNumber } from '../lib/format';
 import { errMsg, useApp, type Tab } from '../store';
 import { SimpleTable } from './StructureView';
 
@@ -96,7 +95,7 @@ export function MonitorView({ tab }: { tab: Tab }) {
       </Toolbar>
       <ErrorBox error={error} />
       <div className="min-h-0 flex-1 overflow-auto p-2">
-        <h3 className="mb-1 font-semibold">{t('monitor.sessions')} ({fmtNumber(rows.length)})</h3>
+        <h3 className="mb-1 font-semibold">{t('monitor.sessions')} ({rows.length})</h3>
         {!s.capabilities.sessions_monitor ? (
           <p className="text-muted">{t('monitor.unsupported')}</p>
         ) : (
@@ -106,7 +105,7 @@ export function MonitorView({ tab }: { tab: Tab }) {
               {rows.map((r) => (
                 <tr key={r.id} className={`border-b border-border/50 ${r.blocked_by ? 'bg-danger/10' : (r.duration_ms ?? 0) > 60000 && r.state === 'active' ? 'bg-warn/10' : ''}`}>
                   <td className="px-2 font-mono">{r.id}</td><td className="px-2">{r.user}</td><td className="px-2">{r.database}</td><td className="px-2 text-xs">{r.client}</td>
-                  <td className="px-2">{r.state}</td><td className="px-2 text-end">{r.duration_ms != null ? t('monitor.seconds', { n: fmtNumber(r.duration_ms / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) }) : ''}</td><td className="px-2">{r.blocked_by}</td>
+                  <td className="px-2">{r.state}</td><td className="px-2 text-end">{r.duration_ms != null ? t('monitor.seconds', { n: (r.duration_ms / 1000).toFixed(1) }) : ''}</td><td className="px-2">{r.blocked_by}</td>
                   <td dir="ltr" className="max-w-md truncate px-2 font-mono text-xs" title={r.query ?? ''}>{r.query}</td>
                   <td>{s.capabilities.kill_session && !s.config.read_only && <button className="btn text-danger" onClick={() => kill(r.id)}>{t('monitor.kill')}</button>}</td>
                 </tr>

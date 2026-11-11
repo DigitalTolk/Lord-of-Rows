@@ -264,7 +264,7 @@ export default function App() {
       {/* Live region stays mounted so screen readers announce toasts added later. */}
       <div role="log" aria-live="polite" aria-relevant="additions" aria-label={t('shell.notifications')} className="pointer-events-none fixed bottom-8 end-4 z-50 flex flex-col gap-1">
         {st.toasts.map((x) => (
-          <div key={x.id} role={x.kind === 'error' ? 'alert' : undefined} dir="auto" className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="me-1.5 text-ok" aria-hidden>●</span>}{x.text}</div>
+          <div key={x.id} role={x.kind === 'error' ? 'alert' : 'status'} dir="auto" className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="me-1.5 text-ok" aria-hidden>●</span>}{x.text}</div>
         ))}
       </div>
     </div>

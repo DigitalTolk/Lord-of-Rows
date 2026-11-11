@@ -312,8 +312,7 @@
     "changes_few": "{{formatted}} تغييرات",
     "changes_many": "{{formatted}} تغييرًا",
     "changes_other": "{{formatted}} تغيير",
-    "scripts": "نصوص الترحيل",
-    "comparing": "جارٍ مقارنة المخططات…"
+    "scripts": "نصوص الترحيل"
   },
   "audit": {
     "title": "سجل التدقيق",
@@ -381,7 +380,10 @@
       "security_policy_changed": "تغيير سياسة الأمان",
       "audit_exported": "تصدير سجل التدقيق",
       "audit_purged": "حذف من سجل التدقيق",
-      "ai_request": "طلب ذكاء اصطناعي"
+      "ai_request": "طلب ذكاء اصطناعي",
+      "plugin_installed": "تثبيت إضافة",
+      "plugin_permission_changed": "تغيير صلاحية إضافة",
+      "plugin_removed": "إزالة إضافة"
     }
   },
   "monitor": {
@@ -424,7 +426,6 @@
     "pngCopied": "تم نسخ PNG إلى الحافظة",
     "layoutSaved": "تم حفظ التخطيط",
     "showAll": "إظهار الكل (المحدد: {{table}})",
-    "loading": "جارٍ تحميل المخطط…",
     "tableCount_zero": "لا جداول",
     "tableCount_one": "جدول واحد",
     "tableCount_two": "جدولان",
@@ -474,7 +475,6 @@
     "formatJson": "JSON (مصفوفة كائنات)",
     "formatJsonLines": "JSON Lines",
     "refreshPreview": "تحديث المعاينة",
-    "importing": "جارٍ الاستيراد…",
     "source": "المصدر",
     "targetColumn": "العمود الهدف",
     "type": "النوع",
@@ -506,7 +506,6 @@
     "restored": "تمت استعادة {{path}}",
     "tablesPlaceholder": "table_a, table_b",
     "compress": "ضغط",
-    "working": "جارٍ العمل…",
     "logicalNote": "عمليات تصدير SQL لقطات منطقية وليست نسخًا احتياطية مادية. استخدم أدوات النسخ الاحتياطي الأصلية لقاعدة بياناتك (واختبر الاستعادة) للتعافي من الكوارث."
   },
   "settings": {
@@ -548,7 +547,6 @@
     "clearHistory": "مسح سجل الاستعلامات",
     "language": "اللغة",
     "updates": "التحديثات",
-    "sections": "أقسام الإعدادات",
     "about": "الإصدار {{version}} · {{platform}} · بيانات الاعتماد: {{backend}}",
     "languageHint": "تتبع التواريخ والأرقام اللغة المحددة.",
     "languageSystem": "افتراضي النظام ({{name}})",
@@ -683,7 +681,10 @@
     "disconnected": "غير متصل",
     "lost": "انقطع الاتصال",
     "policy": "السياسة: {{name}}",
-    "commands": "{{key}} الأوامر"
+    "commands": "{{key}} الأوامر",
+    "healthyDot": "متصل",
+    "lostDot": "انقطع الاتصال",
+    "latency": "{{ms}} ms"
   },
   "dashboard": {
     "title": "لوحات المعلومات",
@@ -703,11 +704,12 @@
     "seconds": "{{n}} ث",
     "wider": "تغيير العرض",
     "removeWidget": "إزالة عنصر الواجهة {{title}}",
-    "empty": "أنشئ لوحة معلومات لإضافة عناصر واجهة مبنية على الاستعلامات."
+    "empty": "أنشئ لوحة معلومات لإضافة عناصر واجهة مبنية على الاستعلامات.",
+    "off": "إيقاف"
   },
   "history": {
     "title": "السجل والمقتطفات",
-    "toggleFavorite": "تفضيل {{name}}",
+    "toggleFavorite": "تبديل المفضلة",
     "deleteSnippet": "حذف {{name}}",
     "ok": "نجاح",
     "error": "خطأ",
@@ -794,13 +796,7 @@
   },
   "rail": {
     "label": "الاتصالات المفتوحة",
-    "item": "{{name}} ({{env}})",
-    "tabs_zero": "لا علامات تبويب مفتوحة",
-    "tabs_one": "علامة تبويب واحدة مفتوحة",
-    "tabs_two": "علامتا تبويب مفتوحتان",
-    "tabs_few": "{{count}} علامات تبويب مفتوحة",
-    "tabs_many": "{{count}} علامة تبويب مفتوحة",
-    "tabs_other": "{{count}} علامة تبويب مفتوحة"
+    "active": " (نشط)"
   },
   "welcome": {
     "version": "الإصدار {{version}}",
@@ -808,7 +804,6 @@
     "fromUrl": "الاتصال من URL",
     "footer": "تُخزَّن كلمات المرور في {{backend}}. لا قياس عن بُعد.",
     "keychain": "سلسلة مفاتيح النظام",
-    "connecting": "جارٍ الاتصال…",
     "hint": "انقر نقرًا مزدوجًا أو اضغط Enter للاتصال"
   },
   "error": {
@@ -831,7 +826,10 @@
     "settings": "الإعدادات",
     "toggleSidebar": "إظهار/إخفاء الشريط الجانبي",
     "newConnection": "اتصال جديد",
-    "focusMode": "وضع التركيز"
+    "focusMode": "وضع التركيز",
+    "newWindow": "نافذة جديدة",
+    "closeWindow": "إغلاق النافذة",
+    "splitEditor": "تقسيم المحرر"
   },
   "ssh": {
     "trustTitle": "هل تثق بمضيف SSH هذا؟",
@@ -999,7 +997,8 @@
     "sQuery": "ث للاستعلام",
     "tags": "الوسوم",
     "commaSeparated": "مفصولة بفواصل",
-    "openLocalNetwork": "فتح إعدادات الشبكة المحلية"
+    "openLocalNetwork": "فتح إعدادات الشبكة المحلية",
+    "keychain": "سلسلة المفاتيح"
   },
   "copyErr": {
     "partialBinary": "لم تُحمَّل قيمة ثنائية إلا جزئيًا؛ لا يمكن نسخها بتنسيق {{as}}.",

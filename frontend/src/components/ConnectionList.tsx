@@ -1,3 +1,4 @@
+import { fmtNumber } from '../lib/format';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
@@ -352,12 +353,12 @@ export function ConnectionList({
           </div>
         </div>
         {busy === cfg.id ? (
-          <Spinner label={t('welcome.connecting')} />
+          <Spinner />
         ) : (
-          // Mouse shortcut only: no focusable control inside role=option (keyboard users press Enter).
+          // Mouse shortcut only: axe rejects any button (even tabIndex -1) inside role=option;
+          // keyboard and screen-reader users press Enter on the option.
           <span
             aria-hidden
-            title={t('common.connect')}
             className={`icon-btn opacity-0 group-hover:opacity-100 ${active ? 'text-on-solid hover:bg-on-solid/20 hover:text-on-solid' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
@@ -380,7 +381,7 @@ export function ConnectionList({
         <div className="flex items-center gap-1">
           <div className="relative flex-1">
             <Icon name="search" size={14} className="absolute start-2 top-1/2 -translate-y-1/2 text-muted" />
-            <input className="input ps-7" type="search" placeholder={t('conn.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />
+            <input className="input ps-7" placeholder={t('conn.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />
           </div>
           <button className="icon-btn" aria-label={t('connList.newConnection')} title={t('connList.newConnection')} onClick={() => useApp.setState({ connectionDialog: {} })}>
             <Icon name="plus" />
@@ -421,12 +422,15 @@ export function ConnectionList({
           const g = s.group;
           const open = expanded(g);
           const gk = `g:${g.name}`;
+          const hid = `conn-group-${encodeURIComponent(g.name)}`;
+          const label = `${g.name}, ${t('connList.groupCount', { count: s.items.length, formatted: fmtNumber(s.items.length) })}`;
           // The group itself is the focusable, expandable node (group allows aria-expanded inside a listbox).
           return (
             <div
               key={gk}
               role="group"
-              aria-label={`${g.name}, ${t('connList.groupCount', { count: s.items.length })}`}
+              aria-labelledby={hid}
+              aria-label={label}
               aria-expanded={open}
               tabIndex={activeKey === gk ? 0 : -1}
               data-nav={gk}
@@ -442,6 +446,9 @@ export function ConnectionList({
               className="outline-none [&:focus-visible>.group-head]:outline [&:focus-visible>.group-head]:outline-2 [&:focus-visible>.group-head]:-outline-offset-2 [&:focus-visible>.group-head]:outline-accent"
               {...dragProps(g.name)}
             >
+              <span id={hid} hidden>
+                {label}
+              </span>
               <ConnectionGroupHeader
                 group={g}
                 count={s.items.length}

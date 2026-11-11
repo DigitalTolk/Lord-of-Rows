@@ -285,8 +285,7 @@
     "changes_one": "{{formatted}} cambio",
     "changes_many": "{{formatted}} cambios",
     "changes_other": "{{formatted}} cambios",
-    "scripts": "Scripts de migración",
-    "comparing": "Comparando esquemas…"
+    "scripts": "Scripts de migración"
   },
   "audit": {
     "title": "Registro de auditoría",
@@ -345,7 +344,10 @@
       "security_policy_changed": "Política de seguridad modificada",
       "audit_exported": "Registro de auditoría exportado",
       "audit_purged": "Registro de auditoría purgado",
-      "ai_request": "Solicitud de IA"
+      "ai_request": "Solicitud de IA",
+      "plugin_installed": "Plugin instalado",
+      "plugin_permission_changed": "Permiso de plugin modificado",
+      "plugin_removed": "Plugin eliminado"
     }
   },
   "monitor": {
@@ -388,7 +390,6 @@
     "pngCopied": "PNG copiado al portapapeles",
     "layoutSaved": "Disposición guardada",
     "showAll": "Mostrar todo (enfocado: {{table}})",
-    "loading": "Cargando diagrama…",
     "tableCount_one": "{{formatted}} tabla",
     "tableCount_many": "{{formatted}} tablas",
     "tableCount_other": "{{formatted}} tablas",
@@ -423,7 +424,6 @@
     "formatJson": "JSON (matriz de objetos)",
     "formatJsonLines": "JSON Lines",
     "refreshPreview": "Actualizar vista previa",
-    "importing": "Importando…",
     "source": "Origen",
     "targetColumn": "Columna de destino",
     "type": "Tipo",
@@ -452,7 +452,6 @@
     "restored": "restaurado {{path}}",
     "tablesPlaceholder": "tabla_a, tabla_b",
     "compress": "Comprimir",
-    "working": "Procesando…",
     "logicalNote": "Las exportaciones SQL son instantáneas lógicas, no copias de seguridad físicas. Para la recuperación ante desastres, use las herramientas de copia de seguridad nativas de su base de datos (y pruebe las restauraciones)."
   },
   "settings": {
@@ -494,7 +493,6 @@
     "clearHistory": "Borrar el historial de consultas",
     "language": "Idioma",
     "updates": "Actualizaciones",
-    "sections": "Secciones de ajustes",
     "about": "Versión {{version}} · {{platform}} · Credenciales: {{backend}}",
     "languageHint": "Las fechas y los números siguen el idioma seleccionado.",
     "languageSystem": "Predeterminado del sistema ({{name}})",
@@ -626,7 +624,10 @@
     "disconnected": "Sin conexión",
     "lost": "Conexión perdida",
     "policy": "Política: {{name}}",
-    "commands": "{{key}} comandos"
+    "commands": "{{key}} comandos",
+    "healthyDot": "conectado",
+    "lostDot": "conexión perdida",
+    "latency": "{{ms}} ms"
   },
   "dashboard": {
     "title": "Paneles",
@@ -646,11 +647,12 @@
     "seconds": "{{n}} s",
     "wider": "Cambiar ancho",
     "removeWidget": "Quitar el widget {{title}}",
-    "empty": "Cree un panel para añadir widgets basados en consultas."
+    "empty": "Cree un panel para añadir widgets basados en consultas.",
+    "off": "desactivado"
   },
   "history": {
     "title": "Historial y fragmentos",
-    "toggleFavorite": "Marcar {{name}} como favorito",
+    "toggleFavorite": "Marcar o desmarcar como favorito",
     "deleteSnippet": "Eliminar {{name}}",
     "ok": "Correcto",
     "error": "Error",
@@ -728,10 +730,7 @@
   },
   "rail": {
     "label": "Conexiones abiertas",
-    "item": "{{name}} ({{env}})",
-    "tabs_one": "{{count}} pestaña abierta",
-    "tabs_many": "{{count}} pestañas abiertas",
-    "tabs_other": "{{count}} pestañas abiertas"
+    "active": " (activa)"
   },
   "welcome": {
     "version": "Versión {{version}}",
@@ -739,7 +738,6 @@
     "fromUrl": "Conectar desde una URL",
     "footer": "Las contraseñas se guardan en {{backend}}. Sin telemetría.",
     "keychain": "el llavero del sistema",
-    "connecting": "Conectando…",
     "hint": "Haga doble clic o pulse Intro para conectar"
   },
   "error": {
@@ -762,7 +760,10 @@
     "settings": "Ajustes",
     "toggleSidebar": "Mostrar u ocultar la barra lateral",
     "newConnection": "Nueva conexión",
-    "focusMode": "Modo concentración"
+    "focusMode": "Modo concentración",
+    "newWindow": "Nueva ventana",
+    "closeWindow": "Cerrar ventana",
+    "splitEditor": "Dividir editor"
   },
   "ssh": {
     "trustTitle": "¿Confiar en este host SSH?",
@@ -912,7 +913,8 @@
     "sQuery": "s consulta",
     "tags": "Etiquetas",
     "commaSeparated": "separadas por comas",
-    "openLocalNetwork": "Abrir ajustes de Red local"
+    "openLocalNetwork": "Abrir ajustes de Red local",
+    "keychain": "llavero"
   },
   "copyErr": {
     "partialBinary": "Un valor binario solo se cargó parcialmente; no se puede copiar como {{as}}.",

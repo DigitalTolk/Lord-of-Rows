@@ -6,7 +6,7 @@ import { Icon, type IconName } from './icons';
 import { EngineBadge } from './EngineBadge';
 import { displayCombo, DEFAULT_KEYS } from '../lib/keys';
 import { api } from '../lib/ipc';
-import { fmtMs, fmtNumber } from '../lib/format';
+import { fmtNumber } from '../lib/format';
 import { ask } from './ask';
 import { ThemeToggle } from './ThemeToggle';
 import { PendingChangesBar } from './PendingChangesBar';
@@ -135,11 +135,11 @@ export function TabBar() {
               {selected && <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: prod ? 'rgb(var(--danger))' : s?.config.color ?? 'rgb(var(--accent))' }} />}
               <Icon name={KIND_ICON[tab.kind]} size={13} className="shrink-0" />
               <span className="flex-1 truncate" dir="auto">{tab.title}</span>
-              {tab.pinned ? <span className="text-[0.7rem]" aria-hidden>●</span> : (
-                // Mouse affordance only (a focusable button inside role=tab is invalid ARIA); keyboard users press Delete.
+              {tab.pinned ? <span role="img" aria-label={t('shell.pinned')} className="text-[0.7rem]">●</span> : (
+                // Mouse affordance only: any focusable control inside role=tab fails axe nested-interactive
+                // (even with tabIndex -1). Keyboard users close with Delete on the tab or the tab menu.
                 <span aria-hidden title={t('shell.closeTab', { title: tab.title })} className="flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 hover:bg-hover group-hover:opacity-100 group-focus-visible:opacity-100" onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }}><Icon name="x" size={11} /></span>
               )}
-              {tab.pinned && <span className="sr-only">{t('shell.pinned')}</span>}
             </div>
           );
         })}
@@ -176,7 +176,7 @@ export function StatusBar() {
           <EnvBadge env={s.config.environment} />
           {s.config.read_only && <span className="text-warn">{t('safety.readOnlyBanner')}</span>}
           <span className="truncate" dir="auto">{s.server.version.split(',')[0]}</span>
-          {s.latency != null && <span>{fmtMs(s.latency)}</span>}
+          {s.latency != null && <span>{t('status.latency', { ms: s.latency })}</span>}
           <span>{t('status.policy', { name: s.policy.name })}</span>
         </>
       ) : (
@@ -267,7 +267,7 @@ export function CommandPalette() {
         { id: 'split-down', label: activeQuery.split === 'down' ? t('split.close') : t('split.down'), run: () => st.toggleSplit(activeQuery.id, 'down') },
       );
     }
-    for (const c of st.connections) list.push({ id: `conn:${c.config.id}`, label: `⏻ ${c.config.name}`, hint: t(`env.${c.config.environment}`), run: () => st.openSession(c.config.id).catch((e) => st.toast('error', String(e.message ?? e))) });
+    for (const c of st.connections) list.push({ id: `conn:${c.config.id}`, label: `⏻ ${c.config.name}`, hint: c.config.environment, run: () => st.openSession(c.config.id).catch((e) => st.toast('error', String(e.message ?? e))) });
     for (const tb of st.tabs) list.push({ id: `tab:${tb.id}`, label: `⇥ ${tb.title}`, run: () => useApp.setState({ activeTab: tb.id }) });
     return list;
   }, [st, s, t]); // eslint-disable-line react-hooks/exhaustive-deps

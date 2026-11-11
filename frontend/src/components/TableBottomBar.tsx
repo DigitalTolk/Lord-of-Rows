@@ -50,7 +50,7 @@ export function TableBottomBar(p: TableBottomBarProps) {
   const to = p.page * p.pageSize + p.loaded;
   const pages = p.count?.exact ? Math.max(1, Math.ceil(p.count.n / p.pageSize)) : null;
   const hasNext = pages != null ? p.page + 1 < pages : p.loaded >= p.pageSize;
-  const range = p.count?.exact ? t('tableWs.rangeOf', { from: fmtNumber(from), to: fmtNumber(to), total: fmtNumber(p.count.n) }) : t('tableWs.range', { from: fmtNumber(from), to: fmtNumber(to) });
+  const range = p.count?.exact ? t('tableWs.rangeOf', { from, to, total: fmtNumber(p.count.n) }) : t('tableWs.range', { from, to });
   return (
     <div className="grid h-[30px] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-border bg-panel px-2 text-[0.86rem]">
       <div className="flex min-w-0 items-center gap-1.5">
@@ -67,9 +67,9 @@ export function TableBottomBar(p: TableBottomBarProps) {
         {p.mode === 'data' && (
           <>
             {p.count && !p.count.exact ? (
-              <button className="hover:text-fg hover:underline" title={t('tableWs.estimate')} onClick={p.onExactCount}>{t('tableWs.rowsSelected', { sel: fmtNumber(sel), total })}</button>
+              <button className="hover:text-fg hover:underline" title={t('tableWs.estimate')} onClick={p.onExactCount}>{t('tableWs.rowsSelected', { sel, total })}</button>
             ) : (
-              <span>{t('tableWs.rowsSelected', { sel: fmtNumber(sel), total })}</span>
+              <span>{t('tableWs.rowsSelected', { sel, total })}</span>
             )}
             {p.filtered && <span className="rounded bg-accent/15 px-1 text-[0.78rem] text-accent">{t('filter.filtered')}</span>}
             {(p.loading || p.counting) && <Spinner />}
@@ -90,7 +90,7 @@ export function TableBottomBar(p: TableBottomBarProps) {
             <span className="tabular-nums text-muted">{range}</span>
             <button className="icon-btn h-6 w-6" disabled={!hasNext} onClick={() => p.onPage(p.page + 1)} aria-label={t('tableWs.nextPage')} title={t('tableWs.nextPage')}><Icon name="chevronRight" size={14} /></button>
             <select className="input h-6 w-auto py-0 text-[0.82rem]" aria-label={t('grid.pageSize')} value={p.pageSize} onChange={(e) => p.onPageSize(Number(e.target.value))}>
-              {[...new Set([...PAGE_SIZES, p.pageSize])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{t('tableWs.pageSize', { n: fmtNumber(n) })}</option>)}
+              {[...new Set([...PAGE_SIZES, p.pageSize])].sort((a, b) => a - b).map((n) => <option key={n} value={n}>{t('tableWs.pageSize', { n })}</option>)}
             </select>
           </>
         )}

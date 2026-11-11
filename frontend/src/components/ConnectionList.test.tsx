@@ -153,7 +153,7 @@ describe('ConnectionList', () => {
     await renderList();
     fireEvent.contextMenu(header('Work'), { clientX: 5, clientY: 5 });
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete group…' }));
-    expect(await screen.findByText(/Its 2 connections move to Ungrouped/)).toBeTruthy();
+    expect(await screen.findByText(/Its 2 connection\(s\) move to Ungrouped/)).toBeTruthy();
     expect(api.deleteConnectionGroup).not.toHaveBeenCalled();
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));

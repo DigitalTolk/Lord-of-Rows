@@ -128,7 +128,7 @@ describe('axe: no serious or critical violations', () => {
   it('settings, every section', async () => {
     await renderApp();
     await openWorkspace([{ id: 'set', kind: 'settings' as never, title: 'Settings', sessionId: undefined as never, sql: undefined as never }]);
-    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    const nav = screen.getByRole('navigation', { name: 'Settings' });
     for (const b of within(nav).getAllByRole('button')) {
       await act(async () => {
         fireEvent.click(b);
