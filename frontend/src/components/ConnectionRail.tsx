@@ -4,7 +4,7 @@ import { useApp } from '../store';
 import { EngineBadge } from './EngineBadge';
 import { Icon } from './icons';
 
-const ENV_DOT: Record<string, string> = { production: '#d72d2d', staging: '#c47800', testing: '#7c4dff', development: '#0a70f5', local: '#1e9650', custom: '#787880' };
+const ENV_DOT: Record<string, string> = { production: 'bg-danger', staging: 'bg-warn', testing: 'bg-purple', development: 'bg-accent', local: 'bg-ok', custom: 'bg-muted' };
 
 /** Vertical strip of open connections (one per database session). Click to switch; each keeps its own tabs. */
 export function ConnectionRail() {
@@ -29,8 +29,8 @@ export function ConnectionRail() {
           >
             {active && <span className="absolute -left-[7px] h-6 w-[3px] rounded-r bg-accent" />}
             <EngineBadge engine={s.config.engine} size={30} />
-            <span className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full border-2 border-panel" style={{ background: s.healthy ? ENV_DOT[s.config.environment] : '#888' }} />
-            {count > 0 && <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-muted px-1 text-[0.62rem] leading-4 text-white">{count}</span>}
+            <span className={`absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full border-2 border-panel ${s.healthy ? ENV_DOT[s.config.environment] : 'bg-muted/50'}`} />
+            {count > 0 && <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-fg px-1 text-[0.62rem] leading-4 text-bg">{count}</span>}
           </button>
         );
       })}
@@ -39,8 +39,8 @@ export function ConnectionRail() {
       </button>
       {menu && (
         <div role="menu" className="fixed z-50 w-48 rounded-lg border border-border bg-raised p-1 shadow-xl" style={{ left: menu.x, top: menu.y }} onMouseLeave={() => setMenu(null)}>
-          <button role="menuitem" className="block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white" onClick={() => { switchSession(menu.id); useApp.getState().openTab({ kind: 'query', title: 'Query', sessionId: menu.id, sql: '' }); setMenu(null); }}>{t('query.newTab')}</button>
-          <button role="menuitem" className="block w-full rounded-md px-2.5 py-1 text-left text-danger hover:bg-accent hover:text-white" onClick={() => { void closeSession(menu.id); setMenu(null); }}>{t('common.disconnect')}</button>
+          <button role="menuitem" className="menu-item" onClick={() => { switchSession(menu.id); useApp.getState().openTab({ kind: 'query', title: 'Query', sessionId: menu.id, sql: '' }); setMenu(null); }}>{t('query.newTab')}</button>
+          <button role="menuitem" className="menu-item text-danger" onClick={() => { void closeSession(menu.id); setMenu(null); }}>{t('common.disconnect')}</button>
         </div>
       )}
     </nav>

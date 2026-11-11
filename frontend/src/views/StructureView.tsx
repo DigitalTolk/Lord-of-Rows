@@ -158,7 +158,7 @@ export function StructureView({ tab }: { tab: Tab }) {
                 <div key={i} className={`mb-2 rounded border p-2 ${st.destructive ? 'border-danger' : 'border-border'}`}>
                   {(st.destructive || st.may_lock || st.may_rewrite) && (
                     <div className="mb-1 flex gap-1 text-[0.7rem] uppercase">
-                      {st.destructive && <span className="rounded bg-danger px-1 text-white">destructive</span>}
+                      {st.destructive && <span className="rounded bg-danger-solid px-1 text-on-solid">destructive</span>}
                       {st.may_lock && <span className="rounded bg-warn/30 px-1">may lock</span>}
                       {st.may_rewrite && <span className="rounded bg-warn/30 px-1">may rewrite table</span>}
                     </div>

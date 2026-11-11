@@ -36,6 +36,10 @@ const P: Record<string, string> = {
   lock: 'M6 11h12v9H6zM8 11V7a4 4 0 0 1 8 0v4',
   structure: 'M4 5h16M4 10h16M4 15h10M4 20h7',
   sql: 'M8 9l-4 3 4 3M16 9l4 3-4 3M13 6l-2 12',
+  sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4',
+  moon: 'M20 14.2A8 8 0 1 1 9.8 4a6.4 6.4 0 0 0 10.2 10.2z',
+  monitor: 'M3 5h18v11H3zM8.5 20h7M12 16v4',
+  contrast: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18',
 };
 
 export type IconName = keyof typeof P;

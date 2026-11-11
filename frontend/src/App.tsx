@@ -11,6 +11,7 @@ import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
 import { Sidebar } from './components/Sidebar';
 import { api } from './lib/ipc';
+import { applyThemeClasses, cachedThemePref, cacheThemePref, onOsThemeChange, osTheme, parseThemePref, resolveTheme, THEME_SETTING } from './lib/theme';
 import { DEFAULT_KEYS, displayCombo, eventCombo, matches, type KeyAction } from './lib/keys';
 import { errMsg, useApp, type Tab } from './store';
 import { AuditView } from './views/AuditView';
@@ -44,23 +45,21 @@ function View({ tab }: { tab: Tab }) {
 }
 
 function useTheme() {
-  const settings = useApp((s) => s.settings);
+  const pref = parseThemePref(useApp((s) => s.settings[THEME_SETTING]) ?? cachedThemePref());
+  const reduceMotion = useApp((s) => !!s.settings['a11y.reduceMotion']);
+  const scale = useApp((s) => s.settings['appearance.scale']);
   useEffect(() => {
     const root = document.documentElement;
-    const apply = () => {
-      const pref = (settings['appearance.theme'] as string) ?? 'system';
-      const dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      const hc = pref === 'hc' || (pref === 'system' && window.matchMedia('(prefers-contrast: more)').matches);
-      root.classList.toggle('dark', dark && !hc);
-      root.classList.toggle('hc', hc);
-      root.classList.toggle('reduce-motion', !!settings['a11y.reduceMotion']);
-      root.style.setProperty('--ui-scale', String(settings['appearance.scale'] ?? 1));
-    };
+    root.classList.toggle('reduce-motion', reduceMotion);
+    root.style.setProperty('--ui-scale', String(scale ?? 1));
+  }, [reduceMotion, scale]);
+  useEffect(() => {
+    // System mode follows OS colour-scheme / contrast changes live (incl. Monaco via useEditorTheme).
+    cacheThemePref(pref);
+    const apply = () => applyThemeClasses(document.documentElement, resolveTheme(pref, osTheme()));
     apply();
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, [settings]);
+    return onOsThemeChange(apply);
+  }, [pref]);
 }
 
 /** Periodic health check with bounded auto-reconnect is surfaced in the status bar. */
@@ -164,9 +163,9 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       {activeSession?.config.environment === 'production' && !showLauncher && (
-        <div role="alert" className="shrink-0 bg-danger px-3 py-[2px] text-center text-[0.78rem] font-semibold tracking-wide text-white">{t('safety.productionBanner')} — {activeSession.config.name}</div>
+        <div role="alert" className="shrink-0 bg-danger-solid px-3 py-[2px] text-center text-[0.78rem] font-semibold tracking-wide text-on-solid">{t('safety.productionBanner')} — {activeSession.config.name}</div>
       )}
-      {error && <div role="alert" className="bg-danger p-2 text-white">{error}</div>}
+      {error && <div role="alert" className="bg-danger-solid p-2 text-on-solid">{error}</div>}
       {showLauncher ? (
         <div className="relative min-h-0 flex-1">
           <Welcome />
@@ -218,7 +217,7 @@ export default function App() {
       <AskHost />
       <div aria-live="polite" className="pointer-events-none fixed bottom-8 right-4 z-50 flex flex-col gap-1">
         {st.toasts.map((x) => (
-          <div key={x.id} role={x.kind === 'error' ? 'alert' : 'status'} className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger bg-danger text-white' : 'border-border bg-raised'}`}>{x.kind === 'ok' && <span className="mr-1.5 text-ok">●</span>}{x.text}</div>
+          <div key={x.id} role={x.kind === 'error' ? 'alert' : 'status'} className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="mr-1.5 text-ok">●</span>}{x.text}</div>
         ))}
       </div>
     </div>

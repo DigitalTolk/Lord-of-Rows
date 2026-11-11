@@ -17,7 +17,7 @@ export const ENGINE_LABELS: Record<Engine, string> = {
 };
 
 const ENVS: EnvironmentKind[] = ['local', 'development', 'testing', 'staging', 'production', 'custom'];
-const ENV_COLOR: Record<EnvironmentKind, string> = { local: '#1e9650', development: '#0a70f5', testing: '#7c4dff', staging: '#c47800', production: '#d72d2d', custom: '#787880' };
+const ENV_DOT: Record<EnvironmentKind, string> = { local: 'bg-ok', development: 'bg-accent', testing: 'bg-purple', staging: 'bg-warn', production: 'bg-danger', custom: 'bg-muted' };
 const DEFAULT_PORT: Partial<Record<Engine, number>> = { postgres: 5432, my_sql: 3306, maria_db: 3306, percona: 3306, single_store: 3306, cockroach_db: 26257, yugabyte_db: 5433, redshift: 5439, greenplum: 5432, redis: 6379 };
 
 export function blankConnection(engine: Engine = 'postgres'): ConnectionConfig {
@@ -204,7 +204,7 @@ export function ConnectionDialog() {
         </div>
         <div className="ml-auto flex items-center gap-1" role="radiogroup" aria-label={t('conn.color')}>
           {['#0a70f5', '#1e9650', '#c47800', '#d72d2d', '#7c4dff', '#787880'].map((c) => (
-            <button key={c} role="radio" aria-checked={cfg.color === c} aria-label={c} onClick={() => set('color', cfg.color === c ? null : c)} className={`h-4 w-4 rounded-full ring-offset-1 ring-offset-panel ${cfg.color === c ? 'ring-2 ring-fg/60' : ''}`} style={{ background: c }} />
+            <button key={c} role="radio" aria-checked={cfg.color === c} aria-label={c} onClick={() => set('color', cfg.color === c ? null : c)} className={`h-4 w-4 rounded-full ring-offset-1 ring-offset-bg ${cfg.color === c ? 'ring-2 ring-fg/60' : ''}`} style={{ background: c }} />
           ))}
         </div>
       </div>
@@ -216,7 +216,7 @@ export function ConnectionDialog() {
         <div className="seg" role="radiogroup" aria-label={t('conn.environment')}>
           {ENVS.map((e) => (
             <button key={e} role="radio" aria-checked={cfg.environment === e} onClick={() => set('environment', e)} className="flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full" style={{ background: ENV_COLOR[e] }} />
+              <span className={`h-2 w-2 rounded-full ${ENV_DOT[e]}`} />
               {t(`env.${e}`)}
             </button>
           ))}

@@ -7,10 +7,9 @@ import { EngineBadge } from './EngineBadge';
 import { displayCombo, DEFAULT_KEYS } from '../lib/keys';
 import { api } from '../lib/ipc';
 import { ask } from './ask';
+import { ThemeToggle } from './ThemeToggle';
 
 const KIND_ICON: Record<TabKind, IconName> = { query: 'sql', table: 'table', structure: 'structure', diff: 'copy', audit: 'shield', monitor: 'pulse', er: 'diagram', settings: 'gear', import: 'download', backup: 'db', history: 'history', dashboard: 'chart' };
-
-const ENV_BG: Record<string, string> = { production: 'bg-danger text-white', staging: 'bg-warn/90 text-white', testing: 'bg-[#7c4dff] text-white', development: 'bg-accent text-white', local: 'bg-ok text-white', custom: 'bg-muted text-white' };
 
 export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
   const { t } = useTranslation();
@@ -32,7 +31,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         {s ? (
           <button onClick={() => setMenu(!menu)} className="flex h-7 max-w-[46vw] items-center gap-2 rounded-md border border-border bg-raised pl-1 pr-3 text-[0.92rem] shadow-sm hover:bg-hover" aria-haspopup="menu">
-            <span className={`rounded px-1.5 py-[1px] text-[0.68rem] font-bold uppercase tracking-wide ${ENV_BG[s.config.environment]}`}>{t(`env.${s.config.environment}`)}</span>
+            <EnvBadge env={s.config.environment} />
             <span className={`h-2 w-2 shrink-0 rounded-full ${s.healthy ? 'bg-ok' : 'bg-danger'}`} aria-label={s.healthy ? 'healthy' : 'connection lost'} />
             <span className="truncate font-medium">{s.config.name}</span>
             <span className="truncate text-muted">{s.server.version.split(' on ')[0].split(',')[0].replace(/\s*\(.*\)/, '')}{s.activeSchema ? ` : ${s.activeSchema}` : ''}</span>
@@ -44,13 +43,13 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         {menu && s && (
           <div role="menu" className="absolute left-1/2 top-9 z-50 w-64 -translate-x-1/2 rounded-lg border border-border bg-raised p-1 shadow-xl" onMouseLeave={() => setMenu(false)}>
             {Object.values(sessions).map((x) => (
-              <button key={x.session_id} role="menuitem" className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-accent hover:text-white ${x.session_id === s.session_id ? 'font-semibold' : ''}`} onClick={() => { useApp.getState().switchSession(x.session_id); setMenu(false); }}>
+              <button key={x.session_id} role="menuitem" className={`menu-item flex items-center gap-2 ${x.session_id === s.session_id ? 'font-semibold' : ''}`} onClick={() => { useApp.getState().switchSession(x.session_id); setMenu(false); }}>
                 <EngineBadge engine={x.config.engine} size={18} /> <span className="truncate">{x.config.name}</span>
               </button>
             ))}
             <div className="my-1 border-t border-border" />
-            <button role="menuitem" className="block w-full rounded-md px-2 py-1 text-left hover:bg-accent hover:text-white" onClick={() => { useApp.setState({ launcher: true }); setMenu(false); }}>Open another connection…</button>
-            <button role="menuitem" className="block w-full rounded-md px-2 py-1 text-left text-danger hover:bg-accent hover:text-white" onClick={() => { void closeSession(s.session_id); setMenu(false); }}>{t('common.disconnect')} {s.config.name}</button>
+            <button role="menuitem" className="menu-item" onClick={() => { useApp.setState({ launcher: true }); setMenu(false); }}>Open another connection…</button>
+            <button role="menuitem" className="menu-item text-danger" onClick={() => { void closeSession(s.session_id); setMenu(false); }}>{t('common.disconnect')} {s.config.name}</button>
           </div>
         )}
       </div>
@@ -64,6 +63,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         <button className="icon-btn" title="Dashboards" aria-label="Dashboards" disabled={!s} onClick={tool('dashboard', 'Dashboards')}><Icon name="chart" /></button>
         <button className="icon-btn" title={t('query.history')} aria-label={t('query.history')} onClick={tool('history', t('query.history'))}><Icon name="history" /></button>
         <button className="icon-btn" title={t('audit.title')} aria-label={t('audit.title')} onClick={() => openTab({ kind: 'audit', title: t('audit.title') })}><Icon name="shield" /></button>
+        <ThemeToggle />
         <button className="icon-btn" title={t('settings.title')} aria-label={t('settings.title')} onClick={() => openTab({ kind: 'settings', title: t('settings.title') })}><Icon name="gear" /></button>
       </div>
     </header>
@@ -115,7 +115,7 @@ export function TabBar() {
             ['Close others', () => tabs.filter((x) => x.id !== menu.id).forEach((x) => closeTab(x.id))],
             ['Close', () => closeTab(menu.id)],
           ].map(([l, f]) => (
-            <button key={l as string} role="menuitem" className="block w-full rounded-md px-2.5 py-1 text-left hover:bg-accent hover:text-white" onClick={() => { setMenu(null); (f as () => void)(); }}>{l as string}</button>
+            <button key={l as string} role="menuitem" className="menu-item" onClick={() => { setMenu(null); (f as () => void)(); }}>{l as string}</button>
           ))}
         </div>
       )}
@@ -223,11 +223,11 @@ export function CommandPalette() {
     c.run();
   };
   return (
-    <div className="fixed inset-0 z-50 flex justify-center bg-black/30 pt-24" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div role="dialog" aria-modal="true" aria-label="Command palette" className="h-fit w-[min(620px,90vw)] overflow-hidden rounded-xl border border-border bg-raised shadow-[0_20px_60px_rgb(0_0_0/0.3)]">
+    <div className="fixed inset-0 z-50 flex justify-center bg-overlay/40 pt-24" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div role="dialog" aria-modal="true" aria-label="Command palette" className="h-fit w-[min(620px,90vw)] overflow-hidden rounded-xl border border-border bg-raised shadow-[0_20px_60px_rgb(var(--shadow)/0.3)]">
         <input
           ref={input}
-          className="h-11 w-full border-b border-border bg-transparent px-4 text-[1.05rem] outline-none"
+          className="h-11 w-full border-b border-border bg-transparent px-4 text-[1.05rem] text-fg outline-none placeholder:text-muted/70"
           placeholder={t('palette.placeholder')}
           value={q}
           role="combobox"
@@ -245,9 +245,9 @@ export function CommandPalette() {
         <ul id="palette-list" role="listbox" className="max-h-96 overflow-auto py-1">
           {results.length === 0 && <li className="px-3 py-2 text-muted">{t('palette.noMatches')}</li>}
           {results.map(({ c }, i) => (
-            <li key={c.id} id={`pc-${i}`} role="option" aria-selected={i === idx} className={`mx-1 flex cursor-default rounded-md px-3 py-1.5 ${i === idx ? 'bg-accent text-white' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => run(c)}>
+            <li key={c.id} id={`pc-${i}`} role="option" aria-selected={i === idx} className={`mx-1 flex cursor-default rounded-md px-3 py-1.5 ${i === idx ? 'row-selected' : ''}`} onMouseEnter={() => setIdx(i)} onClick={() => run(c)}>
               <span className="truncate">{c.label}</span>
-              {c.hint && <span className="ml-auto pl-2 text-xs text-muted">{c.hint}</span>}
+              {c.hint && <span className={`ml-auto pl-2 text-xs ${i === idx ? 'text-on-solid/80' : 'text-muted'}`}>{c.hint}</span>}
             </li>
           ))}
         </ul>
