@@ -10,6 +10,16 @@ from scratch with Tauri 2 (Rust backend) and React/TypeScript. All code, design 
 against real PostgreSQL, MySQL, MariaDB, Redis, DynamoDB Local and an SSH bastion. Windows builds
 are not done yet; see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOCKERS.md).
 
+## Install (macOS)
+
+```
+brew install --cask digitaltolk/tap/lord-of-the-rows
+```
+
+Or download the DMG from [Releases](https://github.com/DigitalTolk/Lord-of-Rows/releases). Builds are universal
+(Apple Silicon + Intel, macOS 11+), signed with DigitalTolk's Developer ID and notarized by Apple.
+Update with `brew upgrade --cask lord-of-the-rows`.
+
 ## What works today
 
 - PostgreSQL, MySQL, SQLite, Redis, DynamoDB (PartiQL; tested against DynamoDB Local) (plus wire-compatible engines, unverified)
