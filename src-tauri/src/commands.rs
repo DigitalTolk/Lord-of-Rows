@@ -1666,6 +1666,7 @@ mod tests {
             stream_acks: Default::default(),
             grants: Default::default(),
             known_hosts: std::path::PathBuf::from("/nonexistent/known_hosts"),
+            plugins: crate::plugins::PluginHost::new(std::env::temp_dir().join(format!("lotr-plugins-{}", Uuid::new_v4()))).unwrap(),
         }
     }
 
@@ -1682,7 +1683,7 @@ mod tests {
         cfg.read_only = read_only;
         let (conn, _) = connect(st, &cfg, ConnectSecrets::default(), dbs_ssh::SshSecrets::default(), None).await.unwrap();
         let id = Uuid::new_v4();
-        st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg, conn: Arc::from(conn), _tunnel: None }));
+        st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg, conn: Arc::from(conn), _tunnel: None, owner: "main".into() }));
         id.to_string()
     }
 
