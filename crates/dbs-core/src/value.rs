@@ -91,6 +91,55 @@ impl Value {
     }
 }
 
+/// Compact wire form for result rows (≈3× smaller than the tagged form):
+/// * `null`, `true/false`, JSON numbers for `Int` and finite `Float`,
+/// * strings for Text/BigInt/Decimal/Uuid/Date/Time/Timestamp (types recovered
+///   from column metadata on the client; big integers/decimals stay exact strings),
+/// * the normal tagged object for Bytes/Json/Array/Other and non-finite floats.
+pub mod compact {
+    use super::Value;
+    use serde::ser::{SerializeSeq, Serializer};
+    use serde::Serialize;
+
+    struct Cell<'a>(&'a Value);
+
+    impl Serialize for Cell<'_> {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            match self.0 {
+                Value::Null => s.serialize_unit(),
+                Value::Bool(b) => s.serialize_bool(*b),
+                Value::Int(i) => s.serialize_i64(*i),
+                Value::Float(f) if f.is_finite() => s.serialize_f64(*f),
+                Value::BigInt(v) | Value::Decimal(v) | Value::Text(v) | Value::Uuid(v) | Value::Date(v) | Value::Time(v) => s.serialize_str(v),
+                Value::Timestamp { iso, .. } => s.serialize_str(iso),
+                // NaN/±Infinity aren't JSON numbers: send them as typed text.
+                Value::Float(f) => Value::Other { type_name: "float".into(), text: f.to_string() }.serialize(s),
+                other => other.serialize(s),
+            }
+        }
+    }
+
+    struct Row<'a>(&'a [Value]);
+
+    impl Serialize for Row<'_> {
+        fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+            let mut seq = s.serialize_seq(Some(self.0.len()))?;
+            for v in self.0 {
+                seq.serialize_element(&Cell(v))?;
+            }
+            seq.end()
+        }
+    }
+
+    pub fn serialize_rows<S: Serializer>(rows: &[Vec<Value>], s: S) -> Result<S::Ok, S::Error> {
+        let mut seq = s.serialize_seq(Some(rows.len()))?;
+        for r in rows {
+            seq.serialize_element(&Row(r))?;
+        }
+        seq.end()
+    }
+}
+
 pub fn hex_encode(b: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut s = String::with_capacity(b.len() * 2);
@@ -141,6 +190,31 @@ mod tests {
             }
             _ => panic!(),
         }
+    }
+
+    #[test]
+    fn compact_rows_shape() {
+        let rs = crate::ResultSet {
+            columns: vec![],
+            rows: vec![vec![
+                Value::Null,
+                Value::Bool(true),
+                Value::Int(7),
+                Value::Float(1.5),
+                Value::BigInt("9223372036854775807".into()),
+                Value::Decimal("0.10".into()),
+                Value::Text("".into()),
+                Value::Timestamp { iso: "2024-01-01T00:00:00Z".into(), tz: true },
+                Value::Json(serde_json::json!({"a": 1})),
+                Value::Float(f64::NAN),
+            ]],
+            truncated: false,
+        };
+        let j = serde_json::to_value(&rs).unwrap();
+        assert_eq!(
+            j["rows"][0],
+            serde_json::json!([null, true, 7, 1.5, "9223372036854775807", "0.10", "", "2024-01-01T00:00:00Z", {"t": "json", "v": {"a": 1}}, {"t": "other", "v": {"type_name": "float", "text": "NaN"}}])
+        );
     }
 
     #[test]

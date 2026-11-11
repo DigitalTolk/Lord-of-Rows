@@ -2,6 +2,7 @@
 // module only marshals arguments. Errors are rethrown as DbError objects.
 import { invoke } from '@tauri-apps/api/core';
 import type * as T from './types';
+import { hydrate } from './hydrate';
 
 export class IpcError extends Error {
   constructor(public err: T.DbError) {
@@ -50,12 +51,12 @@ export const api = {
   evaluateSql: (sessionId: string, sql: string) => call<T.Evaluation>('evaluate_sql', { sessionId, sql }),
   splitSql: (engine: T.Engine, sql: string) => call<[number, number][]>('split_sql', { engine, sql }),
   runSql: (req: { session_id: string; sql: string; query_id: string; confirm_token?: string | null; typed_confirmation?: string | null; max_rows?: number | null }) =>
-    call<{ results: T.StatementResult[]; duration_ms: number }>('run_sql', { req }),
+    call<{ results: T.StatementResult[]; duration_ms: number }>('run_sql', { req }).then((r) => ({ ...r, results: r.results.map((s) => ({ ...s, result: hydrate(s.result) })) })),
   cancelQuery: (queryId: string) => call<boolean>('cancel_query', { queryId }),
   explainSql: (sessionId: string, sql: string, analyze: boolean, confirmToken?: string | null, typedConfirmation?: string | null) =>
-    call<T.ResultSet>('explain_sql', { sessionId, sql, analyze, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }),
+    call<T.ResultSet>('explain_sql', { sessionId, sql, analyze, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }).then(hydrate),
 
-  fetchTable: (sessionId: string, target: T.TableTarget, page: T.PageRequest) => call<T.ResultSet>('fetch_table', { sessionId, target, page }),
+  fetchTable: (sessionId: string, target: T.TableTarget, page: T.PageRequest) => call<T.ResultSet>('fetch_table', { sessionId, target, page }).then(hydrate),
   countRows: (sessionId: string, target: T.TableTarget, filters: T.FilterCondition[]) => call<number>('count_rows', { sessionId, target, filters }),
   previewChanges: (sessionId: string, target: T.TableTarget, changes: T.RowChange[]) =>
     call<{ statements: string[]; decision: T.Decision }>('preview_changes', { sessionId, target, changes }),

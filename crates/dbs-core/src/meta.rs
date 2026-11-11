@@ -15,6 +15,9 @@ pub struct ColumnMeta {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ResultSet {
     pub columns: Vec<ColumnMeta>,
+    /// Serialized compactly for IPC (see [`crate::value::compact`]); the frontend
+    /// rebuilds exact types from the column metadata.
+    #[serde(serialize_with = "crate::value::compact::serialize_rows")]
     pub rows: Vec<Vec<Value>>,
     /// True when the engine had more rows than `max_rows` and we stopped reading.
     pub truncated: bool,
