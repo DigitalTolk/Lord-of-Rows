@@ -1500,6 +1500,9 @@
     "detailHost": "Host",
     "detailPort": "Puerto",
     "detailUser": "Usuario",
-    "detailDatabase": "Base de datos"
+    "detailDatabase": "Base de datos",
+    "ticket": "Ticket (opcional)",
+    "ticketHint": "Una referencia como OPS-123; la verá quien apruebe.",
+    "ticketInvalid": "Usa letras, dígitos y - _ . # / (hasta 40)."
   }
 }

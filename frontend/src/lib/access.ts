@@ -84,13 +84,20 @@ export interface RequestDraft {
   access: AccessLevel;
   databases: string[];
   reason: string;
+  /** Optional ticket reference. */
+  ticket?: string;
 }
 
-export function draftFrom(r: Pick<AccessRequest, 'resource_id' | 'access' | 'databases' | 'create_database' | 'reason'>): RequestDraft {
-  return { resourceId: r.resource_id, access: r.access === 'read_write' ? 'read_write' : 'read_only', databases: r.create_database ? [] : [...r.databases], reason: r.reason };
+export function draftFrom(r: Pick<AccessRequest, 'resource_id' | 'access' | 'databases' | 'create_database' | 'reason' | 'ticket'>): RequestDraft {
+  const d: RequestDraft = { resourceId: r.resource_id, access: r.access === 'read_write' ? 'read_write' : 'read_only', databases: r.create_database ? [] : [...r.databases], reason: r.reason };
+  if (r.ticket) d.ticket = r.ticket;
+  return d;
 }
 
-export type DraftProblem = 'resource' | 'databases' | 'newDatabase' | 'reason' | null;
+/** A ticket reference: letters, digits and - _ . # / (1-40), same rule as the backend. */
+export const validTicket = (t: string) => /^[A-Za-z0-9\-_.#/]{1,40}$/.test(t);
+
+export type DraftProblem = 'resource' | 'databases' | 'newDatabase' | 'ticket' | 'reason' | null;
 
 /** First problem with a draft (same rules the backend applies). */
 export function draftProblem(d: RequestDraft, createDatabase: string | null): DraftProblem {
@@ -98,6 +105,7 @@ export function draftProblem(d: RequestDraft, createDatabase: string | null): Dr
   if (createDatabase !== null) {
     if (!/^[A-Za-z0-9_]{1,64}$/.test(createDatabase.trim())) return 'newDatabase';
   } else if (d.databases.length === 0) return 'databases';
+  if (d.ticket?.trim() && !validTicket(d.ticket.trim())) return 'ticket';
   if (!d.reason.trim()) return 'reason';
   return null;
 }
@@ -149,7 +157,7 @@ export function matchesFilter(r: AccessRequest, f: ListFilter): boolean {
   if (f.envs.size && !f.envs.has(r.environment)) return false;
   const q = f.query.trim().toLowerCase();
   if (!q) return true;
-  return [r.resource_name, r.environment_name, r.reason, ...r.databases, r.requester.name, r.requester.email].some((v) => (v ?? '').toLowerCase().includes(q));
+  return [r.resource_name, r.environment_name, r.reason, r.ticket ?? '', ...r.databases, r.requester.name, r.requester.email].some((v) => (v ?? '').toLowerCase().includes(q));
 }
 
 const newest = (a: AccessRequest, b: AccessRequest) => b.created_at.localeCompare(a.created_at);

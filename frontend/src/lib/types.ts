@@ -361,7 +361,10 @@ export interface AccessRequest {
   environment: EnvironmentKind;
   engine?: Engine | null;
   access?: AccessLevel | null;
+  /** Without the ticket reference. */
   reason: string;
+  /** Ticket reference (e.g. OPS-123), if given. */
+  ticket?: string | null;
   databases: string[];
   create_database: boolean;
   status: AccessRequestStatus;
@@ -392,7 +395,7 @@ export interface AccessResource {
   access_levels: AccessLevel[];
 }
 export interface AccessTargets { targets: string[]; error?: string | null }
-export interface AccessRequestInput { resource_id: string; access: AccessLevel; reason: string; databases: string[]; create_database: boolean }
+export interface AccessRequestInput { resource_id: string; access: AccessLevel; reason: string; databases: string[]; create_database: boolean; ticket?: string | null }
 export interface AccessConnectionDetails { engine: Engine; host: string; port?: number | null; database?: string | null; username: string }
 export interface AccessConnectCheck { reusable: boolean; connection_id?: string | null; reveals_remaining?: number | null; details?: AccessConnectionDetails | null }
 export interface AccessConnectOutcome { connection_id: string; reused: boolean; reveals_remaining?: number | null; password_in_memory: boolean }

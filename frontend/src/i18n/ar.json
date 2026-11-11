@@ -1707,6 +1707,9 @@
     "detailHost": "المضيف",
     "detailPort": "المنفذ",
     "detailUser": "المستخدم",
-    "detailDatabase": "قاعدة البيانات"
+    "detailDatabase": "قاعدة البيانات",
+    "ticket": "التذكرة (اختياري)",
+    "ticketHint": "مرجع مثل OPS-123؛ يظهر لمن يوافق على الطلب.",
+    "ticketInvalid": "استخدم أحرفاً وأرقاماً و - _ . # / (حتى 40)."
   }
 }

@@ -34,7 +34,7 @@ export function RequestAccessSheet({ draft, onClose }: { draft?: RequestDraft; o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
-  const ids = { search: useId(), reason: useId(), access: useId(), dbs: useId(), newDb: useId() };
+  const ids = { search: useId(), ticket: useId(), reason: useId(), access: useId(), dbs: useId(), newDb: useId() };
   const noManager = user?.request_blocked === 'no_approver';
 
   useEffect(() => {
@@ -100,6 +100,7 @@ export function RequestAccessSheet({ draft, onClose }: { draft?: RequestDraft; o
         reason: form.reason.trim(),
         databases: newDb !== null ? [newDb.trim()] : form.databases,
         create_database: newDb !== null,
+        ticket: form.ticket?.trim() || null,
       });
       // Show it right away (filled in by the next refresh).
       const optimistic: AccessRequestView = {
@@ -259,6 +260,11 @@ export function RequestAccessSheet({ draft, onClose }: { draft?: RequestDraft; o
             {show('newDatabase') && <p className="mt-1 text-xs text-danger">{t('access.newDatabaseHint')}</p>}
           </fieldset>
 
+          <div className="mb-3">
+            <label className="label" htmlFor={ids.ticket}>{t('access.ticket')}</label>
+            <input id={ids.ticket} className="input w-[200px] font-mono" placeholder="OPS-123" maxLength={40} value={form.ticket ?? ''} onChange={(e) => setForm((f) => ({ ...f, ticket: e.target.value }))} />
+            {show('ticket') ? <p className="mt-1 text-xs text-danger">{t('access.ticketInvalid')}</p> : <p className="mt-0.5 text-xs text-muted">{t('access.ticketHint')}</p>}
+          </div>
           <div className="mb-3">
             <label className="label" htmlFor={ids.reason}>{t('access.reason')}</label>
             <textarea id={ids.reason} className="input h-24 w-full" required maxLength={2000} placeholder={t('access.reasonPlaceholder')} value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))} />

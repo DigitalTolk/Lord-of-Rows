@@ -46,6 +46,7 @@ const api = vi.hoisted(() => ({
   accessConnectCheck: vi.fn(async () => ({ reusable: false, connection_id: null, reveals_remaining: 4, details: { engine: 'postgres', host: 'db.example.com', port: 5432, database: 'shop', username: 'dev_r2' } })),
   accessGetRequest: vi.fn(async (_p: string, id: string) => ({ ...state.requests.concat(state.approvals).find((r) => r.id === id)!, log: [{ ts: '2027-01-01T10:00:05Z', level: 'info', msg: 'created user dev_r2' }] })),
   accessApprove: vi.fn(async () => state.approvals[0]),
+  accessCreateRequest: vi.fn(async (_p: string, input: { resource_id: string }) => req('new', { resource_id: input.resource_id })),
   accessConnect: vi.fn(async () => ({ connection_id: 'conn-1', reused: false, reveals_remaining: 3, password_in_memory: false })),
   accessReject: vi.fn(async () => state.approvals[0]),
   listConnections: vi.fn(async () => []),
@@ -417,5 +418,25 @@ describe('AccessPanel', () => {
       // Confirmation dialog (AskHost is not mounted here): approval needs it, so nothing was sent yet.
       expect(api.accessApprove).not.toHaveBeenCalled();
     });
+  });
+
+  it('ticket: chip on cards, kept when requesting again, sent with the request', async () => {
+    state.providers = [PROVIDER];
+    state.status = { signed_in: true, signing_in: false, user: { id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false } };
+    state.requests = [req('h', { status: 'expired', resource_name: 'billing', ticket: 'OPS-123', databases: ['ledger'] })];
+    await show();
+    fireEvent.click(screen.getByRole('tab', { name: /History/ }));
+    const card = screen.getByRole('listitem', { name: 'billing' });
+    expect(card.querySelector('[data-ticket="OPS-123"]')).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(within(card).getByRole('button', { name: 'Request again' }));
+    });
+    expect((screen.getByLabelText('Ticket (optional)') as HTMLInputElement).value).toBe('OPS-123');
+    api.accessCreateRequest.mockClear();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Submit request/ }));
+    });
+    expect(api.accessCreateRequest).toHaveBeenCalledWith('p1', expect.objectContaining({ ticket: 'OPS-123', databases: ['ledger'], resource_id: 'res-1' }));
+    useAccess.setState({ sheet: null });
   });
 });

@@ -8,6 +8,7 @@ import { useApp } from '../store';
 import { ENGINE_LABELS } from './ConnectionDialog';
 import { Icon } from './icons';
 import { Dialog, EnvBadge, Spinner } from './ui';
+import { TicketChip } from './TicketChip';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
 
@@ -87,6 +88,7 @@ export function RequestDrawer({ request, mode, onClose, actions }: { request: Ac
       <div className="mb-3 flex flex-wrap items-center gap-1.5 text-sm">
         {r.environment_name && <EnvBadge env={r.environment} />}
         <span className="rounded-full border border-border px-1.5 text-[0.7rem] font-semibold">{r.access === 'read_write' ? t('access.readWrite') : t('access.readOnly')}</span>
+        <TicketChip ticket={r.ticket} />
         <span className="text-muted">{t(`access.phase.${phase}`)}</span>
         {left && <span className="text-xs text-muted">· {t('access.expiresIn', { time: t(durationLabel(left).key, durationLabel(left).vars) })}</span>}
       </div>

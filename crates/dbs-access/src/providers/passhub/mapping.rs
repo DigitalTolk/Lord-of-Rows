@@ -102,6 +102,19 @@ fn person(id: &str, name: &str, email: &str) -> Option<Person> {
     (!name.is_empty() || !email.is_empty()).then(|| Person { id: id.to_string(), name: name.to_string(), email: email.to_string() })
 }
 
+/// Splits a `[OPS-123] reason` into the ticket and the reason.
+pub fn split_ticket(reason: &str) -> (Option<String>, String) {
+    let s = reason.trim_start();
+    if let Some(rest) = s.strip_prefix('[') {
+        if let Some((t, after)) = rest.split_once(']') {
+            if crate::valid_ticket(t) {
+                return (Some(t.to_string()), after.trim_start().to_string());
+            }
+        }
+    }
+    (None, reason.to_string())
+}
+
 pub fn request(r: &Wire, now: i64) -> AccessRequest {
     let status = status(r, now);
     let approver =
@@ -125,7 +138,8 @@ pub fn request(r: &Wire, now: i64) -> AccessRequest {
         environment: environment_for(&r.environment_name),
         engine: engine_for(&r.driver_key, &r.engine),
         access: access_level(&r.access_type),
-        reason: r.reason.clone(),
+        reason: split_ticket(&r.reason).1,
+        ticket: split_ticket(&r.reason).0,
         databases,
         create_database: r.create_database,
         status,
@@ -272,6 +286,15 @@ mod tests {
         assert_eq!(r.environment, EnvironmentKind::Production);
         let p = request(&Wire { status: "pending".into(), ..wire() }, 1000);
         assert_eq!(p.approver.unwrap().name, "Morgan", "pending: who will decide");
+    }
+
+    #[test]
+    fn ticket_prefix() {
+        assert_eq!(split_ticket("[OPS-123] fix the report"), (Some("OPS-123".into()), "fix the report".into()));
+        assert_eq!(split_ticket("[ops/42]x"), (Some("ops/42".into()), "x".into()));
+        assert_eq!(split_ticket("no ticket"), (None, "no ticket".into()));
+        assert_eq!(split_ticket("[not a ticket] x"), (None, "[not a ticket] x".into()));
+        assert_eq!(split_ticket("[] x"), (None, "[] x".into()));
     }
 
     #[test]

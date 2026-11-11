@@ -97,7 +97,11 @@ impl AccessProvider for PasshubProvider {
         let w = CreateRequest {
             service_instance_id: input.resource_id.clone(),
             access_type: mapping::access_type(input.access).into(),
-            reason: input.reason.trim().into(),
+            // passhub has no ticket field: it travels as a "[OPS-123] " prefix of the reason.
+            reason: match input.ticket() {
+                Some(t) => format!("[{t}] {}", input.reason.trim()),
+                None => input.reason.trim().into(),
+            },
             target_databases: input.databases.iter().map(|d| d.trim().to_string()).collect(),
             create_database: input.create_database,
         };
@@ -225,7 +229,8 @@ mod tests {
                 ("POST", "/api/v1/requests") => {
                     let v: serde_json::Value = serde_json::from_str(&req.body).unwrap();
                     assert_eq!((v["accessType"].as_str(), v["requestType"].as_str()), (Some("read"), Some("developer")));
-                    Reply::json(201, r#"{"requestId":"r9","status":"pending","accessType":"read","serviceInstanceId":"s1"}"#)
+                    assert_eq!(v["reason"], "[OPS-123] ticket");
+                    Reply::json(201, r#"{"requestId":"r9","status":"pending","accessType":"read","serviceInstanceId":"s1","reason":"[OPS-123] ticket"}"#)
                 }
                 _ => Reply::json(404, r#"{"error":"not found"}"#),
             }
@@ -285,9 +290,11 @@ mod tests {
             reason: "ticket".into(),
             databases: vec!["app".into()],
             create_database: false,
+            ticket: Some("OPS-123".into()),
         };
         let r = p.create_request(&input).await.unwrap();
         assert_eq!((r.id.as_str(), r.status), ("r9", RequestStatus::Pending));
+        assert_eq!((r.ticket.as_deref(), r.reason.as_str()), (Some("OPS-123"), "ticket"));
         let n = srv.requests().len();
         assert!(p.create_request(&AccessRequestInput { reason: " ".into(), ..input }).await.is_err());
         assert_eq!(srv.requests().len(), n, "validated before sending");

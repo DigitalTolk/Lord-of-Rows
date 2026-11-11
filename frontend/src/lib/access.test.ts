@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageLabel, draftFrom, timeline, envsPresent, isFiltered, matchesFilter, segmentCounts, segmentRequests, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
+import { ageLabel, draftFrom, timeline, validTicket, envsPresent, isFiltered, matchesFilter, segmentCounts, segmentRequests, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
 import type { AccessRequestView, AccessResource, ConnectionConfig, StoredConnection } from './types';
 
 const NOW = 1_800_000_000;
@@ -148,5 +148,17 @@ describe('access helpers', () => {
     expect(keys(req('f', { status: 'ready', expires_at: NOW - 1 }))).toEqual(['requested:done', 'approved:done', 'provisioned:done', 'expired:failed']);
     expect(keys(req('g', { status: 'revoked' })).pop()).toBe('revoked:failed');
     expect(keys(req('h', { status: 'cancelled' }))).toEqual(['requested:done', 'cancelled:failed']);
+  });
+
+  it('ticket references: kept by Request again, validated, searchable', () => {
+    const r = req('t', { ticket: 'OPS-123' });
+    expect(draftFrom(r).ticket).toBe('OPS-123');
+    expect(draftFrom(req('u')).ticket).toBeUndefined();
+    const d = draftFrom(r);
+    expect(draftProblem({ ...d, ticket: 'OPS 1' }, null)).toBe('ticket');
+    expect(draftProblem({ ...d, ticket: '  ' }, null)).toBeNull();
+    for (const ok of ['OPS-123', 'ops/42', 'JIRA#7', 'a.b_c']) expect(validTicket(ok)).toBe(true);
+    for (const bad of ['', 'a b', '[x]', 'x'.repeat(41)]) expect(validTicket(bad)).toBe(false);
+    expect(matchesFilter(r, { query: 'ops-1', envs: new Set() })).toBe(true);
   });
 });

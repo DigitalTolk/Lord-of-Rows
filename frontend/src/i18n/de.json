@@ -1431,6 +1431,9 @@
     "detailHost": "Host",
     "detailPort": "Port",
     "detailUser": "Benutzer",
-    "detailDatabase": "Datenbank"
+    "detailDatabase": "Datenbank",
+    "ticket": "Ticket (optional)",
+    "ticketHint": "Eine Referenz wie OPS-123; wird der genehmigenden Person angezeigt.",
+    "ticketInvalid": "Buchstaben, Ziffern und - _ . # / (bis 40)."
   }
 }

@@ -9,6 +9,7 @@ import { ask } from './ask';
 import { Icon } from './icons';
 import { RequestAccessSheet } from './RequestAccessSheet';
 import { RequestDrawer } from './RequestDrawer';
+import { TicketChip } from './TicketChip';
 import { FilterRow, SegmentTabs } from './RequestListControls';
 import { Dialog, EnvBadge, ErrorBox, Spinner } from './ui';
 
@@ -458,6 +459,7 @@ function RequestCard({ r, now, highlight }: { r: AccessRequestView; now: number;
         <button className="truncate font-medium hover:underline" title={t('access.showDetails')} onClick={() => useAccess.setState({ detail: { request: r, mode: 'mine' } })}>{r.resource_name || r.resource_id}</button>
         {r.environment_name && <EnvBadge env={r.environment} />}
         <AccessChip level={r.access} />
+        <TicketChip ticket={r.ticket} />
         <span className="ms-auto shrink-0 text-xs text-muted">{t(age.key, age.vars)}</span>
       </div>
       {dbs && <div className="truncate text-[0.82rem] text-muted" title={dbs}>{r.create_database ? t('access.newDatabase', { name: dbs }) : dbs}</div>}
@@ -629,6 +631,7 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
                 <span className="truncate">{r.resource_name}</span>
                 {r.environment_name && <EnvBadge env={r.environment} />}
                 <AccessChip level={r.access} />
+                <TicketChip ticket={r.ticket} />
               </div>
               {dbs && <div className="truncate text-[0.82rem] text-muted" title={dbs}>{r.create_database ? t('access.newDatabase', { name: dbs }) : dbs}</div>}
               {r.reason && <p className="mt-1 break-words text-[0.84rem]"><q>{r.reason}</q></p>}
@@ -724,6 +727,7 @@ function DecidedCard({ r, now }: { r: AccessRequest; now: number }) {
         <span className="truncate">{r.resource_name}</span>
         {r.environment_name && <EnvBadge env={r.environment} />}
         <AccessChip level={r.access} />
+        <TicketChip ticket={r.ticket} />
       </div>
       {dbs && <div className="truncate text-[0.82rem] text-muted" title={dbs}>{dbs}</div>}
       {rejected && r.status_detail && <p className="mt-1 break-words text-xs"><q>{r.status_detail}</q></p>}

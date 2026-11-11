@@ -270,14 +270,30 @@ pub struct AccessRequestInput {
     /// Ask for the single database in `databases` to be created.
     #[serde(default)]
     pub create_database: bool,
+    /// Optional ticket reference (e.g. `OPS-123`); how it is stored is up to the provider.
+    #[serde(default)]
+    pub ticket: Option<String>,
+}
+
+/// A ticket reference: 1-40 characters of letters, digits and `-_.#/`.
+pub fn valid_ticket(t: &str) -> bool {
+    (1..=40).contains(&t.len()) && t.chars().all(|c| c.is_ascii_alphanumeric() || "-_.#/".contains(c))
 }
 
 impl AccessRequestInput {
+    /// The trimmed ticket, if one was given.
+    pub fn ticket(&self) -> Option<&str> {
+        self.ticket.as_deref().map(str::trim).filter(|t| !t.is_empty())
+    }
+
     pub fn validate(&self) -> AccessResult<()> {
         check_id(&self.resource_id).map_err(|_| AccessError::Invalid("Choose a database to request".into()))?;
         let reason = self.reason.trim();
         if reason.is_empty() || reason.len() > 2000 {
             return Err(AccessError::Invalid("A reason (up to 2000 characters) is required".into()));
+        }
+        if self.ticket().is_some_and(|t| !valid_ticket(t)) {
+            return Err(AccessError::Invalid("A ticket reference may use letters, digits and - _ . # / (up to 40)".into()));
         }
         if self.databases.is_empty() || self.databases.len() > 100 {
             return Err(AccessError::Invalid("Select at least one database".into()));
@@ -337,7 +353,10 @@ pub struct AccessRequest {
     pub environment: EnvironmentKind,
     pub engine: Option<Engine>,
     pub access: Option<AccessLevel>,
+    /// The reason without the ticket reference.
     pub reason: String,
+    /// Ticket reference given with the request, if any.
+    pub ticket: Option<String>,
     pub databases: Vec<String>,
     pub create_database: bool,
     pub status: RequestStatus,
@@ -527,11 +546,16 @@ mod tests {
             reason: "ticket".into(),
             databases: vec!["app".into()],
             create_database: false,
+            ticket: None,
         };
         assert!(ok.validate().is_ok());
         assert!(AccessRequestInput { reason: " ".into(), ..ok.clone() }.validate().is_err());
         assert!(AccessRequestInput { databases: vec![], ..ok.clone() }.validate().is_err());
         assert!(AccessRequestInput { create_database: true, databases: vec!["bad name".into()], ..ok.clone() }.validate().is_err());
-        assert!(AccessRequestInput { create_database: true, databases: vec!["new_db".into()], ..ok }.validate().is_ok());
+        assert!(AccessRequestInput { create_database: true, databases: vec!["new_db".into()], ..ok.clone() }.validate().is_ok());
+        assert!(AccessRequestInput { ticket: Some(" OPS-123 ".into()), ..ok.clone() }.validate().is_ok());
+        assert!(AccessRequestInput { ticket: Some("  ".into()), ..ok.clone() }.validate().is_ok(), "blank = none");
+        assert!(AccessRequestInput { ticket: Some("OPS 123".into()), ..ok.clone() }.validate().is_err());
+        assert!(AccessRequestInput { ticket: Some("[x]".into()), ..ok }.validate().is_err());
     }
 }
