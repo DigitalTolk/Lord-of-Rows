@@ -1653,6 +1653,10 @@
     "waitingCount_two": "طلبان بالانتظار",
     "waitingCount_few": "{{count}} طلبات بالانتظار",
     "waitingCount_many": "{{count}} طلباً بالانتظار",
-    "waitingCount_other": "{{count}} طلب بالانتظار"
+    "waitingCount_other": "{{count}} طلب بالانتظار",
+    "endsSoon": "ينتهي الوصول إلى {{name}} خلال {{time}}.",
+    "endedTitle": "انتهى الوصول",
+    "endedBody": "انتهى وصولك المؤقت إلى {{name}}، لذا أُغلق الاتصال. تبقى علاماتك ونصوصها محفوظة.",
+    "closeConnection": "إغلاق الاتصال"
   }
 }

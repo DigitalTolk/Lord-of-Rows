@@ -47,7 +47,12 @@ export interface OpenSession extends SessionOpened {
   keyspaces?: KeyspaceInfo[];
   latency?: number;
   healthy: boolean;
+  /** The connection's time-limited access ended: it was closed, its tabs are kept until dismissed. */
+  ended?: boolean;
 }
+
+/** Fired before a session is closed because its access ended (query views cancel their runs). */
+export const SESSION_ENDING_EVENT = 'lotr:session-ending';
 
 interface State {
   info?: AppInfo;
@@ -71,6 +76,10 @@ interface State {
   /** `database` (Postgres family): open the saved connection on another database of the same server. */
   openSession(connectionId: string, password?: string, database?: string): Promise<string>;
   closeSession(sessionId: string): Promise<void>;
+  /** Access ended: cancel running queries, close the connection, keep the tabs (shown as ended). */
+  endSession(sessionId: string): Promise<void>;
+  /** Removes an ended session; its query tabs stay (unbound, text kept), other tabs close. */
+  dismissSession(sessionId: string): void;
   loadObjects(sessionId: string, schema: string | null): Promise<void>;
   setActiveSchema(sessionId: string, schema: string): void;
   /** Key-value sessions: reload the databases and their key counts (`INFO keyspace`). */
@@ -192,6 +201,24 @@ export const useApp = create<State>((set, get) => ({
     const tabs = get().tabs.filter((t) => t.sessionId !== sessionId);
     const next = Object.keys(sessions)[0];
     set({ sessions, tabs, activeSession: next, activeTab: tabs.find((t) => t.sessionId === next)?.id });
+  },
+
+  async endSession(sessionId) {
+    const s = get().sessions[sessionId];
+    if (!s || s.ended) return;
+    window.dispatchEvent(new CustomEvent(SESSION_ENDING_EVENT, { detail: { sessionId } }));
+    await new Promise((r) => setTimeout(r, 50)); // let the views send their cancels first
+    await api.closeSession(sessionId).catch(() => undefined);
+    const cur = get().sessions[sessionId];
+    if (cur) set({ sessions: { ...get().sessions, [sessionId]: { ...cur, ended: true, healthy: false } } });
+  },
+
+  dismissSession(sessionId) {
+    const sessions = { ...get().sessions };
+    delete sessions[sessionId];
+    const tabs = get().tabs.filter((t) => t.sessionId !== sessionId || t.kind === 'query').map((t) => (t.sessionId === sessionId ? { ...t, sessionId: undefined } : t));
+    const next = Object.keys(sessions)[0];
+    set({ sessions, tabs, activeSession: next, activeTab: tabs.find((t) => t.sessionId === next)?.id ?? tabs.find((t) => !t.sessionId)?.id });
   },
 
   async loadObjects(sessionId, schema) {

@@ -10,8 +10,8 @@ import { Icon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
 import { openImportDialog } from './ImportConnectionsDialog';
 import { AccessPanel } from './AccessPanel';
-import { draftFrom, managedState, readyCount } from '../lib/access';
-import { useAccess } from '../lib/accessStore';
+import { managedState, readyCount } from '../lib/access';
+import { requestAgainFor, useAccess } from '../lib/accessStore';
 
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
@@ -24,10 +24,7 @@ export function Welcome() {
 
   /** An expired managed connection can't be opened: offer a new request instead. */
   const requestAgain = (c: StoredConnection) => {
-    const m = c.config.managed_by;
-    if (m && m.provider_id !== useAccess.getState().providerId && useAccess.getState().providers?.some((p) => p.id === m.provider_id)) void useAccess.getState().selectProvider(m.provider_id);
-    const r = m && useAccess.getState().requests?.find((x) => x.id === m.request_id);
-    useAccess.getState().openAccess(r ? draftFrom(r) : undefined);
+    if (c.config.managed_by) void requestAgainFor(c.config.managed_by);
   };
 
   const connect = async (id: string) => {

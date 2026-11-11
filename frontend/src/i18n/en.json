@@ -1385,6 +1385,10 @@
     "showMore_one": "Show {{count}} more",
     "showMore_other": "Show {{count}} more",
     "waitingCount_one": "{{count}} waiting",
-    "waitingCount_other": "{{count}} waiting"
+    "waitingCount_other": "{{count}} waiting",
+    "endsSoon": "Access to {{name}} ends in {{time}}.",
+    "endedTitle": "Access ended",
+    "endedBody": "Your time-limited access to {{name}} has ended, so the connection was closed. Your tabs and their text are kept.",
+    "closeConnection": "Close connection"
   }
 }

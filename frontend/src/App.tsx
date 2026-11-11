@@ -9,6 +9,7 @@ import { Welcome } from './components/Welcome';
 import { OpenDatabaseHost, useDbPicker } from './components/OpenDatabaseDialog';
 import { ImportConnectionsHost } from './components/ImportConnectionsDialog';
 import { AccessWatcher } from './components/AccessWatcher';
+import { AccessEndedOverlay, AccessExpiryBanner } from './components/AccessBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
@@ -246,7 +247,9 @@ export default function App() {
             )}
             <main className="flex min-w-0 flex-1 flex-col">
               {!focus && <TabBar />}
-              <div className="min-h-0 flex-1">
+              <AccessExpiryBanner />
+              <div className="relative min-h-0 flex-1">
+                <AccessEndedOverlay />
                 {/* Keep views mounted so editor state survives tab switches. */}
                 {st.tabs.map((tab) => (
                   <div key={tab.id} id={panelDomId(tab.id)} role="tabpanel" aria-labelledby={tabDomId(tab.id)} hidden={tab.id !== active?.id} className="h-full">

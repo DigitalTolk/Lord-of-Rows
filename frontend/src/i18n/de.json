@@ -1385,6 +1385,10 @@
     "showMore_one": "{{count}} weiteren zeigen",
     "showMore_other": "{{count}} weitere zeigen",
     "waitingCount_one": "{{count}} wartet",
-    "waitingCount_other": "{{count}} warten"
+    "waitingCount_other": "{{count}} warten",
+    "endsSoon": "Der Zugriff auf {{name}} endet in {{time}}.",
+    "endedTitle": "Zugriff beendet",
+    "endedBody": "Dein zeitlich begrenzter Zugriff auf {{name}} ist abgelaufen, daher wurde die Verbindung geschlossen. Deine Tabs und ihr Text bleiben erhalten.",
+    "closeConnection": "Verbindung schließen"
   }
 }

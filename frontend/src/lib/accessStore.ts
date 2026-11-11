@@ -3,9 +3,10 @@
 import { create } from 'zustand';
 import i18n from '../i18n';
 import { api } from './ipc';
-import { isSignedOutError, newlyReady } from './access';
+import { draftFrom, isSignedOutError, newlyReady } from './access';
 import type { RequestDraft } from './access';
-import type { AccessProviderInfo, AccessRequest, AccessRequestView, AccessStatus } from './types';
+import type { AccessProviderInfo, AccessRequest, AccessRequestView, AccessStatus, ManagedBy } from './types';
+import { useApp } from '../store';
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -218,3 +219,23 @@ export const currentProvider = (s: Pick<AccessStore, 'providers' | 'providerId'>
 
 /** Approvals are shown when the provider supports them and the user may approve. */
 export const canApprove = (s: Pick<AccessStore, 'providers' | 'providerId' | 'status'>) => !!currentProvider(s)?.capabilities.approvals && !!s.status?.user?.can_approve;
+
+/**
+ * "Request again" for a managed connection: switch to its provider, open the launcher's
+ * Access tab and the request sheet pre-filled from the original request (when known).
+ */
+export async function requestAgainFor(m: ManagedBy) {
+  const st = () => useAccess.getState();
+  if (st().providers === null) await st().loadProviders();
+  if (m.provider_id !== st().providerId && st().providers?.some((p) => p.id === m.provider_id)) await st().selectProvider(m.provider_id);
+  let r = st().requests?.find((x) => x.id === m.request_id);
+  if (!r && st().status?.signed_in) {
+    try {
+      r = (await st().refreshRequests())?.find((x) => x.id === m.request_id);
+    } catch {
+      /* open an empty form */
+    }
+  }
+  useAccess.setState({ launcherTab: 'access', accessTab: 'mine', sheet: { draft: r ? draftFrom(r) : undefined } });
+  useApp.setState({ launcher: true });
+}

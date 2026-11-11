@@ -1452,6 +1452,10 @@
     "showMore_other": "Mostrar {{count}} más",
     "waitingCount_one": "{{count}} en espera",
     "waitingCount_many": "{{count}} en espera",
-    "waitingCount_other": "{{count}} en espera"
+    "waitingCount_other": "{{count}} en espera",
+    "endsSoon": "El acceso a {{name}} termina en {{time}}.",
+    "endedTitle": "Acceso terminado",
+    "endedBody": "Tu acceso temporal a {{name}} ha terminado y la conexión se ha cerrado. Tus pestañas y su texto se conservan.",
+    "closeConnection": "Cerrar conexión"
   }
 }

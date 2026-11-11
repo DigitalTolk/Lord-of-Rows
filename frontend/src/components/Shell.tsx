@@ -4,6 +4,7 @@ import { useApp, type Tab, type TabKind } from '../store';
 import { EnvBadge, isContextMenuKey, menuAnchor, MenuPopup } from './ui';
 import { Icon, type IconName } from './icons';
 import { EngineBadge } from './EngineBadge';
+import { ManagedChip } from './ManagedChip';
 import { displayCombo, DEFAULT_KEYS } from '../lib/keys';
 import { api } from '../lib/ipc';
 import { fmtNumber } from '../lib/format';
@@ -237,6 +238,7 @@ export function StatusBar() {
           <span>{s.config.name}</span>
           <EnvBadge env={s.config.environment} />
           {s.config.read_only && <span className="text-warn">{t('safety.readOnlyBanner')}</span>}
+          {s.config.managed_by && <ManagedChip cfg={s.config} />}
           <span className="truncate" dir="auto">{s.server.version.split(',')[0]}</span>
           {s.latency != null && <span>{t('status.latency', { ms: s.latency })}</span>}
           <span>{t('status.policy', { name: s.policy.name })}</span>

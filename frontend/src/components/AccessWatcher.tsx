@@ -77,6 +77,21 @@ export function AccessWatcher() {
     };
   }, [signedIn, providerId]);
 
+  // Open connections whose access just ended: stop them gracefully (tabs are kept).
+  useEffect(() => {
+    const check = () => {
+      const now = Math.floor(Date.now() / 1000);
+      for (const s of Object.values(useApp.getState().sessions)) {
+        if (!s.ended && managedState(s.config, now)?.expired) {
+          void useApp.getState().endSession(s.session_id);
+          useApp.getState().toast('info', t('access.endedToast', { name: s.config.name }));
+        }
+      }
+    };
+    const id = setInterval(check, 15_000);
+    return () => clearInterval(id);
+  }, [t]);
+
   // Local expiry: sweep + 15-minute warnings (works signed out and offline).
   useEffect(() => {
     const check = async () => {
