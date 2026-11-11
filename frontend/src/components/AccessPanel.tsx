@@ -595,6 +595,14 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
   const { f, setQuery, toggleEnv, clear } = useListFilter();
   const searchRef = useRef<HTMLInputElement>(null);
   const who = requesterName;
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const toggle = (id: string) =>
+    setSelected((cur) => {
+      const n = new Set(cur);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
 
   if (approvals === null) return <div className="py-6 text-center"><Spinner label={t('common.loading')} /></div>;
   if (approvals.length === 0) {
@@ -609,11 +617,22 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
     );
   }
   const shown = approvals.filter((r) => matchesFilter(r, f));
+  const chosen = approvals.filter((r) => selected.has(r.id) && r.requester.id !== me);
+  const approveSelected = async () => {
+    if (await approveMany(chosen, t)) setSelected(new Set());
+  };
   return (
     <>
       <FilterRow query={f.query} onQuery={setQuery} envs={f.envs} onToggleEnv={toggleEnv} available={envsPresent(approvals)} onClear={clear} filtered={isFiltered(f)} searchRef={searchRef}>
         {tabs ?? <span className="text-xs text-muted">{t('access.waitingCount', { count: approvals.length })}</span>}
       </FilterRow>
+      {chosen.length > 0 && (
+        <div className="sticky top-0 z-10 mb-2 flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-sm" role="region" aria-label={t('access.selection')}>
+          <span>{t('access.selectedCount', { count: chosen.length })}</span>
+          <button className="btn h-7 ms-auto" onClick={() => setSelected(new Set())}>{t('access.clearSelection')}</button>
+          <button className="btn btn-primary h-7" disabled={acting !== null} onClick={() => void approveSelected()}>{t('access.approveSelected', { count: chosen.length })}</button>
+        </div>
+      )}
       {shown.length === 0 && <NoMatches onClear={clear} />}
       <ul className="flex flex-col gap-2" aria-label={t('access.approvals')}>
         {shown.map((r) => {
@@ -623,6 +642,7 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
           return (
             <li key={r.id} className="rounded-lg border border-border px-3 py-2" aria-label={`${who(r)} · ${r.resource_name}`}>
               <div className="flex min-w-0 items-center gap-1.5">
+                <input type="checkbox" className="shrink-0" aria-label={t('access.selectRequest', { name: who(r) })} disabled={own} checked={!own && selected.has(r.id)} onChange={() => toggle(r.id)} />
                 <button className="truncate font-medium hover:underline" title={t('access.showDetails')} onClick={() => useAccess.setState({ detail: { request: r, mode: 'approval', actionable: !own } })}>{who(r)}</button>
                 {r.requester.name && r.requester.email && <span className="truncate text-xs text-muted">{r.requester.email}</span>}
                 <span className="ms-auto shrink-0 text-xs text-muted">{t(age.key, age.vars)}</span>
@@ -753,6 +773,29 @@ async function approveRequest(r: AccessRequest, t: (k: string, o?: Record<string
   } finally {
     useAccess.setState({ acting: null });
   }
+}
+
+/** Approves several requests after one confirmation that lists them. Own requests are never included. */
+async function approveMany(rs: AccessRequest[], t: (k: string, o?: Record<string, unknown>) => string): Promise<boolean> {
+  const pid = useAccess.getState().providerId;
+  if (!pid || rs.length === 0) return false;
+  const lines = rs.map((r) => `• ${requesterName(r)} — ${r.resource_name}${r.databases.length ? ` (${r.databases.join(', ')})` : ''}`).join('\n');
+  if (!(await ask.confirm(t('access.approveManyTitle', { count: rs.length }), lines))) return false;
+  useAccess.setState({ acting: 'many' });
+  const failed: string[] = [];
+  for (const r of rs) {
+    try {
+      await api.accessApprove(pid, r.id);
+    } catch (e) {
+      failed.push(`${requesterName(r)}: ${useAccess.getState().fail(e)}`);
+    }
+  }
+  useAccess.setState({ acting: null });
+  const ok = rs.length - failed.length;
+  if (ok) useApp.getState().toast('ok', t('access.approvedMany', { count: ok }));
+  if (failed.length) useApp.getState().toast('error', failed.join('\n'));
+  await useAccess.getState().refreshApprovals().catch(() => undefined);
+  return failed.length === 0;
 }
 
 /** Detail drawer and reject dialog (store-driven, so other places can open them). */

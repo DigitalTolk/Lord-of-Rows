@@ -1434,6 +1434,17 @@
     "detailDatabase": "Database",
     "ticket": "Ticket (optional)",
     "ticketHint": "A reference like OPS-123; shown to your approver.",
-    "ticketInvalid": "Use letters, digits and - _ . # / (up to 40)."
+    "ticketInvalid": "Use letters, digits and - _ . # / (up to 40).",
+    "newApprovalToast": "{{name}} requests access to {{resource}}",
+    "review": "Review",
+    "selection": "Selected requests",
+    "clearSelection": "Clear",
+    "selectRequest": "Select the request from {{name}}",
+    "approveSelected_one": "Approve {{count}}",
+    "approveSelected_other": "Approve {{count}}",
+    "approveManyTitle_one": "Approve {{count}} request?",
+    "approveManyTitle_other": "Approve {{count}} requests?",
+    "approvedMany_one": "{{count}} request approved",
+    "approvedMany_other": "{{count}} requests approved"
   }
 }

@@ -1503,6 +1503,20 @@
     "detailDatabase": "Base de datos",
     "ticket": "Ticket (opcional)",
     "ticketHint": "Una referencia como OPS-123; la verá quien apruebe.",
-    "ticketInvalid": "Usa letras, dígitos y - _ . # / (hasta 40)."
+    "ticketInvalid": "Usa letras, dígitos y - _ . # / (hasta 40).",
+    "newApprovalToast": "{{name}} solicita acceso a {{resource}}",
+    "review": "Revisar",
+    "selection": "Solicitudes seleccionadas",
+    "clearSelection": "Quitar selección",
+    "selectRequest": "Seleccionar la solicitud de {{name}}",
+    "approveSelected_one": "Aprobar {{count}}",
+    "approveSelected_many": "Aprobar {{count}}",
+    "approveSelected_other": "Aprobar {{count}}",
+    "approveManyTitle_one": "¿Aprobar {{count}} solicitud?",
+    "approveManyTitle_many": "¿Aprobar {{count}} solicitudes?",
+    "approveManyTitle_other": "¿Aprobar {{count}} solicitudes?",
+    "approvedMany_one": "{{count}} solicitud aprobada",
+    "approvedMany_many": "{{count}} solicitudes aprobadas",
+    "approvedMany_other": "{{count}} solicitudes aprobadas"
   }
 }

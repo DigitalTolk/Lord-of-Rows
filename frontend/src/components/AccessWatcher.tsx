@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import { durationLabel, expiringSoon, isInFlight, managedState, pollDelay, requestPhase } from '../lib/access';
-import { canApprove, expiredListeners, readyListeners, useAccess } from '../lib/accessStore';
+import { approvalListeners, canApprove, expiredListeners, readyListeners, useAccess } from '../lib/accessStore';
+import { setAppBadge } from '../lib/windows';
 import { useApp } from '../store';
 
 const nowSec = () => Math.floor(Date.now() / 1000);
@@ -36,6 +37,30 @@ export function AccessWatcher() {
     return () => {
       readyListeners.delete(onReady);
       expiredListeners.delete(onExpired);
+    };
+  }, [t]);
+
+  // Approvers: Dock badge with the number waiting; a toast with "Review" for new ones.
+  const waiting = useAccess((s) => (canApprove(s) ? (s.approvals?.length ?? 0) : 0));
+  useEffect(() => {
+    void setAppBadge(waiting);
+  }, [waiting]);
+  useEffect(() => {
+    const onNew = (rs: { id: string; resource_name: string; requester: { name: string; email: string } }[]) => {
+      for (const r of rs) {
+        useApp.getState().toast('info', t('access.newApprovalToast', { name: r.requester.name || r.requester.email, resource: r.resource_name }), {
+          label: t('access.review'),
+          run: () => {
+            const req = useAccess.getState().approvals?.find((x) => x.id === r.id);
+            useAccess.setState({ launcherTab: 'access', accessTab: 'approvals', detail: req ? { request: req, mode: 'approval', actionable: true } : null });
+            useApp.setState({ launcher: true });
+          },
+        });
+      }
+    };
+    approvalListeners.add(onNew);
+    return () => {
+      approvalListeners.delete(onNew);
     };
   }, [t]);
 

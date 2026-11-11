@@ -60,6 +60,8 @@ interface AccessStore {
 
 /** Called when requests just became ready (the watcher notifies the user). */
 export const readyListeners = new Set<(r: AccessRequestView[]) => void>();
+/** Called with approvals that arrived since the last refresh. */
+export const approvalListeners = new Set<(r: AccessRequest[]) => void>();
 /** Called after managed connections were marked expired. */
 export const expiredListeners = new Set<(ids: string[]) => void>();
 
@@ -173,8 +175,15 @@ export const useAccess = create<AccessStore>((set, get) => ({
     const id = get().providerId;
     if (!id || !canApprove(get())) return;
     try {
+      const prev = get().approvals;
       const approvals = await api.accessListApprovals(id);
-      if (get().providerId === id) set({ approvals, error: null });
+      if (get().providerId !== id) return;
+      set({ approvals, error: null });
+      if (prev) {
+        const known = new Set(prev.map((r) => r.id));
+        const fresh = approvals.filter((r) => !known.has(r.id));
+        if (fresh.length) approvalListeners.forEach((f) => f(fresh));
+      }
     } catch (e) {
       get().fail(e);
       throw e;

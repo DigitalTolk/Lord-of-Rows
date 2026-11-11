@@ -46,6 +46,7 @@ const api = vi.hoisted(() => ({
   accessConnectCheck: vi.fn(async () => ({ reusable: false, connection_id: null, reveals_remaining: 4, details: { engine: 'postgres', host: 'db.example.com', port: 5432, database: 'shop', username: 'dev_r2' } })),
   accessGetRequest: vi.fn(async (_p: string, id: string) => ({ ...state.requests.concat(state.approvals).find((r) => r.id === id)!, log: [{ ts: '2027-01-01T10:00:05Z', level: 'info', msg: 'created user dev_r2' }] })),
   accessApprove: vi.fn(async () => state.approvals[0]),
+  accessSweep: vi.fn(async () => []),
   accessCreateRequest: vi.fn(async (_p: string, input: { resource_id: string }) => req('new', { resource_id: input.resource_id })),
   accessConnect: vi.fn(async () => ({ connection_id: 'conn-1', reused: false, reveals_remaining: 3, password_in_memory: false })),
   accessReject: vi.fn(async () => state.approvals[0]),
@@ -62,14 +63,20 @@ vi.mock('../lib/ipc', () => ({ api, IpcError: class extends Error {} }));
 import { useAccess } from '../lib/accessStore';
 import { useApp } from '../store';
 import { AccessPanel } from './AccessPanel';
+import { AccessWatcher } from './AccessWatcher';
+import { AskHost } from './ask';
 
 const openSession = vi.fn(async () => 'session-1');
 
 async function show() {
   render(<AccessPanel />);
-  await act(async () => {
-    for (let i = 0; i < 6; i++) await Promise.resolve();
-  });
+  // Let the provider/status/request loads (several chained promises) settle.
+  for (let round = 0; round < 3; round++) {
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
 }
 
 beforeEach(() => {
@@ -438,5 +445,66 @@ describe('AccessPanel', () => {
     });
     expect(api.accessCreateRequest).toHaveBeenCalledWith('p1', expect.objectContaining({ ticket: 'OPS-123', databases: ['ledger'], resource_id: 'res-1' }));
     useAccess.setState({ sheet: null });
+  });
+
+  describe('manager speed', () => {
+    const manager = () => {
+      state.providers = [PROVIDER];
+      state.status = { signed_in: true, signing_in: false, user: { id: 'm1', email: 'manager@example.com', name: 'Manager', role: 'manager', can_approve: true } };
+    };
+
+    it('multi-select approves the chosen requests after one confirmation (own requests excluded)', async () => {
+      manager();
+      state.approvals = [
+        req('a1', { requester: { id: 'u2', name: 'Robin', email: '' } }),
+        req('a2', { requester: { id: 'u3', name: 'Sam', email: '' }, resource_name: 'billing' }),
+        req('own', { requester: { id: 'm1', name: 'Manager', email: '' } }),
+      ];
+      render(
+        <>
+          <AccessPanel />
+          <AskHost />
+        </>,
+      );
+      await act(async () => {
+        for (let i = 0; i < 6; i++) await Promise.resolve();
+      });
+      fireEvent.click(screen.getByRole('tab', { name: /^Approvals/ }));
+      expect((screen.getByRole('checkbox', { name: 'Select the request from Manager' }) as HTMLInputElement).disabled).toBe(true);
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select the request from Robin' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select the request from Sam' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Approve 2' }));
+      const confirm = await screen.findByRole('dialog', { name: 'Approve 2 requests?' });
+      expect(confirm.textContent).toMatch(/Robin — orders/);
+      expect(confirm.textContent).toMatch(/Sam — billing/);
+      expect(api.accessApprove).not.toHaveBeenCalled();
+      await act(async () => {
+        fireEvent.click(within(confirm).getByRole('button', { name: 'OK' }));
+      });
+      expect(api.accessApprove.mock.calls.map((c) => (c as unknown[])[1])).toEqual(['a1', 'a2']);
+    });
+
+    it('a new approval shows a toast with Review that opens its drawer', async () => {
+      manager();
+      useApp.setState({ toasts: [] });
+      state.approvals = [req('a1', { requester: { id: 'u2', name: 'Robin', email: '' } })];
+      render(<AccessWatcher />);
+      useAccess.setState({ providers: [PROVIDER], providerId: 'p1', status: state.status });
+      await act(async () => {
+        await useAccess.getState().refreshApprovals();
+      });
+      expect(useApp.getState().toasts).toHaveLength(0); // first load is not "new"
+      state.approvals = [...state.approvals, req('a2', { requester: { id: 'u3', name: 'Sam', email: '' }, resource_name: 'billing' })];
+      await act(async () => {
+        await useAccess.getState().refreshApprovals();
+      });
+      const toast = useApp.getState().toasts.find((x) => x.action);
+      expect(toast?.text).toBe('Sam requests access to billing');
+      expect(toast?.action?.label).toBe('Review');
+      act(() => toast!.action!.run());
+      expect(useAccess.getState().detail).toMatchObject({ mode: 'approval', actionable: true, request: { id: 'a2' } });
+      expect(useAccess.getState().accessTab).toBe('approvals');
+      useAccess.setState({ detail: null });
+    });
   });
 });

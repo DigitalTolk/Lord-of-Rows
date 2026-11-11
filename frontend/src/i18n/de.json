@@ -1434,6 +1434,17 @@
     "detailDatabase": "Datenbank",
     "ticket": "Ticket (optional)",
     "ticketHint": "Eine Referenz wie OPS-123; wird der genehmigenden Person angezeigt.",
-    "ticketInvalid": "Buchstaben, Ziffern und - _ . # / (bis 40)."
+    "ticketInvalid": "Buchstaben, Ziffern und - _ . # / (bis 40).",
+    "newApprovalToast": "{{name}} beantragt Zugriff auf {{resource}}",
+    "review": "Ansehen",
+    "selection": "Ausgewählte Anträge",
+    "clearSelection": "Aufheben",
+    "selectRequest": "Antrag von {{name}} auswählen",
+    "approveSelected_one": "{{count}} genehmigen",
+    "approveSelected_other": "{{count}} genehmigen",
+    "approveManyTitle_one": "{{count}} Antrag genehmigen?",
+    "approveManyTitle_other": "{{count}} Anträge genehmigen?",
+    "approvedMany_one": "{{count}} Antrag genehmigt",
+    "approvedMany_other": "{{count}} Anträge genehmigt"
   }
 }

@@ -68,7 +68,7 @@ interface State {
   lastTab: Record<string, string>;
   switchSession(id: string): void;
   connectionDialog?: { id?: string; duplicateOf?: string } | null;
-  toasts: { id: number; kind: 'info' | 'error' | 'ok'; text: string }[];
+  toasts: { id: number; kind: 'info' | 'error' | 'ok'; text: string; action?: ToastAction }[];
 
   init(): Promise<void>;
   reloadConnections(): Promise<void>;
@@ -93,7 +93,14 @@ interface State {
   toggleSplit(id: string, dir?: SplitDir): void;
   openWindow(): Promise<void>;
   closeWindow(): Promise<void>;
-  toast(kind: 'info' | 'error' | 'ok', text: string): void;
+  /** `action` adds a button (e.g. "Review"); such toasts stay longer. */
+  toast(kind: 'info' | 'error' | 'ok', text: string, action?: ToastAction): void;
+}
+
+/** A button on a toast. */
+export interface ToastAction {
+  label: string;
+  run: () => void;
 }
 
 let toastId = 0;
@@ -315,10 +322,10 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 
-  toast(kind, text) {
+  toast(kind, text, action) {
     const id = ++toastId;
-    set({ toasts: [...get().toasts, { id, kind, text }] });
-    setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), kind === 'error' ? 8000 : 4000);
+    set({ toasts: [...get().toasts, { id, kind, text, action }] });
+    setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), action ? 15000 : kind === 'error' ? 8000 : 4000);
   },
 }));
 
