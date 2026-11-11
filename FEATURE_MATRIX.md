@@ -15,7 +15,7 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | MySQL 8.4 | `mysql` (mysql_async) | TESTED | IT `mysql_end_to_end`, E2E |
 | MariaDB / Percona / SingleStore | `mysql` (wire-compatible) | IMPLEMENTED_UNVERIFIED | no server in test matrix yet |
 | SQLite 3.5x | `sqlite` (rusqlite, bundled) | TESTED | IT `sqlite_end_to_end`, E2E |
-| Redis 7 | `redis` | TESTED | IT `redis_end_to_end`, E2E |
+| Redis 7 | `redis` | TESTED | IT `redis_end_to_end`, `redis_key_browser` (10k keys, db0/db1, SCAN paging, types, edits, read-only), E2E `60-redis-browser` |
 | DynamoDB | `dynamo` (official AWS SDK) | TESTED against DynamoDB Local 3.3; real AWS IMPLEMENTED_UNVERIFIED | IT `dynamo_end_to_end` (paging, filters, counts, PartiQL, exact N, conditional-update conflicts, read-only, bad creds/endpoint), E2E `16-dynamodb` (connect, browse, PartiQL, edit + commit). Profiles/SSO/default chain unverified |
 | SQL Server, Oracle, MongoDB, Cassandra, Elasticsearch, ClickHouse, BigQuery, Snowflake, Cloudflare D1, Vertica, DuckDB, libSQL, Turso | — | NOT_STARTED | shown as "coming soon" (disabled) in the UI |
 

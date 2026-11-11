@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { create } from 'zustand';
+import { fmtNumber } from '../lib/format';
 import { displayCombo } from '../lib/keys';
 import { useApp, type OpenSession } from '../store';
 import { EngineBadge } from './EngineBadge';
@@ -125,13 +126,17 @@ function SchemaRail({ s }: { s: OpenSession }) {
     <div role="listbox" aria-label={t('tableWs.schemasRail')} className="mt-1 flex w-full flex-col items-center gap-1 border-t border-border pt-2" onKeyDown={onKeyDown}>
       {list.map((x) => {
         const active = x === s.activeSchema;
+        // Key-value databases also show their key count (from INFO keyspace).
+        const keys = s.keyspaces?.find((k) => k.name === x)?.keys;
+        const keysText = keys == null ? '' : t('redis.keyCount', { count: keys, formatted: fmtNumber(keys) });
         return (
           <button
             key={x}
             role="option"
             aria-selected={active}
             tabIndex={x === current ? 0 : -1}
-            title={x}
+            title={keysText ? `${x} · ${keysText}` : x}
+            aria-label={keysText ? `${x}, ${keysText}` : undefined}
             onClick={() => setActiveSchema(s.session_id, x)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -141,6 +146,7 @@ function SchemaRail({ s }: { s: OpenSession }) {
           >
             <Icon name="db" size={22} style={active ? { color: tint } : undefined} />
             <span className="line-clamp-2 w-full break-all text-center text-[0.65rem] leading-tight" dir="auto">{x}</span>
+            {keys != null && <span className="w-full truncate text-center text-[0.58rem] leading-tight tabular-nums text-muted" aria-hidden>{fmtNumber(keys, { notation: 'compact' })}</span>}
           </button>
         );
       })}

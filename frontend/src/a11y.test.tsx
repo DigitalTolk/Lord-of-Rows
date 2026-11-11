@@ -24,6 +24,21 @@ vi.mock('./lib/ipc', () => {
     pingSession: 3,
     listSchemas: ['public', 'audit', 'information_schema', 'pg_catalog'],
     listDatabases: ['app', 'postgres'],
+    kvKeyspaces: [
+      { name: 'db0', index: 0, keys: 48213, expires: 2, current: true },
+      { name: 'db1', index: 1, keys: 3, expires: 0, current: false },
+    ],
+    kvNamespace: { namespaces: [{ prefix: 'app:', label: 'app', count: 12 }], keys: ['hello'], cursor: 7, done: false, scanned: 13 },
+    kvScanKeys: {
+      keys: [
+        { key: 'hello', kind: 'string', ttl: -1, size: 56, length: 7, preview: '{"a":1}', preview_truncated: false },
+        { key: 'app:h', kind: 'hash', ttl: 30, size: 120, length: 12, preview: null, preview_truncated: false },
+      ],
+      next: 2,
+      done: true,
+      total: 2,
+    },
+    kvReadValue: { key: 'hello', kind: 'string', ttl: -1, size: 56, length: 7, columns: [], rows: [], text: '{"a":1}', next: null },
   };
   const api = new Proxy({}, { get: (_t, k: string) => async () => (k in defaults ? defaults[k] : []) });
   return { api, IpcError: class extends Error {} };
@@ -44,6 +59,22 @@ import { ask } from './components/ask';
 import { confirmDecision } from './components/confirm';
 import { openDatabasePicker } from './components/OpenDatabaseDialog';
 import { useApp, type OpenSession } from './store';
+
+const KV_SESSION = {
+  session_id: 'k1',
+  server: { engine: 'redis', version: '7.2.4', current_database: 'db0' },
+  capabilities: { sql: false, transactions: false, schemas: true, multiple_databases: true, explain: false, explain_analyze: false, cancel: false, inline_edit: false, ddl_editing: false, read_only_session: false, sessions_monitor: false, kill_session: false, native_backup: false, object_kinds: ['key'] },
+  policy: { name: 'local', read_only: false, typed_confirmation_for_destructive: false },
+  config: { id: 'c9', name: 'Cache', engine: 'redis', host: 'cache.local', port: 6379, database: '0', tls: { mode: 'disabled' } as never, environment: 'local', read_only: false, tags: [], favorite: false, connect_timeout_secs: 10 },
+  schemas: ['db0', 'db1'],
+  keyspaces: [
+    { name: 'db0', index: 0, keys: 48213, expires: 2, current: true },
+    { name: 'db1', index: 1, keys: 3, expires: 0, current: false },
+  ],
+  objects: {},
+  activeSchema: 'db0',
+  healthy: true,
+} as unknown as OpenSession;
 
 const SESSION: OpenSession = {
   session_id: 's1',
@@ -199,6 +230,28 @@ describe('axe: no serious or critical violations', () => {
     openDatabasePicker(false);
   });
 
+  it('key browser: database tree, key grid, key pattern bar and value panel', async () => {
+    await renderApp();
+    await act(async () => {
+      useApp.setState({ sessions: { k1: KV_SESSION }, activeSession: 'k1', launcher: false, tabs: [{ id: 'kt', kind: 'table', title: 'db0', sessionId: 'k1', target: { schema: 'db0', table: '*' } }], activeTab: 'kt', settings: {} });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const tree = screen.getByRole('tree', { name: 'Databases and keys' });
+    const db0 = within(tree).getByRole('treeitem', { name: 'db0, 48,213 keys' });
+    expect(db0.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => {
+      fireEvent.keyDown(db0, { key: 'ArrowRight' });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(db0.getAttribute('aria-expanded')).toBe('true');
+    expect(within(tree).getByRole('treeitem', { name: 'app:, 12 keys' })).toBeTruthy();
+    expect(within(tree).getByRole('treeitem', { name: 'hello' })).toBeTruthy();
+    expect(within(tree).getByRole('treeitem', { name: 'Load more…' })).toBeTruthy();
+    expect(screen.getByRole('search').textContent).toContain('Key pattern');
+    expect(screen.getByRole('grid')).toBeTruthy();
+    await expectAccessible('Key browser');
+  });
+
   it('Arabic (RTL) launcher and workspace', async () => {
     await act(async () => {
       await i18n.changeLanguage('ar');
@@ -232,6 +285,32 @@ describe('keyboard', () => {
     fireEvent.keyDown(group, { key: 'ArrowRight' });
     expect(group.getAttribute('aria-expanded')).toBe('true');
     // Only one node is in the Tab order.
+    expect(within(tree).getAllByRole('treeitem').filter((x) => x.tabIndex === 0)).toHaveLength(1);
+  });
+
+  it('key tree: Right expands, Down enters, Left returns to the parent and collapses', async () => {
+    await renderApp();
+    await act(async () => {
+      useApp.setState({ sessions: { k1: KV_SESSION }, activeSession: 'k1', launcher: false, tabs: [], activeTab: undefined });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const tree = screen.getByRole('tree', { name: 'Databases and keys' });
+    const db0 = within(tree).getByRole('treeitem', { name: /^db0/ });
+    expect(db0.tabIndex).toBe(0);
+    act(() => db0.focus());
+    await act(async () => {
+      fireEvent.keyDown(db0, { key: 'ArrowRight' });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('app:, 12 keys');
+    expect(document.activeElement?.getAttribute('aria-level')).toBe('2');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('hello');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(db0);
+    fireEvent.keyDown(db0, { key: 'ArrowLeft' });
+    expect(db0.getAttribute('aria-expanded')).toBe('false');
     expect(within(tree).getAllByRole('treeitem').filter((x) => x.tabIndex === 0)).toHaveLength(1);
   });
 

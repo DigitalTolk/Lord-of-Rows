@@ -571,6 +571,11 @@ export function ConnectionDialog() {
             <Field label={t('cdlg.tags')}>
               <input className="input" value={cfg.tags.join(', ')} placeholder={t('cdlg.commaSeparated')} onChange={(e) => set('tags', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))} />
             </Field>
+            {cfg.engine === 'redis' && (
+              <Field label={t('cdlg.keySeparator')}>
+                <input className="input font-mono" dir="ltr" maxLength={8} value={cfg.key_separator ?? ''} placeholder=":" title={t('cdlg.keySeparatorHint')} onChange={(e) => set('key_separator', e.target.value || null)} />
+              </Field>
+            )}
             <Field label={t('conn.notes')} wide>
               <textarea className="input" rows={2} value={cfg.notes ?? ''} onChange={(e) => set('notes', e.target.value || null)} />
             </Field>

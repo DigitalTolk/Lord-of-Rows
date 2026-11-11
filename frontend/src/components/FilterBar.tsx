@@ -202,3 +202,40 @@ export function FilterBar({ tabId, columns, onApply, onClear, onExport, sqlFor, 
     </div>
   );
 }
+
+/**
+ * Filter bar for key-value tabs: one "Key pattern" glob input. The pattern is
+ * matched server-side (`SCAN … MATCH`), so the column/operator rows of the SQL
+ * filter bar do not apply here.
+ */
+export function KeyPatternBar({ value, onApply }: { value: string; onApply: (pattern: string) => void }) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+  const apply = () => onApply(draft.trim() || '*');
+  return (
+    <div role="search" aria-label={t('filter.title')} className="flex shrink-0 items-center gap-1.5 border-b border-border bg-panel px-2 py-1.5 text-[0.9rem]">
+      <label className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="shrink-0 text-muted">{t('redis.patternLabel')}</span>
+        <input
+          className="input h-7 min-w-0 flex-1 font-mono"
+          dir="ltr"
+          spellCheck={false}
+          autoComplete="off"
+          placeholder={t('redis.patternPlaceholder')}
+          title={t('redis.patternHint')}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') apply();
+            if (e.key === 'Escape') setDraft(value);
+          }}
+        />
+      </label>
+      <button className="btn h-7" onClick={() => { setDraft('*'); onApply('*'); }}>{t('filter.clear')}</button>
+      <button className="btn btn-primary h-7" onClick={apply}>{t('filter.apply')}</button>
+    </div>
+  );
+}

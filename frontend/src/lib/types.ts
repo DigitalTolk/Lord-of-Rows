@@ -49,6 +49,8 @@ export interface ConnectionConfig {
   connect_timeout_secs: number;
   query_timeout_secs?: number | null;
   init_sql?: string | null;
+  /** Key-value engines: namespace separator for the sidebar key tree (default `:`). */
+  key_separator?: string | null;
 }
 
 export interface StoredConnection {
@@ -253,3 +255,45 @@ export interface PluginInfo {
   grants: PluginCapability[]; settings: Record<string, unknown>; last_error?: string | null; installed: string; updated: string; incompatible?: string | null;
 }
 export interface PluginPreview { manifest: PluginManifest; signer: PluginSigner; wasm_sha256: string; installed_version?: string | null; signer_changed: boolean; incompatible?: string | null }
+
+// ---- key-value browsing (dbs-core kv.rs)
+
+export interface KeyspaceInfo { name: string; index: number; keys: number; expires: number; current: boolean }
+export interface KeyRow {
+  key: string;
+  kind: string;
+  ttl: number;
+  size?: number | null;
+  length?: number | null;
+  preview?: string | null;
+  preview_truncated: boolean;
+}
+export interface KeyPage { keys: KeyRow[]; next: number; done: boolean; total?: number | null }
+export interface NamespaceNode { prefix: string; label: string; count: number }
+export interface TreeBatch { namespaces: NamespaceNode[]; keys: string[]; cursor: number; done: boolean; scanned: number }
+export interface ValueRequest { cursor: string; count: number }
+export interface ValuePage {
+  key: string;
+  kind: string;
+  ttl: number;
+  size?: number | null;
+  length?: number | null;
+  columns: string[];
+  rows: Value[][];
+  text?: string | null;
+  next?: string | null;
+}
+export type KvEdit =
+  | { op: 'set_string'; key: string; value: string }
+  | { op: 'expire'; key: string; seconds: number }
+  | { op: 'rename'; key: string; to: string }
+  | { op: 'delete'; key: string }
+  | { op: 'hash_set'; key: string; field: string; value: string }
+  | { op: 'hash_delete'; key: string; field: string }
+  | { op: 'list_push'; key: string; value: string }
+  | { op: 'list_set'; key: string; index: number; value: string }
+  | { op: 'list_remove'; key: string; value: string }
+  | { op: 'set_add'; key: string; member: string }
+  | { op: 'set_remove'; key: string; member: string }
+  | { op: 'zset_add'; key: string; member: string; score: number }
+  | { op: 'zset_remove'; key: string; member: string };

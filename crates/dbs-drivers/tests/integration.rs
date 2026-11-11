@@ -716,7 +716,7 @@ async fn redis_key_browser() {
         async move {
             let mut rows = vec![];
             let mut cur = String::new();
-            let mut kind = String::new();
+            let mut kind;
             loop {
                 let p = kv.read_value("db0", &format!("{KB}{key}"), &ValueRequest { cursor: cur.clone(), count }).await.unwrap();
                 // HSCAN/SSCAN COUNT is a hint (small encodings come back whole); offset pages are exact.

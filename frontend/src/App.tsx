@@ -29,11 +29,18 @@ import { QuerySplitView } from './views/QuerySplitView';
 import { SettingsView } from './views/SettingsView';
 import { StructureView } from './views/StructureView';
 import { TableView } from './views/TableView';
+import { RedisKeysView } from './views/RedisKeysView';
+
+/** Key-value sessions browse keys (SCAN-paged key grid); every other engine gets the table view. */
+function TableOrKeys({ tab }: { tab: Tab }) {
+  const keyValue = useApp((s) => (tab.sessionId ? s.sessions[tab.sessionId]?.config.engine === 'redis' : false));
+  return keyValue ? <RedisKeysView tab={tab} /> : <TableView tab={tab} />;
+}
 
 function View({ tab }: { tab: Tab }) {
   switch (tab.kind) {
     case 'query': return <QuerySplitView tab={tab} />;
-    case 'table': return <TableView tab={tab} />;
+    case 'table': return <TableOrKeys tab={tab} />;
     case 'structure': return <StructureView tab={tab} />;
     case 'diff': return <DiffView />;
     case 'audit': return <AuditView />;

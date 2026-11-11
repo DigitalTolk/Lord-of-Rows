@@ -82,6 +82,16 @@ export const api = {
     call<{ statements: string[]; decision: T.Decision }>('preview_changes', { sessionId, target, changes }),
   applyChanges: (sessionId: string, target: T.TableTarget, changes: T.RowChange[], confirmToken?: string | null) =>
     call<T.ApplyReport>('apply_changes', { sessionId, target, changes, confirmToken: confirmToken ?? null }),
+  // Key-value browsing: every call is bounded server-side (SCAN batches, capped pages).
+  kvKeyspaces: (sessionId: string) => call<T.KeyspaceInfo[]>('kv_keyspaces', { sessionId }),
+  kvScanKeys: (sessionId: string, db: string, pattern: string, from: number, limit: number, restart: boolean) =>
+    call<T.KeyPage>('kv_scan_keys', { sessionId, db, pattern, from, limit, restart }),
+  kvNamespace: (sessionId: string, db: string, prefix: string, separator: string, cursor: number, limit: number) =>
+    call<T.TreeBatch>('kv_namespace', { sessionId, db, prefix, separator, cursor, limit }),
+  kvReadValue: (sessionId: string, db: string, key: string, request: T.ValueRequest) => call<T.ValuePage>('kv_read_value', { sessionId, db, key, request }),
+  kvPreviewEdits: (sessionId: string, db: string, edits: T.KvEdit[]) => call<{ statements: string[]; decision: T.Decision }>('kv_preview_edits', { sessionId, db, edits }),
+  kvApplyEdits: (sessionId: string, db: string, edits: T.KvEdit[], confirmToken?: string | null, typedConfirmation?: string | null) =>
+    call<T.ApplyReport>('kv_apply_edits', { sessionId, db, edits, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }),
   copyRows: (columns: T.ColumnMeta[], rows: T.Value[][], options: T.ExportOptions) => call<string>('copy_rows', { columns, rows, options }),
 
   /** Native picker for SSL key/cert/CA files: returns the chosen path only (never contents). */

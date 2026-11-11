@@ -30,7 +30,7 @@ export function PendingChangesBar() {
     setPreview({ sql: '', loading: true });
     try {
       const st = await ws.actions.statements();
-      setPreview({ sql: st.map((s) => s + ';').join('\n'), loading: false });
+      setPreview({ sql: ws.actions.plain ? st.join('\n') : st.map((s) => s + ';').join('\n'), loading: false });
     } catch (e) {
       setPreview({ sql: '', loading: false, error: errMsg(e) });
     }

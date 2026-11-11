@@ -4,7 +4,7 @@ import { api } from './lib/ipc';
 import { withHostKeyTrust } from './lib/hostkey';
 import { autoCheckForUpdates } from './lib/updates';
 import { closeCurrentWindow, currentWindowLabel, persistsWorkspace } from './lib/windows';
-import type { AppInfo, ObjectRef, SessionOpened, StoredConnection, TableTarget } from './lib/types';
+import type { AppInfo, KeyspaceInfo, ObjectRef, SessionOpened, StoredConnection, TableTarget } from './lib/types';
 
 export type TabKind = 'query' | 'table' | 'structure' | 'diff' | 'audit' | 'monitor' | 'er' | 'settings' | 'import' | 'backup' | 'history' | 'dashboard';
 
@@ -43,6 +43,8 @@ export interface OpenSession extends SessionOpened {
   schemas: string[];
   objects: Record<string, ObjectRef[]>;
   activeSchema: string | null;
+  /** Key-value sessions: logical databases with key counts (the schemas, with sizes). */
+  keyspaces?: KeyspaceInfo[];
   latency?: number;
   healthy: boolean;
 }
@@ -71,6 +73,8 @@ interface State {
   closeSession(sessionId: string): Promise<void>;
   loadObjects(sessionId: string, schema: string | null): Promise<void>;
   setActiveSchema(sessionId: string, schema: string): void;
+  /** Key-value sessions: reload the databases and their key counts (`INFO keyspace`). */
+  loadKeyspaces(sessionId: string): Promise<void>;
   openTab(t: Omit<Tab, 'id'> & { id?: string }): string;
   closeTab(id: string): void;
   reopenClosedTab(): void;
@@ -121,9 +125,14 @@ export const useApp = create<State>((set, get) => ({
 
   async openSession(connectionId, password, database) {
     const s = await withHostKeyTrust((trust) => api.openSession(connectionId, password ?? null, trust, database ?? null));
+    const keyValue = s.config.engine === 'redis';
     let schemas: string[] = [];
+    let keyspaces: KeyspaceInfo[] | undefined;
     try {
-      schemas = s.capabilities.schemas ? await api.listSchemas(s.session_id) : [];
+      if (keyValue) {
+        keyspaces = await api.kvKeyspaces(s.session_id);
+        schemas = keyspaces.map((k) => k.name);
+      } else schemas = s.capabilities.schemas ? await api.listSchemas(s.session_id) : [];
     } catch {
       schemas = [];
     }
@@ -137,13 +146,18 @@ export const useApp = create<State>((set, get) => ({
     const tabs = prev.tabs.map((t) => (t.kind === 'query' && !t.sessionId ? { ...t, sessionId: s.session_id } : t));
     const firstOwn = tabs.find((t) => t.sessionId === s.session_id);
     set({
-      sessions: { ...prev.sessions, [s.session_id]: { ...s, schemas, objects: {}, activeSchema: preferred, healthy: true } },
+      sessions: { ...prev.sessions, [s.session_id]: { ...s, schemas, keyspaces, objects: {}, activeSchema: preferred, healthy: true } },
       tabs,
       activeSession: s.session_id,
       activeTab: firstOwn?.id,
       lastTab: prev.activeSession && prev.activeTab ? { ...prev.lastTab, [prev.activeSession]: prev.activeTab } : prev.lastTab,
       launcher: false,
     });
+    if (keyValue) {
+      // Keys are browsed lazily (namespace tree, SCAN-paged grid); the configured database stays the default.
+      void get().reloadConnections();
+      return s.session_id;
+    }
     await get().loadObjects(s.session_id, preferred);
     // If the default schema has no tables, switch to the first user schema that does.
     const hasTables = (sch: string | null) => (get().sessions[s.session_id]?.objects[sch ?? ''] ?? []).some((o) => o.kind === 'table' || o.kind === 'view');
@@ -193,7 +207,17 @@ export const useApp = create<State>((set, get) => ({
     // The selected schema is also the default for unqualified names in SQL tabs.
     api.useSchema(sessionId, schema).catch((e) => get().toast('error', errMsg(e)));
     set({ sessions: { ...get().sessions, [sessionId]: { ...s, activeSchema: schema } } });
+    if (s.keyspaces) return; // key-value: the tree loads lazily
     if (!s.objects[schema]) void get().loadObjects(sessionId, schema);
+  },
+
+  async loadKeyspaces(sessionId) {
+    const keyspaces = await api.kvKeyspaces(sessionId);
+    const s = get().sessions[sessionId];
+    if (!s) return;
+    const schemas = keyspaces.map((k) => k.name);
+    if (s.activeSchema && !schemas.includes(s.activeSchema)) schemas.push(s.activeSchema);
+    set({ sessions: { ...get().sessions, [sessionId]: { ...s, keyspaces, schemas } } });
   },
 
   openTab(t) {

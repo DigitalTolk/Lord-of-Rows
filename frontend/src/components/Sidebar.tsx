@@ -8,6 +8,7 @@ import { errMsg, useApp } from '../store';
 import { Icon, type IconName } from './icons';
 import { isContextMenuKey, menuAnchor, MenuPopup } from './ui';
 import { HistoryList, SavedQueriesList, SidebarTabs, type SidebarSection } from './SidebarLists';
+import { RedisTree } from './RedisTree';
 
 const KIND_ICON: Partial<Record<ObjectKind, IconName>> = {
   table: 'table', view: 'view', materialized_view: 'view', function: 'func', procedure: 'func', trigger: 'bolt', sequence: 'list', enum: 'list',
@@ -53,6 +54,8 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
     for (const o of objs) if (!ql || o.name.toLowerCase().includes(ql)) m.set(o.kind, [...(m.get(o.kind) ?? []), o]);
     return KIND_ORDER.filter((k) => m.has(k)).map((k) => [k, m.get(k)!] as const);
   }, [objs, q]);
+  // Key-value sessions browse databases → namespaces → keys lazily (RedisTree) instead of an object list.
+  const keyValue = s.config.engine === 'redis';
   const kindLabel = (k: ObjectKind) => t(`tree.kind.${k}`, { defaultValue: k });
 
   const visible = useMemo(() => {
@@ -138,7 +141,7 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
     <aside className="flex h-full min-h-0 flex-col bg-panel" aria-label={t('tree.label')}>
       <div className="space-y-1.5 p-2">
         <SidebarTabs value={section} onChange={setSection} />
-        {section === 'items' && s.schemas.length > 0 && (
+        {section === 'items' && !keyValue && s.schemas.length > 0 && (
           <div className="flex gap-1">
             <select className="input h-7 flex-1 font-medium" aria-label={t('tree.schemas')} value={s.activeSchema ?? ''} onChange={(e) => setActiveSchema(sessionId, e.target.value)}>
               {s.schemas.map((x) => <option key={x}>{x}</option>)}
@@ -153,8 +156,9 @@ export function Sidebar({ sessionId }: { sessionId: string }) {
       </div>
       {section === 'queries' && <div className="min-h-0 flex-1 overflow-auto"><SavedQueriesList sessionId={sessionId} q={q} /></div>}
       {section === 'history' && <div className="min-h-0 flex-1 overflow-auto"><HistoryList sessionId={sessionId} q={q} /></div>}
-      {section === 'items' && byKind.length === 0 && <p className="px-3 py-6 text-center text-muted">{t('tree.empty')}</p>}
-      {section === 'items' && byKind.length > 0 && (
+      {section === 'items' && keyValue && <RedisTree sessionId={sessionId} q={q} />}
+      {section === 'items' && !keyValue && byKind.length === 0 && <p className="px-3 py-6 text-center text-muted">{t('tree.empty')}</p>}
+      {section === 'items' && !keyValue && byKind.length > 0 && (
         <div ref={treeRef} className="min-h-0 flex-1 overflow-auto pb-2" role="tree" aria-label={t('tree.objects')} onKeyDown={onTreeKey}>
           {byKind.map(([kind, list]) => {
             const gk = `k:${kind}`;

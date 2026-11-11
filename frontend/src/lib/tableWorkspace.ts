@@ -15,6 +15,8 @@ export interface TypedFilter {
 
 /** Registered by the table view so the top toolbar can drive its staged changes. */
 export interface PendingActions {
+  /** Statements are plain commands (one per line, no `;` terminators), e.g. key-value edits. */
+  plain?: boolean;
   discard(): void;
   /** Exactly the statements Commit would run (generated in Rust). */
   statements(): Promise<string[]>;

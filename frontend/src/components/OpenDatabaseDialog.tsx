@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { create } from 'zustand';
 import { api } from '../lib/ipc';
+import { fmtNumber } from '../lib/format';
 import { buildItems, filterItems, moveIndex, type PickerItem, type PickerSection } from '../lib/openDatabase';
 import { family } from '../lib/sqlgen';
 import { errMsg, useApp, type OpenSession } from '../store';
@@ -32,6 +33,9 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
   const { t } = useTranslation();
   const fam = family(s.config.engine);
   const canCreate = fam === 'pg' || fam === 'mysql';
+  // Key-value sessions: logical databases (db0, db1, …) with their key counts.
+  const keyValue = s.config.engine === 'redis';
+  const keyspaces = useApp((st) => st.sessions[s.session_id]?.keyspaces);
   const currentDb = s.server.current_database ?? s.config.database ?? null;
   const [schemas, setSchemas] = useState<string[]>(s.schemas);
   const [databases, setDatabases] = useState<string[]>([]);
@@ -53,7 +57,8 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const list = s.capabilities.schemas ? await api.listSchemas(s.session_id) : [];
+      if (keyValue) await useApp.getState().loadKeyspaces(s.session_id);
+      const list = keyValue ? (useApp.getState().sessions[s.session_id]?.schemas ?? []) : s.capabilities.schemas ? await api.listSchemas(s.session_id) : [];
       setSchemas(list);
       useApp.setState((st) => {
         const cur = st.sessions[s.session_id];
@@ -64,7 +69,7 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
     }
     if (fam === 'pg') setDatabases(await api.listDatabases(s.session_id).catch(() => []));
     setLoading(false);
-  }, [s.session_id, s.capabilities.schemas, fam]);
+  }, [s.session_id, s.capabilities.schemas, fam, keyValue]);
 
   useEffect(() => {
     void refresh();
@@ -99,6 +104,11 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
     const loaded = !!st.sessions[s.session_id]?.objects[it.name];
     st.setActiveSchema(s.session_id, it.name);
     useOpenedSchemas.getState().add(s.session_id, it.name);
+    // Key-value: show the database's keys (SCAN-paged grid).
+    if (keyValue) {
+      st.openTab({ kind: 'table', title: it.name, sessionId: s.session_id, target: { schema: it.name, table: '*' } });
+      return;
+    }
     // setActiveSchema only loads an unseen schema; refresh the tree for one that was cached.
     if (loaded) void st.loadObjects(s.session_id, it.name).catch(() => undefined);
   };
@@ -203,6 +213,10 @@ export function OpenDatabaseDialog({ s, onClose }: { s: OpenSession; onClose: ()
                 >
                   <Icon name="db" size={15} className={`shrink-0 ${sec === 'system' ? 'opacity-60' : ''}`} />
                   <span className={`truncate ${it.current ? 'font-semibold' : ''}`} dir="auto">{it.name}</span>
+                  {keyValue && (() => {
+                    const n = keyspaces?.find((k) => k.name === it.name)?.keys;
+                    return n == null ? null : <span className="shrink-0 text-[0.8rem] tabular-nums opacity-70">· {t('redis.keyCount', { count: n, formatted: fmtNumber(n) })}</span>;
+                  })()}
                   {it.current && <span className="ms-auto shrink-0 rounded border border-current px-1 text-[0.7rem] opacity-80">{t('openDb.current')}</span>}
                 </div>
               ))}
