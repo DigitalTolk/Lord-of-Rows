@@ -334,116 +334,8 @@ pub struct ParsedUrl {
 
 #[tauri::command]
 pub fn parse_connection_url(url: String) -> R<ParsedUrl> {
-    check_len(&url, 4096, "URL")?;
-    let (scheme, rest) = url.split_once("://").ok_or_else(|| DbError::invalid("not a connection URL"))?;
-    let engine = match scheme.to_ascii_lowercase().as_str() {
-        "postgres" | "postgresql" => Engine::Postgres,
-        "mysql" => Engine::MySql,
-        "mariadb" => Engine::MariaDb,
-        "redis" | "rediss" => Engine::Redis,
-        "sqlite" | "file" => Engine::Sqlite,
-        "cockroachdb" => Engine::CockroachDb,
-        _ => return Err(DbError::unsupported(&format!("URL scheme {scheme}"))),
-    };
-    let mut cfg = ConnectionConfig {
-        id: Uuid::nil(),
-        name: String::new(),
-        engine,
-        host: None,
-        port: None,
-        database: None,
-        username: None,
-        socket_path: None,
-        tls: TlsConfig::default(),
-        ssh: None,
-        environment: EnvironmentKind::Development,
-        read_only: false,
-        color: None,
-        group: None,
-        tags: vec![],
-        notes: None,
-        favorite: false,
-        connect_timeout_secs: 10,
-        query_timeout_secs: None,
-        init_sql: None,
-        key_separator: None,
-        tunnel: None,
-    };
-    if engine == Engine::Sqlite {
-        cfg.database = Some(rest.to_string());
-        cfg.name = rest.rsplit('/').next().unwrap_or("sqlite").to_string();
-        return Ok(ParsedUrl { config: cfg, password: None });
-    }
-    let (main, query) = rest.split_once('?').unwrap_or((rest, ""));
-    let (auth_host, db) = main.split_once('/').unwrap_or((main, ""));
-    let (auth, hostport) = match auth_host.rsplit_once('@') {
-        Some((a, h)) => (Some(a), h),
-        None => (None, auth_host),
-    };
-    let mut password = None;
-    if let Some(a) = auth {
-        let (u, p) = a.split_once(':').map(|(u, p)| (u, Some(p))).unwrap_or((a, None));
-        cfg.username = Some(pct_decode(u)).filter(|s| !s.is_empty());
-        password = p.map(pct_decode);
-    }
-    let (h, p) = match hostport.rsplit_once(':') {
-        Some((h, p)) if !h.ends_with(']') || hostport.starts_with('[') => (h, Some(p)),
-        _ => (hostport, None),
-    };
-    cfg.host = Some(h.to_string()).filter(|s| !s.is_empty());
-    if let Some(p) = p {
-        cfg.port = Some(p.parse().map_err(|_| DbError::invalid("invalid port"))?);
-    }
-    cfg.database = Some(pct_decode(db)).filter(|s| !s.is_empty());
-    for kv in query.split('&').filter(|s| !s.is_empty()) {
-        let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-        match (k, v) {
-            ("sslmode" | "ssl-mode" | "ssl_mode", m) => {
-                cfg.tls.mode = match m.to_ascii_lowercase().replace('_', "-").as_str() {
-                    "disable" | "disabled" => TlsMode::Disabled,
-                    "allow" | "prefer" | "preferred" => TlsMode::Preferred,
-                    "require" | "required" => TlsMode::Required,
-                    "verify-ca" => TlsMode::VerifyCa,
-                    // verify-full / verify-identity, and anything unknown: the strictest mode.
-                    _ => TlsMode::VerifyIdentity,
-                }
-            }
-            // libpq certificate parameters (paths only; files are read at connect time).
-            ("sslrootcert", p) if !p.is_empty() => cfg.tls.ca_cert_path = Some(pct_decode(p)),
-            ("sslcert", p) if !p.is_empty() => cfg.tls.client_cert_path = Some(pct_decode(p)),
-            ("sslkey", p) if !p.is_empty() => cfg.tls.client_key_path = Some(pct_decode(p)),
-            _ => {}
-        }
-    }
-    let has_mode = ["sslmode=", "ssl-mode=", "ssl_mode="].iter().any(|k| query.contains(k));
-    if !has_mode {
-        cfg.tls.mode = match scheme.to_ascii_lowercase().as_str() {
-            "redis" => TlsMode::Disabled,
-            "rediss" => TlsMode::VerifyIdentity,
-            // libpq / MySQL client default.
-            _ => TlsMode::Preferred,
-        };
-    }
-    cfg.name = format!("{}@{}", cfg.database.clone().unwrap_or_default(), cfg.host.clone().unwrap_or_default());
-    Ok(ParsedUrl { config: cfg, password })
-}
-
-fn pct_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    let (config, password) = dbs_import::urls::parse_url(&url)?;
+    Ok(ParsedUrl { config, password })
 }
 
 /// Open a fixed OS privacy settings pane (no user-controlled URL).
@@ -1804,7 +1696,7 @@ pub async fn run_restore(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1823,7 +1715,7 @@ mod tests {
 
     // ---- streaming run: shared gate, audit, flow control
 
-    fn test_state() -> AppState {
+    pub(crate) fn test_state() -> AppState {
         AppState {
             store: dbs_store::AppStore::open_in_memory().unwrap(),
             audit: dbs_audit::AuditLog::open_in_memory("test").unwrap(),
@@ -1837,6 +1729,7 @@ mod tests {
             grants: Default::default(),
             known_hosts: std::path::PathBuf::from("/nonexistent/known_hosts"),
             plugins: crate::plugins::PluginHost::new(std::env::temp_dir().join(format!("lotr-plugins-{}", Uuid::new_v4()))).unwrap(),
+            import_preview: Default::default(),
         }
     }
 
@@ -2064,12 +1957,5 @@ mod tests {
         // Non-raw filters are parameterised, so any value is fine here.
         let eq = FilterCondition { column: "a".into(), op: FilterOp::Eq, value: Some(Value::Text("1; DROP".into())), ..Default::default() };
         assert!(check_filters(Dialect::Postgres, &[eq]).is_ok());
-    }
-
-    #[test]
-    fn pct_decode_handles_edge_cases() {
-        assert_eq!(pct_decode("a%2"), "a%2");
-        assert_eq!(pct_decode("%zz"), "%zz");
-        assert_eq!(pct_decode("%41"), "A");
     }
 }

@@ -252,6 +252,23 @@ impl MySqlConnection {
             .ok_or_else(|| DbError::invalid("no database selected"))
     }
 
+    /// `KILL QUERY` that arrives after the statement already finished stays pending on the
+    /// connection and interrupts the *next* statement (error 1317). After a cancelled or timed-out
+    /// run, absorb it with a no-op so the user's next query is not killed.
+    async fn after_kill<T>(&self, r: &DbResult<T>) {
+        let Err(e) = r else { return };
+        if !matches!(e.kind, ErrorKind::Cancelled | ErrorKind::Timeout) {
+            return;
+        }
+        let mut c = self.conn.lock().await;
+        for _ in 0..2 {
+            match c.query_drop("DO 0").await {
+                Err(mysql_async::Error::Server(se)) if se.code == 1317 => continue,
+                _ => break,
+            }
+        }
+    }
+
     async fn kill_query(&self) {
         if let Ok(mut c) = Conn::new(self.opts.clone()).await {
             let _ = c.query_drop(format!("KILL QUERY {}", self.conn_id)).await;
@@ -614,11 +631,15 @@ impl DatabaseConnection for MySqlConnection {
     }
 
     async fn execute(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken) -> DbResult<Vec<StatementResult>> {
-        guarded(self.run_script(sql, opts.max_rows), cancel, opts.timeout_ms, || self.kill_query()).await
+        let r = guarded(self.run_script(sql, opts.max_rows), cancel, opts.timeout_ms, || self.kill_query()).await;
+        self.after_kill(&r).await;
+        r
     }
 
     async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
-        guarded(self.stream_script(sql, &mut sink), cancel, opts.timeout_ms, || self.kill_query()).await
+        let r = guarded(self.stream_script(sql, &mut sink), cancel, opts.timeout_ms, || self.kill_query()).await;
+        self.after_kill(&r).await;
+        r
     }
 
     async fn execute_params(&self, stmt: &GeneratedStatement) -> DbResult<u64> {

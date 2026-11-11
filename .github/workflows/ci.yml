@@ -12,31 +12,9 @@ concurrency:
 
 jobs:
   rust:
+    # Lint + unit tests. Database integration tests (DBS_IT) need the full docker-compose stack
+    # (TLS Postgres, MariaDB, DynamoDB Local, SSH bastion) and run in the e2e job.
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16
-        env: { POSTGRES_USER: dbs_test, POSTGRES_PASSWORD: dbs_test, POSTGRES_DB: dbs_test }
-        ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U dbs_test" --health-interval 2s --health-retries 30
-      mysql:
-        image: mysql:8.4
-        env: { MYSQL_ROOT_PASSWORD: root, MYSQL_USER: dbs_test, MYSQL_PASSWORD: dbs_test, MYSQL_DATABASE: dbs_test }
-        ports: ["3306:3306"]
-        options: --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent" --health-interval 3s --health-retries 40
-      mariadb:
-        image: mariadb:11.4
-        env: { MARIADB_ROOT_PASSWORD: root, MARIADB_USER: dbs_test, MARIADB_PASSWORD: dbs_test, MARIADB_DATABASE: dbs_test }
-        ports: ["3307:3306"]
-        options: --health-cmd "healthcheck.sh --connect --innodb_initialized" --health-interval 3s --health-retries 40
-      redis:
-        image: redis:7
-        ports: ["6379:6379"]
-    env:
-      DBS_IT: "1"
-      DBS_IT_PG_HOST: localhost
-      DBS_IT_MYSQL_HOST: localhost
-      DBS_IT_REDIS_HOST: localhost
     steps:
       - uses: actions/checkout@v4
       - name: System deps (Tauri / WebKitGTK)
@@ -49,7 +27,6 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-        # MariaDB runs on 3307 in CI; its test reads host only, so it is exercised in the docker-compose job.
 
   frontend:
     runs-on: ubuntu-24.04
@@ -73,7 +50,7 @@ jobs:
       - name: Test PKI
         run: docker compose build dev sshd && docker compose run --rm --no-deps dev tests/certs/gen.sh
       - name: Start services
-        run: docker compose up -d postgres mysql mariadb redis sshd dynamodb
+        run: docker compose up -d --wait postgres mysql mariadb redis sshd dynamodb
       - name: Load demo fixtures
         run: tests/fixtures/load.sh
       - name: Build app + run all tests

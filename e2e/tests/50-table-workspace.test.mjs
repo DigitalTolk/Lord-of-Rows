@@ -109,7 +109,11 @@ describe('table workspace', () => {
 
   test('status pill shows engine, TLS state, connection, schema and table', () =>
     fail('pill', async () => {
-      const pill = await b.execute(() => document.querySelector('[data-testid=status-pill]')?.innerText ?? '');
+      // The pill shows "Refreshing…" for at least 700 ms after a load; wait for the details.
+      const pill = await until(async () => {
+        const txt = await b.execute(() => document.querySelector('[data-testid=status-pill]')?.innerText ?? '');
+        return /PostgreSQL \d+/.test(txt) ? txt : null;
+      }, 'status pill details');
       assert.match(pill, /\|\s*PostgreSQL \d+/);
       assert.match(pill, /no TLS/);
       assert.match(pill, /: dbs_test : shop : customers/);

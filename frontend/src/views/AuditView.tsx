@@ -7,7 +7,7 @@ import type { AuditEntry, AuditFilter } from '../lib/types';
 import { fmtNumber } from '../lib/format';
 import { errMsg, useApp } from '../store';
 
-const CATEGORIES = ['connection_created', 'connection_modified', 'connection_deleted', 'connection_opened', 'connection_failed', 'credential_changed', 'credential_deleted', 'query_executed', 'ddl_executed', 'dml_executed', 'data_edited', 'safety_blocked', 'safety_confirmed', 'import', 'export', 'backup', 'restore', 'privilege_change', 'session_killed', 'settings_changed', 'security_policy_changed', 'plugin_installed', 'plugin_permission_changed', 'plugin_removed', 'audit_exported', 'audit_purged', 'ai_request'];
+const CATEGORIES = ['connection_created', 'connection_modified', 'connection_deleted', 'connection_opened', 'connection_failed', 'credential_changed', 'credential_deleted', 'query_executed', 'ddl_executed', 'dml_executed', 'data_edited', 'safety_blocked', 'safety_confirmed', 'import', 'export', 'backup', 'restore', 'privilege_change', 'session_killed', 'settings_changed', 'security_policy_changed', 'plugin_installed', 'plugin_permission_changed', 'plugin_removed', 'audit_exported', 'audit_purged', 'ai_request', 'connections_imported'];
 
 export function AuditView() {
   const { t } = useTranslation();

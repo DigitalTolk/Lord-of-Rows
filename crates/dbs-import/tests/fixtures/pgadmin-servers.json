@@ -1,0 +1,30 @@
+{
+	"Servers": {
+		"1": {
+			"Name": "Reporting",
+			"Group": "Analytics",
+			"Host": "reports.example.com",
+			"Port": 5432,
+			"MaintenanceDB": "postgres",
+			"Username": "report",
+			"SSLMode": "require",
+			"Comment": "read replica",
+			"BGColor": "#336699"
+		},
+		"2": {
+			"Name": "Inventory",
+			"Group": "Servers",
+			"Host": "10.1.2.3",
+			"Port": 6432,
+			"MaintenanceDB": "inventory",
+			"Username": "inv",
+			"ConnectionParameters": { "sslmode": "verify-ca", "sslrootcert": "/certs/inv-ca.pem", "connect_timeout": 15 },
+			"UseSSHTunnel": 1,
+			"TunnelHost": "gw.example.com",
+			"TunnelPort": "22",
+			"TunnelUsername": "gw",
+			"TunnelAuthentication": 1,
+			"TunnelIdentityFile": "/keys/gw"
+		}
+	}
+}

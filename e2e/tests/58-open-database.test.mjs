@@ -48,7 +48,11 @@ describe('open database picker', () => {
       await clickSel(b, 'header button[aria-label="Open database"]');
       await until(dialogOpen, 'picker dialog');
       await until(() => b.execute(() => document.activeElement?.getAttribute('placeholder') === 'Search for database…'), 'search focused');
-      const s = await sections();
+      // "Other databases on this server" is listed by a second, slower call.
+      const s = await until(async () => {
+        const x = await sections();
+        return x.user.includes('shop') && (x.other ?? []).includes('postgres') ? x : null;
+      }, 'schemas and other databases listed');
       assert.ok(s.user.includes('shop'), 'user schema listed');
       assert.ok(s.user.includes('public'), 'public listed');
       assert.ok(s.system.includes('pg_catalog') && s.system.includes('information_schema'), 'system schemas grouped');

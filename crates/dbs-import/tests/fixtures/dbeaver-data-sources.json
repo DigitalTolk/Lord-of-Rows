@@ -1,0 +1,58 @@
+{
+	"folders": {
+		"Team": {},
+		"Team/Billing": { "parent": "Team" }
+	},
+	"connections": {
+		"postgres-jdbc-1a2b3c": {
+			"provider": "postgresql",
+			"driver": "postgres-jdbc",
+			"name": "Billing prod",
+			"save-password": true,
+			"folder": "Team/Billing",
+			"configuration": {
+				"host": "billing.example.com",
+				"port": "5433",
+				"database": "billing",
+				"url": "jdbc:postgresql://billing.example.com:5433/billing",
+				"type": "prod",
+				"auth-model": "native",
+				"handlers": {
+					"ssl": { "type": "CONFIG", "enabled": true, "save-password": false, "properties": { "sslMode": "verify-full", "ssl.ca.cert": "/certs/billing-ca.pem" } }
+				}
+			}
+		},
+		"mysql8-4d5e6f": {
+			"provider": "mysql",
+			"driver": "mysql8",
+			"name": "Analytics",
+			"save-password": false,
+			"configuration": {
+				"host": "analytics.example.com",
+				"port": "3306",
+				"database": "events",
+				"user": "analyst",
+				"type": "dev",
+				"handlers": {
+					"ssh_tunnel": { "type": "TUNNEL", "enabled": true, "save-password": false, "properties": { "host": "bastion.example.com", "port": 22, "authType": "PUBLIC_KEY", "keyPath": "/keys/id_rsa", "implementation": "sshj" } }
+				}
+			}
+		},
+		"sqlite_jdbc-7a8b": {
+			"provider": "generic",
+			"driver": "sqlite_jdbc",
+			"name": "Local cache",
+			"configuration": { "database": "/tmp/cache.sqlite", "url": "jdbc:sqlite:/tmp/cache.sqlite", "type": "qa-env" }
+		},
+		"oracle_thin-9c": {
+			"provider": "oracle",
+			"driver": "oracle_thin",
+			"name": "ERP",
+			"configuration": { "host": "erp.example.com", "port": "1521", "database": "ORCL", "type": "dev" }
+		}
+	},
+	"connection-types": {
+		"dev": { "name": "Development", "color": "255,255,255", "auto-commit": true },
+		"qa-env": { "name": "QA", "color": "0,128,255", "auto-commit": true, "confirm-execute": false }
+	}
+}

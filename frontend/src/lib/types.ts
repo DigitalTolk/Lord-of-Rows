@@ -235,6 +235,34 @@ export type UpdateCheck =
 export type UpdateProgress = { phase: 'downloading'; downloaded: number; total?: number | null } | { phase: 'verifying' } | { phase: 'installing' };
 export interface PickedFile { grant: string; name: string; display_path: string }
 
+// Importing connections from other database tools. Rows never carry secrets.
+export type ConnImportSource = 'table_plus' | 'dbeaver' | 'sequel_ace' | 'sequel_pro' | 'pg_admin' | 'data_grip' | 'url_list';
+export interface ConnImportDetected { source: ConnImportSource; label: string; count: number; error: string | null }
+export type ConnImportRequest = { kind: 'detected'; source: ConnImportSource } | { kind: 'file'; grant: string } | { kind: 'urls'; text: string };
+export type ConnImportStatus = 'ready' | 'exists' | 'unsupported' | 'invalid';
+export interface ConnImportRow {
+  key: string;
+  name: string;
+  source_engine: string;
+  engine: Engine | null;
+  host: string | null;
+  port: number | null;
+  database: string | null;
+  username: string | null;
+  environment: EnvironmentKind | null;
+  group: string | null;
+  ssh: boolean;
+  color: string | null;
+  status: ConnImportStatus;
+  reason: string | null;
+  notes: string[];
+  password: 'none' | 'included' | 'keychain';
+}
+export interface ConnImportPreview { preview_id: string; source: ConnImportSource; label: string; passwords_supported: boolean; rows: ConnImportRow[] }
+export interface ConnImportOptions { keep_groups: boolean; keep_environment: boolean; import_passwords: boolean }
+export interface ConnImportError { key: string; name: string; error: string }
+export interface ConnImportResult { imported: { key: string; id: string }[]; failed: ConnImportError[]; passwords_imported: number; password_errors: ConnImportError[]; groups_created: number }
+
 // AI assistant (optional, disabled by default). Prompts are built and redacted in Rust.
 export type AiTask = 'explain_sql' | 'generate_sql' | 'optimize_sql' | 'explain_error' | 'explain_plan' | 'suggest_indexes' | 'summarize_schema';
 export type AiProvider = 'anthropic' | 'openai_compatible';

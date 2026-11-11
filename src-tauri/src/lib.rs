@@ -5,6 +5,7 @@
 mod ai;
 mod backup;
 mod commands;
+mod import;
 mod migrate;
 mod plugins;
 mod state;
@@ -62,6 +63,7 @@ pub fn run() {
                 grants: Mutex::new(HashMap::new()),
                 known_hosts: dir.join("known_hosts"),
                 plugins: plugins::PluginHost::new(dir.join("plugins"))?,
+                import_preview: Mutex::new(None),
             });
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
@@ -100,6 +102,9 @@ pub fn run() {
             commands::export_connections,
             commands::import_connections,
             commands::parse_connection_url,
+            import::import_connections_detect,
+            import::import_connections_preview,
+            import::import_connections_apply,
             commands::open_session,
             commands::close_session,
             commands::ping_session,

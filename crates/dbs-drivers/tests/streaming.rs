@@ -199,7 +199,9 @@ fn mysql_big(n: u64) -> String {
 #[tokio::test]
 async fn postgres_streaming() {
     let Some(host) = it_host("DBS_IT_PG_HOST") else { return };
-    let c = connect(&cfg(Engine::Postgres, Some(&host), Some("dbs_test"))).await;
+    let mut conf = cfg(Engine::Postgres, Some(&host), Some("dbs_test"));
+    conf.port = std::env::var("DBS_IT_PG_PORT").ok().and_then(|p| p.parse().ok());
+    let c = connect(&conf).await;
     scenario(&*c, &pg_big).await;
     // Notices arrive with the statement that raised them.
     let (r, evs) = stream_all(&*c, "DO $$ BEGIN RAISE NOTICE 'hello from stream'; END $$", 10).await;
@@ -210,7 +212,9 @@ async fn postgres_streaming() {
 #[tokio::test]
 async fn mysql_streaming() {
     let Some(host) = it_host("DBS_IT_MYSQL_HOST") else { return };
-    let c = connect(&cfg(Engine::MySql, Some(&host), Some("dbs_test"))).await;
+    let mut conf = cfg(Engine::MySql, Some(&host), Some("dbs_test"));
+    conf.port = std::env::var("DBS_IT_MYSQL_PORT").ok().and_then(|p| p.parse().ok());
+    let c = connect(&conf).await;
     scenario(&*c, &mysql_big).await;
 }
 

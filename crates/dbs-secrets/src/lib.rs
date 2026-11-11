@@ -120,6 +120,25 @@ impl SecretStore for OsKeychain {
     }
 }
 
+/// Reads a generic-password item that another application saved in the macOS
+/// Keychain. macOS asks the user whether to allow the access (the item's ACL
+/// belongs to the other app). `Ok(None)` when there is no such item.
+#[cfg(all(feature = "os-keychain", target_os = "macos"))]
+pub fn read_external_password(service: &str, account: &str) -> DbResult<Option<Secret>> {
+    let entry = keyring::Entry::new(service, account).map_err(|e| DbError::new(ErrorKind::Internal, format!("credential store unavailable: {e}")))?;
+    match entry.get_password() {
+        Ok(p) => Ok(Some(Secret(p))),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(DbError::new(ErrorKind::Internal, format!("could not read the saved password: {e}"))),
+    }
+}
+
+/// Reading other applications' keychain items is only implemented for macOS.
+#[cfg(not(all(feature = "os-keychain", target_os = "macos")))]
+pub fn read_external_password(_service: &str, _account: &str) -> DbResult<Option<Secret>> {
+    Err(DbError::unsupported("reading passwords saved by other applications on this platform"))
+}
+
 /// Process-memory store. Used by tests and as an explicit "don't save
 /// password" session store. Never persists anything.
 #[derive(Default)]
