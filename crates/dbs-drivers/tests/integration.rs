@@ -483,3 +483,326 @@ async fn redis_end_to_end() {
     assert_eq!(e.kind, ErrorKind::PolicyBlocked);
     exec(&*c, "DEL it:list it:str").await;
 }
+
+// ---------------------------------------------------------------- DynamoDB (DynamoDB Local)
+
+const DYN_EXACT: &str = "12345678901234567890.123456789";
+
+fn dyn_cfg() -> (ConnectionConfig, ConnectSecrets) {
+    let endpoint = std::env::var("DBS_IT_DYNAMO_ENDPOINT").unwrap_or("http://localhost:58000".into());
+    let mut c = cfg(Engine::DynamoDb, Some(&endpoint), Some("us-east-1"));
+    c.username = Some("dbstest".into()); // DynamoDB Local accepts any alphanumeric key id
+    (c, ConnectSecrets { password: Some("dbstestsecret".into()) })
+}
+
+fn eq_filter(col: &str, v: Value) -> FilterCondition {
+    FilterCondition { column: col.into(), op: FilterOp::Eq, value: Some(v), values: vec![] }
+}
+
+fn cell<'a>(rs: &'a ResultSet, row: usize, col: &str) -> &'a Value {
+    let i = rs.columns.iter().position(|c| c.name == col).unwrap_or_else(|| panic!("column {col} in {:?}", rs.columns));
+    &rs.rows[row][i]
+}
+
+async fn dyn_setup(table: &str) -> aws_sdk_dynamodb::Client {
+    use aws_sdk_dynamodb::types::*;
+    let (c, _) = dyn_cfg();
+    let sdk = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_sdk_dynamodb::config::Region::new("us-east-1"))
+        .endpoint_url(c.host.unwrap())
+        .credentials_provider(aws_sdk_dynamodb::config::Credentials::new("dbstest", "dbstestsecret", None, None, "it"))
+        .load()
+        .await;
+    let client = aws_sdk_dynamodb::Client::new(&sdk);
+    let attr = |n: &str, t: ScalarAttributeType| AttributeDefinition::builder().attribute_name(n).attribute_type(t).build().unwrap();
+    let key = |n: &str, t: KeyType| KeySchemaElement::builder().attribute_name(n).key_type(t).build().unwrap();
+    client
+        .create_table()
+        .table_name(table)
+        .attribute_definitions(attr("pk", ScalarAttributeType::S))
+        .attribute_definitions(attr("sk", ScalarAttributeType::N))
+        .attribute_definitions(attr("gsi_pk", ScalarAttributeType::S))
+        .key_schema(key("pk", KeyType::Hash))
+        .key_schema(key("sk", KeyType::Range))
+        .global_secondary_indexes(
+            GlobalSecondaryIndex::builder()
+                .index_name("by_gsi")
+                .key_schema(key("gsi_pk", KeyType::Hash))
+                .projection(Projection::builder().projection_type(ProjectionType::All).build())
+                .build()
+                .unwrap(),
+        )
+        .billing_mode(BillingMode::PayPerRequest)
+        .send()
+        .await
+        .expect("create table");
+    let s = |v: &str| AttributeValue::S(v.into());
+    let n = |v: &str| AttributeValue::N(v.into());
+    for i in 0..25 {
+        client
+            .put_item()
+            .table_name(table)
+            .item("pk", s(&format!("p{}", i % 3)))
+            .item("sk", n(&i.to_string()))
+            .item("name", s(&format!("item{i}")))
+            .item("gsi_pk", s(&format!("g{}", i % 2)))
+            .send()
+            .await
+            .unwrap();
+    }
+    client
+        .put_item()
+        .table_name(table)
+        .item("pk", s("types"))
+        .item("sk", n("0"))
+        .item("s", s("héllo"))
+        .item("n", n(DYN_EXACT))
+        .item("big", n("9007199254740993"))
+        .item("int", n("42"))
+        .item("flag", AttributeValue::Bool(true))
+        .item("nul", AttributeValue::Null(true))
+        .item("bin", AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(vec![0xde, 0xad, 0xbe, 0xef])))
+        .item("list", AttributeValue::L(vec![s("a"), n("1")]))
+        .item("map", AttributeValue::M([("a".to_string(), n("1")), ("b".to_string(), s("x"))].into()))
+        .item("ss", AttributeValue::Ss(vec!["x".into(), "y".into()]))
+        .item("ns", AttributeValue::Ns(vec!["1".into(), "2.5".into()]))
+        .send()
+        .await
+        .unwrap();
+    client
+}
+
+#[tokio::test]
+async fn dynamo_end_to_end() {
+    if !it_enabled() {
+        return;
+    }
+    let table = format!("it_items_{}", Uuid::new_v4().simple());
+    let client = dyn_setup(&table).await;
+    let (conf, secrets) = dyn_cfg();
+    let c = driver_for(Engine::DynamoDb).unwrap().connect(&conf, secrets).await.expect("connect");
+    let caps = c.capabilities();
+    assert!(caps.sql && caps.inline_edit && !caps.transactions && !caps.schemas && !caps.explain);
+    assert!(c.server_info().await.unwrap().version.starts_with("DynamoDB us-east-1"));
+    let t = TableTarget { schema: None, table: table.clone() };
+
+    // list / describe
+    assert!(c.list_objects(None).await.unwrap().iter().any(|o| o.name == table && o.kind == ObjectKind::Table));
+    let d = c.describe_table(&t).await.unwrap();
+    assert_eq!(d.primary_key, vec!["pk", "sk"]);
+    assert_eq!(d.columns[0].name, "pk");
+    assert_eq!(d.columns[1].data_type, "N");
+    let gsi = d.indexes.iter().find(|i| i.name == "by_gsi").expect("gsi");
+    assert_eq!(gsi.columns, vec!["gsi_pk"]);
+    assert!(d.ddl.unwrap().contains("by_gsi"));
+    let missing = c.describe_table(&TableTarget { schema: None, table: "no_such_table".into() }).await.unwrap_err();
+    assert_eq!(missing.kind, ErrorKind::NotFound);
+
+    // paging by continuation key: 26 items over three pages, no duplicates, keys first
+    let mut seen = std::collections::HashSet::new();
+    let mut pages = Vec::new();
+    for p in 0..3 {
+        let rs = c.fetch_table(&t, &PageRequest { offset: p * 10, limit: 10, ..Default::default() }).await.unwrap();
+        assert_eq!(rs.columns[0].name, "pk");
+        assert_eq!(rs.columns[1].name, "sk");
+        assert_eq!(rs.columns[1].type_name, "N");
+        for r in 0..rs.rows.len() {
+            assert!(seen.insert(format!("{:?}/{:?}", cell(&rs, r, "pk"), cell(&rs, r, "sk"))), "duplicate row across pages");
+        }
+        pages.push(rs.rows.len());
+    }
+    assert_eq!(pages, vec![10, 10, 6]);
+    // A jump on a fresh connection (no cached cursors) scans forward to the offset.
+    let (conf2, secrets2) = dyn_cfg();
+    let fresh = driver_for(Engine::DynamoDb).unwrap().connect(&conf2, secrets2).await.unwrap();
+    let jump = fresh.fetch_table(&t, &PageRequest { offset: 23, limit: 10, ..Default::default() }).await.unwrap();
+    assert_eq!(jump.rows.len(), 3);
+
+    // exact values and type mapping
+    let rs = c.fetch_table(&t, &PageRequest { limit: 50, filters: vec![eq_filter("pk", Value::Text("types".into()))], ..Default::default() }).await.unwrap();
+    assert_eq!(rs.rows.len(), 1);
+    assert_eq!(cell(&rs, 0, "n"), &Value::Decimal(DYN_EXACT.into()));
+    assert_eq!(rs.columns.iter().find(|c| c.name == "n").unwrap().type_name, "N");
+    assert_eq!(cell(&rs, 0, "big"), &Value::Decimal("9007199254740993".into()));
+    assert_eq!(cell(&rs, 0, "int"), &Value::Int(42));
+    assert_eq!(cell(&rs, 0, "s"), &Value::Text("héllo".into()));
+    assert_eq!(cell(&rs, 0, "flag"), &Value::Bool(true));
+    assert_eq!(cell(&rs, 0, "nul"), &Value::Null);
+    assert_eq!(cell(&rs, 0, "bin"), &Value::Bytes { hex: "deadbeef".into(), len: 4, truncated: false });
+    assert_eq!(cell(&rs, 0, "list"), &Value::Json(serde_json::json!(["a", 1])));
+    assert_eq!(cell(&rs, 0, "map"), &Value::Json(serde_json::json!({"a": 1, "b": "x"})));
+    assert_eq!(cell(&rs, 0, "ss"), &Value::Array(vec![Value::Text("x".into()), Value::Text("y".into())]));
+    assert_eq!(cell(&rs, 0, "ns"), &Value::Array(vec![Value::Int(1), Value::Decimal("2.5".into())]));
+
+    // filters (FilterExpression with placeholders) and counts
+    let count = |f: Vec<FilterCondition>| {
+        let c = &c;
+        let t = &t;
+        async move { c.count_rows(t, &f).await.unwrap() }
+    };
+    assert_eq!(count(vec![]).await, 26);
+    assert_eq!(count(vec![eq_filter("pk", Value::Text("p1".into()))]).await, 8);
+    assert_eq!(
+        count(vec![FilterCondition { column: "name".into(), op: FilterOp::StartsWith, value: Some(Value::Text("item1".into())), values: vec![] }]).await,
+        11
+    );
+    assert_eq!(count(vec![FilterCondition { column: "sk".into(), op: FilterOp::Ge, value: Some(Value::Int(20)), values: vec![] }]).await, 5);
+    assert_eq!(
+        count(vec![FilterCondition { column: "pk".into(), op: FilterOp::In, value: None, values: vec![Value::Text("p0".into()), Value::Text("p2".into())] }])
+            .await,
+        17
+    );
+    assert_eq!(count(vec![FilterCondition { column: "s".into(), op: FilterOp::IsNotNull, value: None, values: vec![] }]).await, 1);
+    assert_eq!(count(vec![FilterCondition { column: "nul".into(), op: FilterOp::IsNull, value: None, values: vec![] }]).await, 26);
+    assert_eq!(count(vec![FilterCondition { column: "name".into(), op: FilterOp::Contains, value: Some(Value::Text("m2".into())), values: vec![] }]).await, 6);
+    let filtered =
+        c.fetch_table(&t, &PageRequest { limit: 3, offset: 3, filters: vec![eq_filter("pk", Value::Text("p1".into()))], ..Default::default() }).await.unwrap();
+    assert_eq!(filtered.rows.len(), 3);
+    assert!(filtered.rows.iter().all(|r| r[0] == Value::Text("p1".into())));
+    // Injection attempt in a value is just a value.
+    assert_eq!(count(vec![eq_filter("pk", Value::Text("p1' OR '1'='1".into()))]).await, 0);
+
+    // PartiQL
+    let q = format!("\"{table}\"");
+    let r = exec(&*c, &format!("SELECT * FROM {q} WHERE pk = 'types' AND sk = 0")).await;
+    let rs = r[0].result.as_ref().unwrap();
+    assert_eq!(cell(rs, 0, "n"), &Value::Decimal(DYN_EXACT.into()));
+    let r = exec(&*c, &format!("INSERT INTO {q} VALUE {{'pk': 'pq', 'sk': 1, 'name': 'partiql', 'amount': {DYN_EXACT}}}")).await;
+    assert_eq!(r[0].rows_affected, Some(1));
+    exec(&*c, &format!("UPDATE {q} SET name = 'changed' WHERE pk = 'pq' AND sk = 1")).await;
+    let r = exec(&*c, &format!("SELECT name, amount FROM {q} WHERE pk = 'pq'")).await;
+    assert_eq!(first_rows(&r)[0], vec![Value::Decimal(DYN_EXACT.into()), Value::Text("changed".into())]);
+    // Two statements in one script, each its own ExecuteStatement.
+    let r = exec(&*c, &format!("DELETE FROM {q} WHERE pk = 'pq' AND sk = 1;\nSELECT * FROM {q} WHERE pk = 'pq'")).await;
+    assert_eq!(r.len(), 2);
+    assert_eq!(r[1].result.as_ref().unwrap().rows.len(), 0);
+    let e = c.execute("SELEC * FROM nowhere", &ExecOptions::default(), CancellationToken::new()).await.unwrap_err();
+    assert!(matches!(e.kind, ErrorKind::Syntax | ErrorKind::InvalidInput), "{e:?}");
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    let e = c.execute(&format!("SELECT * FROM {q}"), &ExecOptions::default(), cancelled).await.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Cancelled);
+    // max_rows bounds the result
+    let r = c.execute(&format!("SELECT * FROM {q}"), &ExecOptions { max_rows: 5, timeout_ms: None }, CancellationToken::new()).await.unwrap();
+    let rs = r[0].result.as_ref().unwrap();
+    assert_eq!(rs.rows.len(), 5);
+    assert!(rs.truncated);
+
+    // PartiQL goes through the same SQL classifier as other engines.
+    let risk = |s: &str| dbs_safety::classify_script(s, Dialect::Generic)[0].risk;
+    assert_eq!(risk(&format!("SELECT * FROM {q}")), dbs_safety::Risk::Read);
+    assert_eq!(risk(&format!("UPDATE {q} SET a = 1 WHERE pk = 'x' AND sk = 1")), dbs_safety::Risk::Write);
+    assert_eq!(risk(&format!("UPDATE {q} SET a = 1")), dbs_safety::Risk::Destructive);
+    assert_eq!(risk(&format!("DELETE FROM {q}")), dbs_safety::Risk::Destructive);
+    assert_eq!(risk(&format!("INSERT INTO {q} VALUE {{'pk': 'x', 'sk': 1}}")), dbs_safety::Risk::Write);
+
+    // Grid edits: TransactWriteItems with optimistic-concurrency conditions.
+    let key = vec![("pk".to_string(), Value::Text("edit".into())), ("sk".to_string(), Value::Int(1))];
+    let rep = c
+        .apply_changes(
+            &t,
+            &[RowChange::Insert {
+                values: vec![
+                    ("pk".into(), Value::Text("edit".into())),
+                    ("sk".into(), Value::Int(1)),
+                    ("name".into(), Value::Text("orig".into())),
+                    ("price".into(), Value::Decimal("10.50".into())),
+                    ("note".into(), Value::Null),
+                ],
+            }],
+        )
+        .await
+        .unwrap();
+    assert!(rep.committed);
+    let upd = RowChange::Update {
+        key: key.clone(),
+        original: vec![("name".into(), Value::Text("orig".into())), ("price".into(), Value::Decimal("10.50".into())), ("note".into(), Value::Null)],
+        changes: vec![
+            ("name".into(), Value::Text("new".into())),
+            ("price".into(), Value::Decimal(DYN_EXACT.into())),
+            ("note".into(), Value::Text("hi".into())),
+        ],
+    };
+    assert!(c.preview_changes(&t, std::slice::from_ref(&upd)).unwrap()[0].starts_with("UpdateItem"));
+    let rep = c.apply_changes(&t, std::slice::from_ref(&upd)).await.unwrap();
+    assert!(rep.committed && rep.rows_affected == 1, "{rep:?}");
+    let get = || async {
+        c.fetch_table(&t, &PageRequest { limit: 10, filters: vec![eq_filter("pk", Value::Text("edit".into()))], ..Default::default() }).await.unwrap()
+    };
+    let rs = get().await;
+    assert_eq!(cell(&rs, 0, "name"), &Value::Text("new".into()));
+    assert_eq!(cell(&rs, 0, "price"), &Value::Decimal(DYN_EXACT.into()));
+    // Stale original: zero applied, nothing overwritten.
+    let stale = RowChange::Update {
+        key: key.clone(),
+        original: vec![("name".into(), Value::Text("orig".into()))],
+        changes: vec![("name".into(), Value::Text("mine".into()))],
+    };
+    let rep = c.apply_changes(&t, std::slice::from_ref(&stale)).await.unwrap();
+    assert!(!rep.committed);
+    assert_eq!(rep.applied, 0);
+    assert_eq!(rep.conflicts, vec![0]);
+    assert_eq!(cell(&get().await, 0, "name"), &Value::Text("new".into()));
+    // Atomic batch: a valid change plus a stale one commits nothing.
+    let ok_insert =
+        RowChange::Insert { values: vec![("pk".into(), Value::Text("edit".into())), ("sk".into(), Value::Int(2)), ("name".into(), Value::Text("two".into()))] };
+    let rep = c.apply_changes(&t, &[ok_insert.clone(), stale.clone()]).await.unwrap();
+    assert!(!rep.committed);
+    assert_eq!(rep.conflicts, vec![1]);
+    assert_eq!(get().await.rows.len(), 1, "insert in the failed batch must not be applied");
+    // Inserting over an existing item is a conflict, not an overwrite.
+    let dup =
+        RowChange::Insert { values: vec![("pk".into(), Value::Text("edit".into())), ("sk".into(), Value::Int(1)), ("name".into(), Value::Text("dup".into()))] };
+    assert_eq!(c.apply_changes(&t, &[dup]).await.unwrap().conflicts, vec![0]);
+    // Key attributes cannot be edited.
+    let bad = RowChange::Update { key: key.clone(), original: vec![], changes: vec![("sk".into(), Value::Int(9))] };
+    assert_eq!(c.apply_changes(&t, &[bad]).await.unwrap_err().kind, ErrorKind::InvalidInput);
+    // Setting NULL removes the attribute; delete with stale original is a conflict, then succeeds.
+    let rep = c
+        .apply_changes(
+            &t,
+            &[RowChange::Update { key: key.clone(), original: vec![("note".into(), Value::Text("hi".into()))], changes: vec![("note".into(), Value::Null)] }],
+        )
+        .await
+        .unwrap();
+    assert!(rep.committed);
+    let r = exec(&*c, &format!("SELECT * FROM {q} WHERE pk = 'edit' AND sk = 1")).await;
+    assert!(!r[0].result.as_ref().unwrap().columns.iter().any(|c| c.name == "note"), "note removed");
+    let rep = c.apply_changes(&t, &[RowChange::Delete { key: key.clone(), original: vec![("name".into(), Value::Text("stale".into()))] }]).await.unwrap();
+    assert_eq!(rep.conflicts, vec![0]);
+    let rep = c.apply_changes(&t, &[RowChange::Delete { key: key.clone(), original: vec![("name".into(), Value::Text("new".into()))] }]).await.unwrap();
+    assert!(rep.committed);
+    assert_eq!(get().await.rows.len(), 0);
+
+    // Read-only connection: reads work, writes are blocked in the driver.
+    let (mut ro_conf, ro_secrets) = dyn_cfg();
+    ro_conf.read_only = true;
+    let ro = driver_for(Engine::DynamoDb).unwrap().connect(&ro_conf, ro_secrets).await.unwrap();
+    exec(&*ro, &format!("SELECT * FROM {q} WHERE pk = 'types'")).await;
+    for w in [format!("INSERT INTO {q} VALUE {{'pk': 'ro', 'sk': 1}}"), format!("UPDATE {q} SET a = 1 WHERE pk = 'p1' AND sk = 1"), format!("DELETE FROM {q}")]
+    {
+        let e = ro.execute(&w, &ExecOptions::default(), CancellationToken::new()).await.unwrap_err();
+        assert_eq!(e.kind, ErrorKind::PolicyBlocked, "{w}");
+    }
+    assert_eq!(ro.apply_changes(&t, &[ok_insert]).await.unwrap_err().kind, ErrorKind::PolicyBlocked);
+    assert_eq!(c.count_rows(&t, &[]).await.unwrap(), 26);
+
+    // Bad credentials / endpoint / missing secret; secrets never echoed.
+    let (mut bad_conf, _) = dyn_cfg();
+    bad_conf.username = Some("bad-key!".into());
+    let e = driver_for(Engine::DynamoDb).unwrap().connect(&bad_conf, ConnectSecrets { password: Some("topsecretvalue".into()) }).await.err().expect("bad key");
+    assert_eq!(e.kind, ErrorKind::Authentication, "{e:?}");
+    assert!(!e.message.contains("topsecretvalue"));
+    let (no_secret, _) = dyn_cfg();
+    let e = driver_for(Engine::DynamoDb).unwrap().connect(&no_secret, ConnectSecrets::default()).await.err().expect("missing secret");
+    assert_eq!(e.kind, ErrorKind::Authentication);
+    let (mut bad_ep, _) = dyn_cfg();
+    bad_ep.host = Some("http://127.0.0.1:1".into());
+    bad_ep.connect_timeout_secs = 2;
+    let e =
+        driver_for(Engine::DynamoDb).unwrap().connect(&bad_ep, ConnectSecrets { password: Some("topsecretvalue".into()) }).await.err().expect("bad endpoint");
+    assert!(matches!(e.kind, ErrorKind::Connection | ErrorKind::Timeout), "{e:?}");
+    assert!(!e.message.contains("topsecretvalue"));
+
+    client.delete_table().table_name(&table).send().await.unwrap();
+}

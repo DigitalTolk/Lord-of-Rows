@@ -8,7 +8,7 @@ see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOCKERS.md).
 
 ## What works today
 
-- PostgreSQL, MySQL, SQLite, Redis (plus wire-compatible engines, unverified)
+- PostgreSQL, MySQL, SQLite, Redis, DynamoDB (PartiQL; tested against DynamoDB Local) (plus wire-compatible engines, unverified)
 - Connection launcher, engine picker, connection rail with per-database tabs
 - SSH tunnels (password / key / passphrase / agent, jump hosts, strict host-key checks)
 - TLS with certificate + hostname verification (custom CA, client certs)
@@ -23,7 +23,7 @@ see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOCKERS.md).
 
 ```
 crates/dbs-core      types, driver trait, dialect quoting, parameterised SQL builders
-crates/dbs-drivers   postgres, mysql, sqlite, redis
+crates/dbs-drivers   postgres, mysql, sqlite, redis, dynamodb
 crates/dbs-safety    SQL lexer/classifier, safety policy, confirmation tokens
 crates/dbs-audit     hash-chained audit log
 crates/dbs-store     local app metadata (SQLite)
@@ -41,7 +41,7 @@ e2e/                 WebDriver end-to-end tests (real app + real databases)
 
 ```sh
 docker compose build dev
-docker compose up -d postgres mysql redis sshd
+docker compose up -d postgres mysql redis sshd dynamodb
 docker compose run --rm dev cargo test --workspace          # Rust unit + integration
 docker compose run --rm -w /work/frontend dev npx vitest run # frontend unit
 docker compose run --rm dev sh -c 'cd frontend && npx vite build && cd .. && cargo build -p dbstudio --features custom-protocol && e2e/run.sh'
@@ -49,6 +49,8 @@ docker compose up -d desktop   # preview the Linux build: http://localhost:6080/
 ```
 
 Test credentials (throwaway, local containers only): Postgres/MySQL `dbs_test`/`dbs_test` db `dbs_test`
-(hosts `postgres`, `mysql`), Redis `redis:6379`, SSH bastion `sshd` user `tunnel`/`tunnelpw`.
+(hosts `postgres`, `mysql`), Redis `redis:6379`, SSH bastion `sshd` user `tunnel`/`tunnelpw`,
+DynamoDB Local endpoint `http://dynamodb:8000` (host: `http://127.0.0.1:58000`), region `us-east-1`, any alphanumeric
+access key ID (e.g. `dbstest`) with any secret.
 
 See [TEST_RESULTS.md](TEST_RESULTS.md), [SECURITY_FINDINGS.md](SECURITY_FINDINGS.md).

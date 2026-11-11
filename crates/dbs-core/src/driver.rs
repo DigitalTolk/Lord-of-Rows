@@ -120,6 +120,13 @@ pub trait DatabaseConnection: Send + Sync {
         Ok(report)
     }
 
+    /// Human-readable text of what [`Self::apply_changes`] will run, shown for review
+    /// and bound into the confirmation token. SQL engines preview the generated SQL.
+    fn preview_changes(&self, target: &TableTarget, changes: &[RowChange]) -> DbResult<Vec<String>> {
+        let d = self.dialect();
+        changes.iter().map(|c| build_change_sql(d, target, c).map(|g| g.preview(d))).collect()
+    }
+
     async fn explain(&self, sql: &str, analyze: bool) -> DbResult<ResultSet> {
         let _ = (sql, analyze);
         Err(DbError::unsupported("EXPLAIN"))

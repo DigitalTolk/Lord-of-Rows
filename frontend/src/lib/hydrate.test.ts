@@ -22,6 +22,21 @@ describe('hydrate compact rows', () => {
       { t: 'json', v: { a: 1 } },
     ]);
   });
+  it('dynamodb type names keep N exact', () => {
+    const cols = ['S', 'N', 'N', 'BOOL', 'M', 'NS', 'mixed', 'mixed'].map(col);
+    const ns = { t: 'array', v: [{ t: 'int', v: 1 }, { t: 'decimal', v: '2.5' }] };
+    const row = ['pk', 42, '12345678901234567890.123456789', false, { t: 'json', v: { a: 1 } }, ns, { t: 'other', v: { type_name: 'N', text: '0.10' } }, 'x'];
+    expect(hydrateRows(cols, [row])[0]).toEqual([
+      { t: 'text', v: 'pk' },
+      { t: 'int', v: 42 },
+      { t: 'decimal', v: '12345678901234567890.123456789' },
+      { t: 'bool', v: false },
+      { t: 'json', v: { a: 1 } },
+      ns,
+      { t: 'other', v: { type_name: 'N', text: '0.10' } },
+      { t: 'text', v: 'x' },
+    ]);
+  });
   it('mysql type names', () => {
     const cols = ['longlong', 'newdecimal', 'datetime', 'var_string'].map(col);
     expect(hydrateRows(cols, [['18446744073709551615', '1.50', '2024-03-01T12:34:56.789', 'x']])[0]).toEqual([

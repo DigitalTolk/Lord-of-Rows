@@ -25,7 +25,8 @@ export function blankConnection(engine: Engine = 'postgres'): ConnectionConfig {
     id: '00000000-0000-0000-0000-000000000000',
     name: '',
     engine,
-    host: engine === 'sqlite' ? null : '127.0.0.1',
+    // DynamoDB: host is an optional endpoint URL; empty = the AWS endpoint for the region.
+    host: engine === 'sqlite' || engine === 'dynamo_db' ? null : '127.0.0.1',
     port: null,
     database: null,
     username: null,
@@ -135,6 +136,7 @@ export function ConnectionDialog() {
 
   const set = <K extends keyof ConnectionConfig>(k: K, v: ConnectionConfig[K]) => setCfg((c) => (c ? { ...c, [k]: v } : c));
   const isFile = cfg.engine === 'sqlite' || cfg.engine === 'duck_db';
+  const isDynamo = cfg.engine === 'dynamo_db';
   const autoName = cfg.name.trim() || (isFile ? (cfg.database ?? '').split('/').pop() || ENGINE_LABELS[cfg.engine] : `${cfg.database || ENGINE_LABELS[cfg.engine]}${cfg.host ? ' @ ' + cfg.host : ''}`);
   const finalCfg = { ...cfg, name: autoName };
   const pw = password === '' ? null : password;
@@ -232,6 +234,25 @@ export function ConnectionDialog() {
         <Row label={t('conn.file')}>
           <input className="input font-mono" value={cfg.database ?? ''} placeholder="/path/to/database.sqlite" onChange={(e) => set('database', e.target.value || null)} />
         </Row>
+      ) : isDynamo ? (
+        <>
+          <Row label="Endpoint URL" hint="Optional. Leave empty for AWS; e.g. http://localhost:8000 for DynamoDB Local / LocalStack">
+            <input className="input font-mono" value={cfg.host ?? ''} placeholder="https://dynamodb.<region>.amazonaws.com" onChange={(e) => set('host', e.target.value.trim() || null)} spellCheck={false} />
+          </Row>
+          <Row label="Region">
+            <input className="input" value={cfg.database ?? ''} placeholder="us-east-1" onChange={(e) => set('database', e.target.value.trim() || null)} spellCheck={false} />
+          </Row>
+          <Row label="Access key ID" hint="Empty = default AWS credential chain (env, ~/.aws, SSO). profile:NAME uses a named profile.">
+            <input className="input font-mono" value={cfg.username ?? ''} onChange={(e) => set('username', e.target.value.trim() || null)} autoComplete="off" spellCheck={false} />
+          </Row>
+          <Row label="Secret access key" hint={!isNew && !password ? t('conn.passwordUnchanged') : undefined}>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+            <label className="flex shrink-0 items-center gap-1.5 text-[0.88rem] text-muted" title={t('conn.rememberPassword', { backend: info?.secret_backend ?? 'keychain' })}>
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+              <Icon name="lock" size={13} /> Keychain
+            </label>
+          </Row>
+        </>
       ) : (
         <>
           <Row label={t('conn.host')}>
@@ -261,7 +282,7 @@ export function ConnectionDialog() {
           </Row>
         </>
       )}
-      {!isFile && (
+      {!isFile && !isDynamo && (
         <>
           <Row label="">
             <label className="flex items-center gap-2 text-[0.92rem]">
@@ -319,14 +340,14 @@ export function ConnectionDialog() {
       </button>
       {advanced && (
         <div className="mt-1">
-          {!isFile && cfg.tls.mode !== 'disable' && (
+          {!isFile && !isDynamo && cfg.tls.mode !== 'disable' && (
             <>
               <Row label="CA cert"><input className="input font-mono" value={cfg.tls.ca_cert_path ?? ''} placeholder="path to CA bundle (PEM)" onChange={(e) => set('tls', { ...cfg.tls, ca_cert_path: e.target.value || null })} /></Row>
               <Row label="Client cert"><input className="input font-mono" value={cfg.tls.client_cert_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, client_cert_path: e.target.value || null })} /></Row>
               <Row label="Client key"><input className="input font-mono" value={cfg.tls.client_key_path ?? ''} onChange={(e) => set('tls', { ...cfg.tls, client_key_path: e.target.value || null })} /></Row>
             </>
           )}
-          {!isFile && <Row label={t('conn.socket')}><input className="input font-mono" value={cfg.socket_path ?? ''} onChange={(e) => set('socket_path', e.target.value || null)} /></Row>}
+          {!isFile && !isDynamo && <Row label={t('conn.socket')}><input className="input font-mono" value={cfg.socket_path ?? ''} onChange={(e) => set('socket_path', e.target.value || null)} /></Row>}
           <Row label="Timeouts">
             <input className="input w-20" inputMode="numeric" value={cfg.connect_timeout_secs} onChange={(e) => set('connect_timeout_secs', Number(e.target.value.replace(/\D/g, '')) || 10)} />
             <span className="text-muted">s connect</span>

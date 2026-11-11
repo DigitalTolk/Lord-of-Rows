@@ -671,10 +671,6 @@ pub struct ChangePreview {
     decision: Decision,
 }
 
-fn change_preview_text(d: Dialect, target: &TableTarget, changes: &[RowChange]) -> R<Vec<String>> {
-    changes.iter().map(|c| build_change_sql(d, target, c).map(|g| g.preview(d))).collect()
-}
-
 fn edit_policy_decision(st: &AppState, s: &Session, text: &str, changes: &[RowChange]) -> Decision {
     let policy = st.policy_for(&s.config);
     if policy.read_only {
@@ -698,7 +694,7 @@ pub fn preview_changes(st: State<'_, AppState>, session_id: String, target: Tabl
     if changes.len() > 100_000 {
         return Err(DbError::invalid("too many staged changes"));
     }
-    let statements = change_preview_text(s.conn.dialect(), &target, &changes)?;
+    let statements = s.conn.preview_changes(&target, &changes)?;
     let decision = edit_policy_decision(&st, &s, &statements.join(";\n"), &changes);
     Ok(ChangePreview { statements, decision })
 }
@@ -712,7 +708,7 @@ pub async fn apply_changes(
     confirm_token: Option<String>,
 ) -> R<ApplyReport> {
     let s = st.session(&session_id)?;
-    let text = change_preview_text(s.conn.dialect(), &target, &changes)?.join(";\n");
+    let text = s.conn.preview_changes(&target, &changes)?.join(";\n");
     match edit_policy_decision(&st, &s, &text, &changes) {
         Decision::Allow => {}
         Decision::Block { .. } => return Err(DbError::new(ErrorKind::PolicyBlocked, "connection is read-only")),
@@ -801,6 +797,17 @@ pub struct ExportReport {
     path: String,
 }
 
+/// Reorder a page's cells to `header` by column name. Schemaless engines
+/// (DynamoDB) can report different attribute sets per page; attributes not in the
+/// first page's header are dropped, missing ones become NULL.
+fn project_rows(header: &[ColumnMeta], cols: Vec<ColumnMeta>, rows: Vec<Vec<Value>>) -> Vec<Vec<Value>> {
+    if cols.len() == header.len() && cols.iter().zip(header).all(|(a, b)| a.name == b.name) {
+        return rows;
+    }
+    let idx: Vec<Option<usize>> = header.iter().map(|h| cols.iter().position(|c| c.name == h.name)).collect();
+    rows.into_iter().map(|r| idx.iter().map(|i| i.and_then(|i| r.get(i).cloned()).unwrap_or(Value::Null)).collect()).collect()
+}
+
 #[tauri::command]
 pub async fn export_table(
     st: State<'_, AppState>,
@@ -831,8 +838,8 @@ pub async fn export_table(
         s.conn.describe_table(&target).await.map(|d| d.primary_key.into_iter().map(|c| (c, SortDir::Asc)).collect()).unwrap_or_default();
     while last == 5000 {
         let page = s.conn.fetch_table(&target, &PageRequest { offset, limit: 5000, order_by: order.clone(), filters: filters.clone() }).await?;
-        ex.write_rows(&page.rows)?;
         last = page.rows.len();
+        ex.write_rows(&project_rows(&first.columns, page.columns, page.rows))?;
         offset += last as u64;
     }
     let rows = ex.finish()?;

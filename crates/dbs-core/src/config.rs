@@ -87,6 +87,7 @@ impl Engine {
             Engine::MySql | Engine::MariaDb | Engine::Percona | Engine::SingleStore => Some(Engine::MySql),
             Engine::Sqlite => Some(Engine::Sqlite),
             Engine::Redis => Some(Engine::Redis),
+            Engine::DynamoDb => Some(Engine::DynamoDb),
             _ => None,
         }
     }
@@ -220,12 +221,15 @@ impl ConnectionConfig {
                     return Err(DbError::invalid("a database file path is required"));
                 }
             }
+            // DynamoDB: `host` is an optional endpoint URL (empty = AWS endpoint for the region).
+            Engine::DynamoDb => return self.validate_dynamodb(),
             _ => {
                 if self.socket_path.is_none() && self.host.as_deref().is_none_or(|h| h.trim().is_empty()) {
                     return Err(DbError::invalid("host is required"));
                 }
             }
         }
+        self.validate_color()?;
         if let Some(h) = &self.host {
             if h.chars().any(|c| c.is_whitespace() || c.is_control() || c == '/' || c == '@') {
                 return Err(DbError::invalid("host contains invalid characters"));
@@ -238,10 +242,44 @@ impl ConnectionConfig {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn validate_color(&self) -> DbResult<()> {
         if let Some(c) = &self.color {
             let ok = c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit());
             if !ok {
                 return Err(DbError::invalid("color must be #RRGGBB"));
+            }
+        }
+        Ok(())
+    }
+
+    /// DynamoDB mapping: `host` = optional endpoint URL (`http(s)://host[:port]`, for
+    /// DynamoDB Local / LocalStack), `database` = region, `username` = access key id or
+    /// `profile:NAME`, password = secret access key. Port, TLS and SSH settings do not apply.
+    fn validate_dynamodb(&self) -> DbResult<()> {
+        self.validate_color()?;
+        if self.ssh.is_some() {
+            return Err(DbError::invalid("SSH tunnels are not supported for DynamoDB (use an endpoint URL)"));
+        }
+        if let Some(r) = self.database.as_deref().filter(|r| !r.is_empty()) {
+            if r.len() > 32 || !r.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                return Err(DbError::invalid("region must look like us-east-1"));
+            }
+        }
+        if let Some(ep) = self.host.as_deref().map(str::trim).filter(|h| !h.is_empty()) {
+            let rest = ep
+                .strip_prefix("https://")
+                .or_else(|| ep.strip_prefix("http://"))
+                .ok_or_else(|| DbError::invalid("endpoint must be an http:// or https:// URL"))?;
+            let authority = rest.split('/').next().unwrap_or("");
+            if authority.is_empty() || ep.chars().any(|c| c.is_whitespace() || c.is_control() || matches!(c, '@' | '?' | '#')) {
+                return Err(DbError::invalid("endpoint URL is invalid (credentials, query or fragment are not allowed)"));
+            }
+            let host = authority.rsplit_once(':').map(|(h, _)| h).unwrap_or(authority);
+            if ep.starts_with("http://") && !is_loopback(host) && self.environment == EnvironmentKind::Production {
+                return Err(DbError::invalid("TLS cannot be disabled for a non-local production connection (use an https:// endpoint)"));
             }
         }
         Ok(())
@@ -262,6 +300,13 @@ impl ConnectionConfig {
             Some(Engine::MySql) => "mysql",
             Some(Engine::Sqlite) => return format!("sqlite://{}", self.database.clone().unwrap_or_default()),
             Some(Engine::Redis) => "redis",
+            Some(Engine::DynamoDb) => {
+                let region = self.database.clone().filter(|r| !r.is_empty()).unwrap_or_else(|| "us-east-1".into());
+                return match self.host.as_deref().filter(|h| !h.is_empty()) {
+                    Some(ep) => format!("dynamodb://{region}?endpoint={ep}"),
+                    None => format!("dynamodb://{region}"),
+                };
+            }
             _ => "db",
         };
         let user = self.username.clone().map(|u| format!("{u}@")).unwrap_or_default();
@@ -337,6 +382,30 @@ mod tests {
     fn redacted_url_has_no_password_slot() {
         let u = pg().redacted_url();
         assert_eq!(u, "postgresql://bob@db.example.com:5432/app");
+    }
+
+    #[test]
+    fn dynamodb_endpoint_rules() {
+        let mut c = pg();
+        c.engine = Engine::DynamoDb;
+        c.host = None;
+        c.database = Some("eu-central-1".into());
+        assert!(c.validate().is_ok(), "AWS endpoint needs no host");
+        c.host = Some("http://127.0.0.1:8000".into());
+        assert!(c.validate().is_ok());
+        c.host = Some("http://dynamodb.internal:8000".into());
+        assert!(c.validate().is_err(), "plaintext remote production endpoint");
+        c.environment = EnvironmentKind::Local;
+        assert!(c.validate().is_ok());
+        c.host = Some("https://user:pw@x".into());
+        assert!(c.validate().is_err());
+        c.host = Some("ftp://x".into());
+        assert!(c.validate().is_err());
+        c.host = None;
+        c.database = Some("us east".into());
+        assert!(c.validate().is_err());
+        c.database = Some("us-east-1".into());
+        assert_eq!(c.redacted_url(), "dynamodb://us-east-1");
     }
 
     #[test]

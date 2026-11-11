@@ -3,9 +3,11 @@
 // big integers / decimals arrive as strings and stay strings.
 import type { ColumnMeta, ResultSet, Value } from './types';
 
-type Kind = 'int' | 'float' | 'decimal' | 'uuid' | 'date' | 'time' | 'ts' | 'tstz' | 'text';
+type Kind = 'int' | 'float' | 'decimal' | 'number' | 'uuid' | 'date' | 'time' | 'ts' | 'tstz' | 'text';
 
 export function columnKind(typeName: string): Kind {
+  // DynamoDB `N`: safe integers arrive as JSON numbers, everything else as exact decimal text.
+  if (typeName === 'N') return 'number';
   const t = typeName.toLowerCase();
   if (/^(int|bigint|smallint|tinyint|mediumint|serial|bigserial|int[248]|long|longlong|short|year|oid|integer)/.test(t)) return 'int';
   if (/^(float|double|real)/.test(t)) return 'float';
@@ -28,6 +30,7 @@ function cell(raw: unknown, kind: Kind): Value {
         return { t: 'big_int', v: raw };
       case 'decimal':
       case 'float':
+      case 'number':
         return { t: 'decimal', v: raw };
       case 'uuid':
         return { t: 'uuid', v: raw };

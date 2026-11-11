@@ -13,6 +13,25 @@ where
     A: FnOnce() -> AF,
     AF: Future<Output = ()>,
 {
+    guarded_inner(fut, cancel, timeout_ms, on_abort, true).await
+}
+
+/// Like [`guarded`] for engines without server-side cancel (HTTP APIs such as
+/// DynamoDB): on cancel/timeout the in-flight future is dropped immediately,
+/// which aborts the request.
+pub async fn guarded_abort<T, F>(fut: F, cancel: CancellationToken, timeout_ms: Option<u64>) -> DbResult<T>
+where
+    F: Future<Output = DbResult<T>>,
+{
+    guarded_inner(fut, cancel, timeout_ms, || async {}, false).await
+}
+
+async fn guarded_inner<T, F, A, AF>(fut: F, cancel: CancellationToken, timeout_ms: Option<u64>, on_abort: A, drain: bool) -> DbResult<T>
+where
+    F: Future<Output = DbResult<T>>,
+    A: FnOnce() -> AF,
+    AF: Future<Output = ()>,
+{
     tokio::pin!(fut);
     let sleep = async {
         match timeout_ms {
@@ -27,8 +46,10 @@ where
         _ = &mut sleep => ErrorKind::Timeout,
     };
     on_abort().await;
-    // Let the driver observe the server's cancellation response.
-    let _ = tokio::time::timeout(Duration::from_secs(10), &mut fut).await;
+    if drain {
+        // Let the driver observe the server's cancellation response.
+        let _ = tokio::time::timeout(Duration::from_secs(10), &mut fut).await;
+    }
     Err(DbError::new(kind, if kind == ErrorKind::Timeout { "query timed out" } else { "query cancelled" }))
 }
 
