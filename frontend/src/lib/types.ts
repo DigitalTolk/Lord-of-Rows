@@ -393,5 +393,6 @@ export interface AccessResource {
 }
 export interface AccessTargets { targets: string[]; error?: string | null }
 export interface AccessRequestInput { resource_id: string; access: AccessLevel; reason: string; databases: string[]; create_database: boolean }
-export interface AccessConnectCheck { reusable: boolean; connection_id?: string | null; reveals_remaining?: number | null }
+export interface AccessConnectionDetails { engine: Engine; host: string; port?: number | null; database?: string | null; username: string }
+export interface AccessConnectCheck { reusable: boolean; connection_id?: string | null; reveals_remaining?: number | null; details?: AccessConnectionDetails | null }
 export interface AccessConnectOutcome { connection_id: string; reused: boolean; reveals_remaining?: number | null; password_in_memory: boolean }

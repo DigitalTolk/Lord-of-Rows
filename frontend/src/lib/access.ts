@@ -205,3 +205,34 @@ export function saveSegment(providerId: string | null, s: Segment) {
 
 /** History is paged in steps of this many cards. */
 export const HISTORY_PAGE = 20;
+
+// ---- request detail timeline
+
+export type StepState = 'done' | 'current' | 'upcoming' | 'failed';
+export interface TimelineStep {
+  key: 'requested' | 'approved' | 'rejected' | 'waiting' | 'provisioning' | 'provisioned' | 'failed' | 'saved' | 'expires' | 'expired' | 'cancelled' | 'revoked';
+  state: StepState;
+  /** RFC 3339 or unix seconds (expiry). */
+  at?: string | number | null;
+  by?: string | null;
+  note?: string | null;
+}
+
+/** requested → approved / rejected (by whom, why) → provisioned → saved to the keychain → expires / expired. */
+export function timeline(r: AccessRequestView | AccessRequest, nowSec: number): TimelineStep[] {
+  const p = requestPhase(r, nowSec);
+  const who = (x?: { name: string; email: string } | null) => (x ? x.name || x.email : null) || null;
+  const steps: TimelineStep[] = [{ key: 'requested', state: 'done', at: r.created_at, by: who(r.requester), note: r.reason || null }];
+  if (p === 'pending') return [...steps, { key: 'waiting', state: 'current', by: who(r.approver) }];
+  if (p === 'cancelled') return [...steps, { key: 'cancelled', state: 'failed' }];
+  if (p === 'rejected') return [...steps, { key: 'rejected', state: 'failed', at: r.decided_at, by: who(r.approver), note: r.status_detail }];
+  steps.push({ key: 'approved', state: 'done', at: r.decided_at, by: who(r.approver) });
+  if (p === 'provisioning') return [...steps, { key: 'provisioning', state: 'current' }];
+  if (p === 'failed') return [...steps, { key: 'failed', state: 'failed', note: r.status_detail }];
+  steps.push({ key: 'provisioned', state: 'done' });
+  if ('connection_id' in r && r.connection_id) steps.push({ key: 'saved', state: 'done' });
+  if (p === 'revoked') steps.push({ key: 'revoked', state: 'failed' });
+  else if (p === 'expired') steps.push({ key: 'expired', state: 'failed', at: r.expires_at });
+  else if (r.expires_at) steps.push({ key: 'expires', state: 'upcoming', at: r.expires_at });
+  return steps;
+}

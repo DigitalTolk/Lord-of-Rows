@@ -8,6 +8,7 @@ import { errMsg, useApp } from '../store';
 import { ask } from './ask';
 import { Icon } from './icons';
 import { RequestAccessSheet } from './RequestAccessSheet';
+import { RequestDrawer } from './RequestDrawer';
 import { FilterRow, SegmentTabs } from './RequestListControls';
 import { Dialog, EnvBadge, ErrorBox, Spinner } from './ui';
 
@@ -55,6 +56,7 @@ export function AccessPanel() {
     <div className="flex min-h-0 flex-1 flex-col">
       {!status.signed_in ? <SignedOut /> : <SignedIn />}
       {sheet && status.signed_in && <RequestAccessSheet draft={sheet.draft} onClose={() => useAccess.setState({ sheet: null })} />}
+      {status.signed_in && <AccessDialogs />}
     </div>
   );
 }
@@ -453,7 +455,7 @@ function RequestCard({ r, now, highlight }: { r: AccessRequestView; now: number;
       aria-label={r.resource_name}
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate font-medium">{r.resource_name || r.resource_id}</span>
+        <button className="truncate font-medium hover:underline" title={t('access.showDetails')} onClick={() => useAccess.setState({ detail: { request: r, mode: 'mine' } })}>{r.resource_name || r.resource_id}</button>
         {r.environment_name && <EnvBadge env={r.environment} />}
         <AccessChip level={r.access} />
         <span className="ms-auto shrink-0 text-xs text-muted">{t(age.key, age.vars)}</span>
@@ -587,26 +589,10 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
   const approvals = useAccess((s) => s.approvals);
   const me = useAccess((s) => s.status?.user?.id);
   const now = useNow();
-  const [rejecting, setRejecting] = useState<AccessRequest | null>(null);
-  const [acting, setActing] = useState<string | null>(null);
+  const acting = useAccess((s) => s.acting);
   const { f, setQuery, toggleEnv, clear } = useListFilter();
   const searchRef = useRef<HTMLInputElement>(null);
-  const who = (r: AccessRequest) => r.requester.name || r.requester.email || r.requester.id;
-
-  const approve = async (r: AccessRequest) => {
-    const pid = useAccess.getState().providerId;
-    if (!pid || !(await ask.confirm(t('access.approveTitle'), t('access.approveConfirm', { name: who(r), resource: r.resource_name })))) return;
-    setActing(r.id);
-    try {
-      await api.accessApprove(pid, r.id);
-      useApp.getState().toast('ok', t('access.approved'));
-      await useAccess.getState().refreshApprovals();
-    } catch (e) {
-      useApp.getState().toast('error', useAccess.getState().fail(e));
-    } finally {
-      setActing(null);
-    }
-  };
+  const who = requesterName;
 
   if (approvals === null) return <div className="py-6 text-center"><Spinner label={t('common.loading')} /></div>;
   if (approvals.length === 0) {
@@ -635,7 +621,7 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
           return (
             <li key={r.id} className="rounded-lg border border-border px-3 py-2" aria-label={`${who(r)} · ${r.resource_name}`}>
               <div className="flex min-w-0 items-center gap-1.5">
-                <span className="truncate font-medium">{who(r)}</span>
+                <button className="truncate font-medium hover:underline" title={t('access.showDetails')} onClick={() => useAccess.setState({ detail: { request: r, mode: 'approval', actionable: !own } })}>{who(r)}</button>
                 {r.requester.name && r.requester.email && <span className="truncate text-xs text-muted">{r.requester.email}</span>}
                 <span className="ms-auto shrink-0 text-xs text-muted">{t(age.key, age.vars)}</span>
               </div>
@@ -648,14 +634,13 @@ function WaitingApprovals({ tabs }: { tabs: React.ReactNode }) {
               {r.reason && <p className="mt-1 break-words text-[0.84rem]"><q>{r.reason}</q></p>}
               <div className="mt-1.5 flex items-center justify-end gap-1.5">
                 {own && <span className="me-auto text-xs text-muted">{t('access.ownRequest')}</span>}
-                <button className="btn h-7" disabled={own || acting !== null} onClick={() => setRejecting(r)}>{t('access.reject')}</button>
-                <button className="btn btn-primary h-7" disabled={own || acting !== null} onClick={() => void approve(r)}>{acting === r.id ? <Spinner /> : null}{t('access.approve')}</button>
+                <button className="btn h-7" disabled={own || acting !== null} onClick={() => useAccess.setState({ rejecting: r })}>{t('access.reject')}</button>
+                <button className="btn btn-primary h-7" disabled={own || acting !== null} onClick={() => void approveRequest(r, t)}>{acting === r.id ? <Spinner /> : null}{t('access.approve')}</button>
               </div>
             </li>
           );
         })}
       </ul>
-      {rejecting && <RejectDialog r={rejecting} who={who(rejecting)} onClose={() => setRejecting(null)} />}
     </>
   );
 }
@@ -728,7 +713,7 @@ function DecidedCard({ r, now }: { r: AccessRequest; now: number }) {
   return (
     <li className="rounded-lg border border-border px-3 py-2" aria-label={`${who} · ${r.resource_name}`} data-outcome={rejected ? 'rejected' : 'approved'}>
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate font-medium">{who}</span>
+        <button className="truncate font-medium hover:underline" title={t('access.showDetails')} onClick={() => useAccess.setState({ detail: { request: r, mode: 'approval' } })}>{who}</button>
         <span className={`inline-flex h-[18px] items-center rounded-full border px-1.5 text-[0.68rem] font-semibold ${rejected ? 'border-danger/50 text-danger' : 'border-ok/50 text-ok'}`}>
           {rejected ? t('access.outcomeRejected') : t('access.outcomeApproved')}
         </span>
@@ -743,6 +728,59 @@ function DecidedCard({ r, now }: { r: AccessRequest; now: number }) {
       {dbs && <div className="truncate text-[0.82rem] text-muted" title={dbs}>{dbs}</div>}
       {rejected && r.status_detail && <p className="mt-1 break-words text-xs"><q>{r.status_detail}</q></p>}
     </li>
+  );
+}
+
+const requesterName = (r: AccessRequest) => r.requester.name || r.requester.email || r.requester.id;
+
+/** Approve after a confirmation (from a card or the drawer). */
+async function approveRequest(r: AccessRequest, t: (k: string, o?: Record<string, unknown>) => string): Promise<boolean> {
+  const pid = useAccess.getState().providerId;
+  if (!pid || !(await ask.confirm(t('access.approveTitle'), t('access.approveConfirm', { name: requesterName(r), resource: r.resource_name })))) return false;
+  useAccess.setState({ acting: r.id });
+  try {
+    await api.accessApprove(pid, r.id);
+    useApp.getState().toast('ok', t('access.approved'));
+    await useAccess.getState().refreshApprovals();
+    return true;
+  } catch (e) {
+    useApp.getState().toast('error', useAccess.getState().fail(e));
+    return false;
+  } finally {
+    useAccess.setState({ acting: null });
+  }
+}
+
+/** Detail drawer and reject dialog (store-driven, so other places can open them). */
+function AccessDialogs() {
+  const { t } = useTranslation();
+  const detail = useAccess((s) => s.detail);
+  const rejecting = useAccess((s) => s.rejecting);
+  const acting = useAccess((s) => s.acting);
+  const close = () => useAccess.setState({ detail: null });
+  return (
+    <>
+      {detail && (
+        <RequestDrawer
+          key={detail.request.id}
+          request={detail.request}
+          mode={detail.mode}
+          onClose={close}
+          actions={
+            detail.mode === 'approval' && detail.actionable ? (
+              <>
+                <button className="btn me-auto" onClick={close}>{t('common.close')}</button>
+                <button className="btn" disabled={acting !== null} onClick={() => useAccess.setState({ detail: null, rejecting: detail.request })}>{t('access.reject')}</button>
+                <button className="btn btn-primary" disabled={acting !== null} onClick={() => void approveRequest(detail.request, t).then((ok) => ok && close())}>{t('access.approve')}</button>
+              </>
+            ) : detail.mode === 'approval' ? (
+              <button className="btn" onClick={close}>{t('common.close')}</button>
+            ) : undefined
+          }
+        />
+      )}
+      {rejecting && <RejectDialog r={rejecting} who={requesterName(rejecting)} onClose={() => useAccess.setState({ rejecting: null })} />}
+    </>
   );
 }
 

@@ -88,15 +88,53 @@ pub struct ConnectCheck {
     pub connection_id: Option<Uuid>,
     /// Fetches left for the request's secret (`None` = unlimited / unknown).
     pub reveals_remaining: Option<i64>,
+    /// Where the connection goes (never the password), for "connection details".
+    pub details: Option<ConnectionDetails>,
+}
+
+/// Non-secret connection details of a granted request.
+#[derive(Serialize, Debug, PartialEq, Clone)]
+pub struct ConnectionDetails {
+    pub engine: dbs_core::Engine,
+    pub host: String,
+    pub port: Option<u16>,
+    pub database: Option<String>,
+    pub username: String,
+}
+
+impl ConnectionDetails {
+    pub fn of_config(c: &ConnectionConfig) -> Self {
+        ConnectionDetails {
+            engine: c.engine,
+            host: c.host.clone().unwrap_or_default(),
+            port: c.effective_port(),
+            database: c.database.clone(),
+            username: c.username.clone().unwrap_or_default(),
+        }
+    }
+    pub fn of_plan(p: &ConnectionPlan) -> Self {
+        ConnectionDetails {
+            engine: p.engine,
+            host: p.host.clone(),
+            port: p.port.or_else(|| p.engine.default_port()),
+            database: p.database.clone(),
+            username: p.username.clone(),
+        }
+    }
 }
 
 /// What [`connect`] would do, so the UI can warn before the last reveals are spent.
 pub async fn connect_check(p: &dyn AccessProvider, pcfg: &ProviderConfig, s: &Stores<'_>, request_id: &str, now: i64) -> DbResult<ConnectCheck> {
     if let Some(c) = reusable(s, pcfg.id, request_id, now)? {
-        return Ok(ConnectCheck { reusable: true, connection_id: Some(c.id), reveals_remaining: None });
+        return Ok(ConnectCheck { reusable: true, connection_id: Some(c.id), reveals_remaining: None, details: Some(ConnectionDetails::of_config(&c)) });
     }
     let plan = p.connection_plan(request_id).await?;
-    Ok(ConnectCheck { reusable: false, connection_id: find_managed(s.store, pcfg.id, request_id)?.map(|c| c.id), reveals_remaining: plan.reveals_remaining })
+    Ok(ConnectCheck {
+        reusable: false,
+        connection_id: find_managed(s.store, pcfg.id, request_id)?.map(|c| c.id),
+        reveals_remaining: plan.reveals_remaining,
+        details: Some(ConnectionDetails::of_plan(&plan)),
+    })
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -316,7 +354,10 @@ mod tests {
         assert_eq!(o2.connection_id, o.connection_id);
         assert_eq!(p.calls(), calls);
         assert_eq!(p.fetches(), 1);
-        assert!(connect_check(&p, &cfg, &c.s(), "r1", NOW).await.unwrap().reusable);
+        let check = connect_check(&p, &cfg, &c.s(), "r1", NOW).await.unwrap();
+        assert!(check.reusable);
+        let d = check.details.unwrap();
+        assert_eq!((d.host.as_str(), d.port, d.username.as_str(), d.database.as_deref()), ("db.example.com", Some(5432), "dev_r1", Some("shop")));
 
         // Password lost: fetch again into the SAME connection, keeping the user's renaming.
         let mut renamed = saved;

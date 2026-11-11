@@ -43,7 +43,9 @@ const api = vi.hoisted(() => ({
   accessSignIn: vi.fn(async () => ({ id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false })),
   accessListRequests: vi.fn(async () => ({ requests: state.requests, expired_connections: [] })),
   accessListApprovals: vi.fn(async () => state.approvals),
-  accessConnectCheck: vi.fn(async () => ({ reusable: false, connection_id: null, reveals_remaining: 4 })),
+  accessConnectCheck: vi.fn(async () => ({ reusable: false, connection_id: null, reveals_remaining: 4, details: { engine: 'postgres', host: 'db.example.com', port: 5432, database: 'shop', username: 'dev_r2' } })),
+  accessGetRequest: vi.fn(async (_p: string, id: string) => ({ ...state.requests.concat(state.approvals).find((r) => r.id === id)!, log: [{ ts: '2027-01-01T10:00:05Z', level: 'info', msg: 'created user dev_r2' }] })),
+  accessApprove: vi.fn(async () => state.approvals[0]),
   accessConnect: vi.fn(async () => ({ connection_id: 'conn-1', reused: false, reveals_remaining: 3, password_in_memory: false })),
   accessReject: vi.fn(async () => state.approvals[0]),
   listConnections: vi.fn(async () => []),
@@ -367,6 +369,53 @@ describe('AccessPanel', () => {
       expect(screen.queryByRole('tab', { name: /Decided/ })).toBeNull();
       expect(screen.getByText('1 waiting')).toBeTruthy();
       expect(screen.queryByRole('alert')).toBeNull();
+    });
+  });
+
+  describe('request detail drawer', () => {
+    it('mine: timeline, log, reveals left and copyable connection details (no password)', async () => {
+      state.providers = [PROVIDER];
+      state.status = { signed_in: true, signing_in: false, user: { id: 'u1', email: 'dev@example.com', name: 'Dev', role: 'developer', can_approve: false } };
+      state.requests = [req('r2', { status: 'ready', resource_name: 'billing', expires_at: NOW + 3600, approver: { id: '', name: 'Morgan', email: '' } })];
+      const writeText = vi.fn(async () => undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      await show();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'billing' }));
+      });
+      const drawer = screen.getByRole('dialog', { name: 'billing' });
+      expect([...drawer.querySelectorAll('[data-step]')].map((x) => x.getAttribute('data-step'))).toEqual(['requested', 'approved', 'provisioned', 'expires']);
+      expect(within(drawer).getByText(/Morgan/)).toBeTruthy();
+      expect(within(drawer).getByText(/created user dev_r2/)).toBeTruthy();
+      expect(within(drawer).getByText('4 password reveals left.')).toBeTruthy();
+      expect(within(drawer).getByText('db.example.com')).toBeTruthy();
+      expect(drawer.textContent).not.toMatch(/password:/i);
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Copy Host' }));
+      expect(writeText).toHaveBeenCalledWith('db.example.com');
+      fireEvent.click(within(drawer).getByRole('button', { name: 'Copy User' }));
+      expect(writeText).toHaveBeenLastCalledWith('dev_r2');
+      expect(api.accessConnect).not.toHaveBeenCalled();
+    });
+
+    it('approvals: requester, reason, scope, and Approve from the drawer', async () => {
+      state.providers = [PROVIDER];
+      state.status = { signed_in: true, signing_in: false, user: { id: 'm1', email: 'manager@example.com', name: 'Manager', role: 'manager', can_approve: true } };
+      state.approvals = [req('a1', { requester: { id: 'u2', name: 'Robin', email: 'robin@example.com' }, reason: 'INC-9 debugging', databases: ['ledger', 'audit'], access: 'read_write' })];
+      await show();
+      fireEvent.click(screen.getByRole('tab', { name: /^Approvals/ }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Robin' }));
+      });
+      const drawer = screen.getByRole('dialog', { name: 'orders' });
+      expect(within(drawer).getAllByText('INC-9 debugging').length).toBeGreaterThan(0); // scope + timeline note
+      expect(within(drawer).getByText('ledger, audit')).toBeTruthy();
+      expect(within(drawer).getByText('Read & write')).toBeTruthy();
+      expect(within(drawer).queryByText(/password reveals/)).toBeNull();
+      await act(async () => {
+        fireEvent.click(within(drawer).getByRole('button', { name: 'Approve' }));
+      });
+      // Confirmation dialog (AskHost is not mounted here): approval needs it, so nothing was sent yet.
+      expect(api.accessApprove).not.toHaveBeenCalled();
     });
   });
 });

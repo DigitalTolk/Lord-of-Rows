@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageLabel, draftFrom, envsPresent, isFiltered, matchesFilter, segmentCounts, segmentRequests, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
+import { ageLabel, draftFrom, timeline, envsPresent, isFiltered, matchesFilter, segmentCounts, segmentRequests, draftProblem, durationLabel, expiringSoon, groupResources, isEnded, managedState, newlyReady, pollDelay, readyCount, requestPhase, sortRequests, timeLeft } from './access';
 import type { AccessRequestView, AccessResource, ConnectionConfig, StoredConnection } from './types';
 
 const NOW = 1_800_000_000;
@@ -133,5 +133,20 @@ describe('access helpers', () => {
     expect(isFiltered(f(' '))).toBe(false);
     expect(isFiltered(f('', ['production']))).toBe(true);
     expect(envsPresent([r, req('b', { environment: 'staging' }), req('c', { environment: 'staging' })])).toEqual(['staging', 'production']);
+  });
+
+  it('timeline: requested → decided (by whom, why) → provisioned → saved → expires', () => {
+    const keys = (r: AccessRequestView) => timeline(r, NOW).map((x) => `${x.key}:${x.state}`);
+    expect(keys(req('a', { approver: { id: '', name: 'Morgan', email: '' } }))).toEqual(['requested:done', 'waiting:current']);
+    expect(timeline(req('a', { approver: { id: '', name: 'Morgan', email: '' } }), NOW)[1].by).toBe('Morgan');
+    const rej = timeline(req('b', { status: 'rejected', status_detail: 'no', approver: { id: '', name: 'Morgan', email: '' }, decided_at: 'x' }), NOW);
+    expect(rej.map((x) => x.key)).toEqual(['requested', 'rejected']);
+    expect(rej[1]).toMatchObject({ state: 'failed', by: 'Morgan', note: 'no', at: 'x' });
+    expect(keys(req('c', { status: 'provisioning' }))).toEqual(['requested:done', 'approved:done', 'provisioning:current']);
+    expect(keys(req('d', { status: 'failed', status_detail: 'boom' }))).toEqual(['requested:done', 'approved:done', 'failed:failed']);
+    expect(keys(req('e', { status: 'ready', expires_at: NOW + 60, connection_id: 'c1' }))).toEqual(['requested:done', 'approved:done', 'provisioned:done', 'saved:done', 'expires:upcoming']);
+    expect(keys(req('f', { status: 'ready', expires_at: NOW - 1 }))).toEqual(['requested:done', 'approved:done', 'provisioned:done', 'expired:failed']);
+    expect(keys(req('g', { status: 'revoked' })).pop()).toBe('revoked:failed');
+    expect(keys(req('h', { status: 'cancelled' }))).toEqual(['requested:done', 'cancelled:failed']);
   });
 });

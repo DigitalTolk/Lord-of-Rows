@@ -35,6 +35,12 @@ interface AccessStore {
   justReady: string[];
   /** The provider answered that it has no decision history (older server): hide Decided. */
   decidedUnavailable: boolean;
+  /** Request detail drawer: my request, or one I approve / decided. */
+  detail: { request: AccessRequest; mode: 'mine' | 'approval'; actionable?: boolean } | null;
+  /** Reject dialog for an approval. */
+  rejecting: AccessRequest | null;
+  /** Approval being sent (buttons disabled). */
+  acting: string | null;
 
   loadProviders(): Promise<void>;
   selectProvider(id: string): Promise<void>;
@@ -57,7 +63,7 @@ export const readyListeners = new Set<(r: AccessRequestView[]) => void>();
 /** Called after managed connections were marked expired. */
 export const expiredListeners = new Set<(ids: string[]) => void>();
 
-const reset = { status: null, requests: null, approvals: null, error: null, notice: null, decidedUnavailable: false };
+const reset = { status: null, requests: null, approvals: null, error: null, notice: null, decidedUnavailable: false, detail: null };
 
 export const useAccess = create<AccessStore>((set, get) => ({
   providers: null,
@@ -69,6 +75,9 @@ export const useAccess = create<AccessStore>((set, get) => ({
   sheet: null,
   visible: 0,
   justReady: [],
+  detail: null,
+  rejecting: null,
+  acting: null,
 
   async loadProviders() {
     try {

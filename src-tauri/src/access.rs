@@ -401,7 +401,12 @@ pub async fn access_connect_check(st: State<'_, AppState>, provider_id: Uuid, re
     dbs_access::check_id(&request_id)?;
     let now = dbs_access::now_unix();
     if let Some(c) = manage::reusable(&stores(&st), provider_id, &request_id, now)? {
-        return Ok(ConnectCheck { reusable: true, connection_id: Some(c.id), reveals_remaining: None });
+        return Ok(ConnectCheck {
+            reusable: true,
+            connection_id: Some(c.id),
+            reveals_remaining: None,
+            details: Some(manage::ConnectionDetails::of_config(&c)),
+        });
     }
     let (cfg, p) = signed_in(&st, provider_id)?;
     manage::connect_check(p.as_ref(), &cfg, &stores(&st), &request_id, now).await.map_err(|e| signed_out_cleanup(&st, provider_id, e))
