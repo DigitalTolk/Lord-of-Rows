@@ -1745,6 +1745,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbs-import"
+version = "0.1.1"
+dependencies = [
+ "dbs-core",
+ "dbs-secrets",
+ "plist",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "dbs-io"
 version = "0.1.1"
 dependencies = [
@@ -1838,6 +1851,7 @@ dependencies = [
  "dbs-audit",
  "dbs-core",
  "dbs-drivers",
+ "dbs-import",
  "dbs-io",
  "dbs-plugins",
  "dbs-safety",

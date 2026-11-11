@@ -12,6 +12,7 @@ members = [
   "crates/dbs-ssh",
   "crates/dbs-ai",
   "crates/dbs-plugins",
+  "crates/dbs-import",
   "src-tauri",
 ]
 exclude = ["vendor/mysql_async"]
@@ -34,6 +35,7 @@ dbs-schema = { path = "crates/dbs-schema" }
 dbs-ssh = { path = "crates/dbs-ssh" }
 dbs-ai = { path = "crates/dbs-ai" }
 dbs-plugins = { path = "crates/dbs-plugins" }
+dbs-import = { path = "crates/dbs-import" }
 
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"

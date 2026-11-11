@@ -53,6 +53,8 @@ pub struct AppState {
     /// App-managed SSH known_hosts (separate from ~/.ssh/known_hosts).
     pub known_hosts: PathBuf,
     pub plugins: crate::plugins::PluginHost,
+    /// The last connection-import preview (rows keep any secrets backend-side).
+    pub import_preview: Mutex<Option<crate::import::Preview>>,
 }
 
 impl AppState {

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="dataSourceStorageLocal" created-in="DB-000.0000">
+    <data-source name="Payments" uuid="aaaaaaaa-0000-0000-0000-000000000001">
+      <secret-storage>master_key</secret-storage>
+      <user-name>payer</user-name>
+      <ssh-properties>
+        <enabled>true</enabled>
+        <ssh-config-id>ssh-1</ssh-config-id>
+      </ssh-properties>
+    </data-source>
+    <data-source name="CMS &amp; blog" uuid="aaaaaaaa-0000-0000-0000-000000000002">
+      <user-name>editor</user-name>
+      <ssh-properties>
+        <enabled>true</enabled>
+        <ssh-config-id>missing</ssh-config-id>
+      </ssh-properties>
+    </data-source>
+  </component>
+</project>

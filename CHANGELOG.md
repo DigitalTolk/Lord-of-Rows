@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Import connections from other database tools (TablePlus, DBeaver, Sequel Ace / Sequel Pro, pgAdmin, DataGrip) or a list of connection URLs, with a preview, duplicate detection, groups and environment tags kept, and optional import of TablePlus passwords from the macOS Keychain.
+
 ## 0.1.1
 - Fix: drag and drop inside the app (moving connections into groups, reordering tabs) did not work on macOS.
 

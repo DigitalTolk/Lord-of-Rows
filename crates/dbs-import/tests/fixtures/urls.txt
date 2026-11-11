@@ -1,0 +1,6 @@
+# One connection URL per line
+postgres://app@pg.example.com:5432/app?sslmode=verify-full
+mariadb://cms@cms.example.com/cms
+redis://cache.example.com:6380
+sqlite:///tmp/local.db
+oracle://erp.example.com/ORCL
