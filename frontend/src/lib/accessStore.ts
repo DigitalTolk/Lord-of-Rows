@@ -259,3 +259,24 @@ export async function requestAgainFor(m: ManagedBy) {
   useAccess.setState({ launcherTab: 'access', accessTab: 'mine', sheet: { draft: r ? draftFrom(r) : undefined } });
   useApp.setState({ launcher: true });
 }
+
+/** Opens the launcher's Access tab (optionally a sub-tab or the request sheet). */
+export function openAccessView(opts: { tab?: 'mine' | 'approvals'; sheet?: boolean } = {}) {
+  useAccess.setState((s) => ({ launcherTab: 'access', accessTab: opts.tab ?? 'mine', sheet: opts.sheet ? (s.sheet ?? {}) : s.sheet }));
+  useApp.setState({ launcher: true });
+}
+
+/** Command palette entries for access requests. */
+export function accessCommands(t: (k: string) => string): { id: string; label: string; run: () => void }[] {
+  const cmds = [
+    { id: 'access-request', label: t('access.cmdRequest'), run: () => openAccessView({ sheet: true }) },
+    { id: 'access-show', label: t('access.cmdShow'), run: () => openAccessView() },
+  ];
+  if (canApprove(useAccess.getState())) cmds.push({ id: 'access-approvals', label: t('access.cmdApprovals'), run: () => openAccessView({ tab: 'approvals' }) });
+  return cmds;
+}
+
+/** A managed connection could not be opened (access ended / credentials rejected): offer a new request. */
+export function offerRequestAgain(m: ManagedBy, name: string, message: string, t: (k: string, o?: Record<string, unknown>) => string) {
+  useApp.getState().toast('error', `${t('access.connectFailedManaged', { name })}\n${message}`, { label: t('access.requestAgainCta'), run: () => void requestAgainFor(m) });
+}

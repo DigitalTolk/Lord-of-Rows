@@ -1445,6 +1445,11 @@
     "approveManyTitle_one": "{{count}} Antrag genehmigen?",
     "approveManyTitle_other": "{{count}} Anträge genehmigen?",
     "approvedMany_one": "{{count}} Antrag genehmigt",
-    "approvedMany_other": "{{count}} Anträge genehmigt"
+    "approvedMany_other": "{{count}} Anträge genehmigt",
+    "cmdRequest": "Zugriff beantragen …",
+    "cmdShow": "Zugriffsanträge anzeigen",
+    "cmdApprovals": "Genehmigungen anzeigen",
+    "connectFailedManaged": "{{name}} konnte nicht geöffnet werden: Der Zugriff ist eventuell abgelaufen oder widerrufen.",
+    "requestAgainCta": "Zugriff erneut beantragen"
   }
 }

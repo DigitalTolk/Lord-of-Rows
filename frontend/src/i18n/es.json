@@ -1517,6 +1517,11 @@
     "approveManyTitle_other": "¿Aprobar {{count}} solicitudes?",
     "approvedMany_one": "{{count}} solicitud aprobada",
     "approvedMany_many": "{{count}} solicitudes aprobadas",
-    "approvedMany_other": "{{count}} solicitudes aprobadas"
+    "approvedMany_other": "{{count}} solicitudes aprobadas",
+    "cmdRequest": "Solicitar acceso…",
+    "cmdShow": "Mostrar solicitudes de acceso",
+    "cmdApprovals": "Mostrar aprobaciones",
+    "connectFailedManaged": "No se pudo abrir {{name}}: puede que su acceso haya terminado o se haya revocado.",
+    "requestAgainCta": "Solicitar acceso de nuevo"
   }
 }

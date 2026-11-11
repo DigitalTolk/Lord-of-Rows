@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import { ageLabel, ageSeconds, draftFrom, errCode, durationLabel, envsPresent, HISTORY_PAGE, isEnded, isFiltered, matchesFilter, requestPhase, savedSegment, saveSegment, segmentCounts, segmentRequests, timeLeft, type ListFilter, type Segment } from '../lib/access';
-import { canApprove, currentProvider, useAccess } from '../lib/accessStore';
+import { canApprove, currentProvider, offerRequestAgain, useAccess } from '../lib/accessStore';
 import type { AccessLevel, AccessProviderKind, AccessRequest, AccessRequestStatus, AccessRequestView, EnvironmentKind } from '../lib/types';
 import { errMsg, useApp } from '../store';
 import { ask } from './ask';
@@ -567,7 +567,9 @@ export async function connectRequest(r: Pick<AccessRequest, 'id'>, t: (k: string
     try {
       await app.openSession(o.connection_id);
     } catch (e) {
-      app.toast('error', errMsg(e));
+      const cfg = useApp.getState().connections.find((c) => c.config.id === o.connection_id)?.config;
+      if (cfg?.managed_by && /password|authentication|access_expired/i.test(`${errMsg(e)} ${errCode(e) ?? ''}`)) offerRequestAgain(cfg.managed_by, cfg.name, errMsg(e), t);
+      else app.toast('error', errMsg(e));
     }
   } catch (e) {
     app.toast('error', useAccess.getState().fail(e));

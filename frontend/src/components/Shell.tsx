@@ -16,6 +16,7 @@ import { useTableWs } from '../lib/tableWorkspace';
 import { DETAIL_SHORTCUT, setDetailPanel } from '../lib/detailPanel';
 import { openDatabasePicker } from './OpenDatabaseDialog';
 import { openImportDialog } from './ImportConnectionsDialog';
+import { accessCommands } from '../lib/accessStore';
 
 const KIND_ICON: Record<TabKind, IconName> = { query: 'sql', table: 'table', structure: 'structure', diff: 'copy', audit: 'shield', monitor: 'pulse', er: 'diagram', settings: 'gear', import: 'download', backup: 'db', history: 'history', dashboard: 'chart' };
 
@@ -302,6 +303,7 @@ export function CommandPalette() {
       { id: 'reopen', label: t('palette.reopenTab'), hint: displayCombo(DEFAULT_KEYS.reopenTab), run: st.reopenClosedTab },
       { id: 'export-conns', label: t('conn.exportDefs'), run: async () => { await navigator.clipboard.writeText(await api.exportConnections()); st.toast('info', t('palette.exportedDefs')); } },
       { id: 'import-from-tools', label: t('welcome.importConnections'), run: () => openImportDialog() },
+      ...accessCommands(t),
       { id: 'import-conns', label: t('conn.importDefs'), run: async () => { const j = await ask.text(t('conn.importDefs'), t('palette.pasteJson')); if (j) { const n = await api.importConnections(j); await st.reloadConnections(); st.toast('ok', t('palette.importedDefs', { count: n, formatted: fmtNumber(n) })); } } },
       { id: 'theme', label: t('palette.toggleTheme'), run: () => st.setSetting('appearance.theme', document.documentElement.classList.contains('dark') ? 'light' : 'dark') },
       { id: 'focus', label: t('palette.toggleFocus'), hint: displayCombo(DEFAULT_KEYS.focusMode), run: () => st.setSetting('workspace.focus', !st.settings['workspace.focus']) },

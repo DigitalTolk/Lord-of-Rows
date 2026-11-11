@@ -1733,6 +1733,11 @@
     "approvedMany_two": "تمت الموافقة على طلبين",
     "approvedMany_few": "تمت الموافقة على {{count}} طلبات",
     "approvedMany_many": "تمت الموافقة على {{count}} طلباً",
-    "approvedMany_other": "تمت الموافقة على {{count}} طلب"
+    "approvedMany_other": "تمت الموافقة على {{count}} طلب",
+    "cmdRequest": "طلب وصول…",
+    "cmdShow": "عرض طلبات الوصول",
+    "cmdApprovals": "عرض الموافقات",
+    "connectFailedManaged": "تعذّر فتح {{name}}: ربما انتهى الوصول أو أُلغي.",
+    "requestAgainCta": "طلب الوصول مجدداً"
   }
 }

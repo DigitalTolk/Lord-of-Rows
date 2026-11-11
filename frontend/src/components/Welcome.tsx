@@ -10,8 +10,8 @@ import { Icon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
 import { openImportDialog } from './ImportConnectionsDialog';
 import { AccessPanel } from './AccessPanel';
-import { managedState, readyCount } from '../lib/access';
-import { requestAgainFor, useAccess } from '../lib/accessStore';
+import { errCode, managedState, readyCount } from '../lib/access';
+import { offerRequestAgain, requestAgainFor, useAccess } from '../lib/accessStore';
 
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
@@ -38,7 +38,13 @@ export function Welcome() {
       await openSession(id);
     } catch (e) {
       const msg = errMsg(e);
-      if (/password|authentication/i.test(msg)) {
+      const m = c?.config.managed_by;
+      // A managed connection's credentials come from the access provider: never ask for a
+      // password; offer a new request instead (expired / revoked / rejected credentials).
+      if (m && c && (errCode(e) === 'access_expired' || /password|authentication/i.test(msg))) {
+        offerRequestAgain(m, c.config.name, msg, t);
+        void useApp.getState().reloadConnections();
+      } else if (/password|authentication/i.test(msg)) {
         const pw = await ask.password(t('conn.password'), msg);
         if (pw) {
           try {

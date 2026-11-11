@@ -1445,6 +1445,11 @@
     "approveManyTitle_one": "Approve {{count}} request?",
     "approveManyTitle_other": "Approve {{count}} requests?",
     "approvedMany_one": "{{count}} request approved",
-    "approvedMany_other": "{{count}} requests approved"
+    "approvedMany_other": "{{count}} requests approved",
+    "cmdRequest": "Request access…",
+    "cmdShow": "Show access requests",
+    "cmdApprovals": "Show approvals",
+    "connectFailedManaged": "Couldn't open {{name}}: its access may have ended or been revoked.",
+    "requestAgainCta": "Request access again"
   }
 }
