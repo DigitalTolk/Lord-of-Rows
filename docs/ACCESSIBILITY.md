@@ -123,8 +123,8 @@ shortcuts.
 - Colour contrast is verified from tokens, not from rendered pixels. Text drawn with extra opacity
   (for example `disabled:opacity-45` buttons, placeholder text) is not covered; disabled controls are
   exempt from WCAG contrast, but placeholders are not.
-- The connection dialog is being redesigned on another branch; it passes axe but its labels are still
-  English-only.
+- Plugin-provided text (plugin names, descriptions, setting labels, export labels) and backend error
+  messages are shown as delivered, usually in English.
 - Views that need a live database have no automated axe run (see above).
 - Drag-and-drop tab reordering has no keyboard equivalent yet.
 - The ER diagram is an SVG canvas without a text alternative; use the Structure view instead.

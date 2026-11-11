@@ -15,4 +15,4 @@
 - **Large results:** results are capped (default 10,000 rows, configurable); rows beyond the cap are drained, not stored.
 - **Audit log:** local and tamper-evident, not tamper-proof; it does not replace server-side auditing.
 - **Backups:** pg_dump/mysqldump require client tools on PATH; SQL exports are logical, not physical backups.
-- **Not implemented:** plugins, AI assistant, auto-updater, multiple windows/split panes. Localisation: en, de, es, ar (AI-produced translations, not yet reviewed by native speakers); the connection dialog is still English-only.
+- **Not implemented:** plugins, AI assistant, auto-updater, multiple windows/split panes. Localisation: en, de, es, ar (AI-produced translations, not yet reviewed by native speakers).
