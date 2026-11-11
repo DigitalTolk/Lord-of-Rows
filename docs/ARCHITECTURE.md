@@ -33,7 +33,7 @@
 | Staged edits → parameterised UPDATE/DELETE including original values | Optimistic concurrency; remote changes become conflicts, never overwrites |
 | File access via backend-opened dialogs returning opaque grants | A compromised webview cannot read/write arbitrary paths |
 | App-managed SSH known_hosts with explicit fingerprint approval | No silent trust; changed keys refused |
-| Selected schema sets `search_path` / `USE` | Unqualified SQL resolves against the selected schema |
+| Selected schema sets `search_path` / `USE` | Unqualified SQL resolves against the schema chosen in the sidebar |
 | Tests run against real servers in Docker; E2E via WebDriver | Verifies real behaviour, not mocks |
 
 ## Data flow: running SQL
