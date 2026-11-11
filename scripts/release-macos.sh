@@ -71,7 +71,9 @@ echo "==> Verifying app signature"
 codesign --verify --deep --strict "$APP"
 codesign -dv "$APP" 2>&1 | grep -E "Authority=Developer ID Application|TeamIdentifier"
 
-if [ -z "${SKIP_NOTARIZE:-}" ]; then
+if [ -z "${SKIP_NOTARIZE:-}" ] && xcrun stapler validate "$APP" >/dev/null 2>&1; then
+  echo "==> App already notarized and stapled"
+elif [ -z "${SKIP_NOTARIZE:-}" ]; then
   echo "==> Notarizing the app"
   ZIP="$(mktemp -d)/app.zip"
   ditto -c -k --keepParent "$APP" "$ZIP"
@@ -86,7 +88,9 @@ trap 'rm -rf "$STAGE"' EXIT
 ditto "$APP" "$STAGE/Lord of the Rows.app"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$DMG"
-hdiutil create -volname "Lord of the Rows" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+# Explicit size: hdiutil's -srcfolder estimate is too small for the universal app ("No space left on device").
+SIZE_MB=$(( $(du -sm "$STAGE" | cut -f1) * 13 / 10 + 32 ))
+hdiutil create -volname "Lord of the Rows" -srcfolder "$STAGE" -fs HFS+ -size "${SIZE_MB}m" -ov -format UDZO "$DMG" >/dev/null
 codesign -s "$SIGN_ID" "$DMG"
 
 if [ -z "${SKIP_NOTARIZE:-}" ]; then
