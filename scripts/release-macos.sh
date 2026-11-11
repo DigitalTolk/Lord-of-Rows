@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Local release: universal macOS build, Developer ID signed, notarized + stapled DMG.
 #
-# One-time setup (Terminal, interactive; the password never touches this script):
-#   xcrun notarytool store-credentials "lotr-notary" --apple-id "<apple id>" --team-id H8S8C5U3W2
+# Notarization credentials, in this order (nothing is printed or written to disk):
+#   1. APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID from the environment;
+#      APPLE_ID falls back to the value exported in ~/.zshrc, the password to the login
+#      keychain item: service "APPLE_APP_SPECIFIC_PASSWORD", account "$USER"
+#      (same setup as the ECS Shell / vibe-staff releases).
+#   2. otherwise a notarytool keychain profile (NOTARY_PROFILE, default "lotr-notary").
 #
 # Usage:
 #   scripts/release-macos.sh                 # build + sign + notarize -> ~/Downloads
@@ -28,12 +32,25 @@ export MACOSX_DEPLOYMENT_TARGET=11.0
 export APPLE_SIGNING_IDENTITY="$SIGN_ID"
 
 security find-identity -v -p codesigning | grep -qF "$SIGN_ID" || { echo "Signing identity not found in keychain: $SIGN_ID" >&2; exit 1; }
+NOTARY_ARGS=()
 if [ -z "${SKIP_NOTARIZE:-}" ]; then
-  xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 || {
-    echo "Notary profile '$PROFILE' not found. Run once in Terminal:" >&2
-    echo "  xcrun notarytool store-credentials \"$PROFILE\" --apple-id \"<apple id>\" --team-id H8S8C5U3W2" >&2
+  if [ -z "${APPLE_ID:-}" ] && [ -f "$HOME/.zshrc" ]; then
+    APPLE_ID="$(sed -n 's/^export APPLE_ID="\(.*\)"$/\1/p' "$HOME/.zshrc" | tail -1)"
+  fi
+  if [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]; then
+    APPLE_APP_SPECIFIC_PASSWORD="$(security find-generic-password -a "$USER" -s APPLE_APP_SPECIFIC_PASSWORD -w 2>/dev/null || true)"
+  fi
+  APPLE_TEAM_ID="${APPLE_TEAM_ID:-H8S8C5U3W2}"
+  if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]; then
+    NOTARY_ARGS=(--apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID")
+    echo "==> Notarization: Apple ID credentials (team $APPLE_TEAM_ID)"
+  elif xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+    NOTARY_ARGS=(--keychain-profile "$PROFILE")
+    echo "==> Notarization: keychain profile '$PROFILE'"
+  else
+    echo "No notarization credentials: set APPLE_ID + keychain item APPLE_APP_SPECIFIC_PASSWORD, or create profile '$PROFILE'." >&2
     exit 1
-  }
+  fi
 fi
 
 if [ -z "${SKIP_BUILD:-}" ]; then
@@ -54,6 +71,15 @@ echo "==> Verifying app signature"
 codesign --verify --deep --strict "$APP"
 codesign -dv "$APP" 2>&1 | grep -E "Authority=Developer ID Application|TeamIdentifier"
 
+if [ -z "${SKIP_NOTARIZE:-}" ]; then
+  echo "==> Notarizing the app"
+  ZIP="$(mktemp -d)/app.zip"
+  ditto -c -k --keepParent "$APP" "$ZIP"
+  xcrun notarytool submit "$ZIP" "${NOTARY_ARGS[@]}" --wait
+  xcrun stapler staple "$APP"
+  spctl -a -vv -t exec "$APP"
+fi
+
 echo "==> Creating DMG"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
@@ -65,7 +91,7 @@ codesign -s "$SIGN_ID" "$DMG"
 
 if [ -z "${SKIP_NOTARIZE:-}" ]; then
   echo "==> Notarizing (this usually takes a few minutes)"
-  xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+  xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait
   xcrun stapler staple "$DMG"
   echo "==> Gatekeeper check"
   spctl -a -vv -t install "$DMG"
