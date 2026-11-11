@@ -49,6 +49,8 @@ const P: Record<string, string> = {
   splitRight: 'M4 5h16v14H4zM12 5v14',
   splitDown: 'M4 5h16v14H4zM4 12h16',
   window: 'M3 6h14v12H3zM7 6V3h14v12h-4',
+  folder: 'M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z',
+  folderPlus: 'M3 7.5A1.5 1.5 0 0 1 4.5 6h4.2l2 2h8.8A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5zM12 11v5M9.5 13.5h5',
 };
 
 export type IconName = keyof typeof P;

@@ -31,6 +31,15 @@ const MIGRATIONS: &[&str] = &[
     "CREATE TABLE plugins (id TEXT PRIMARY KEY, version TEXT NOT NULL, manifest TEXT NOT NULL, signer TEXT NOT NULL,
         wasm_sha256 TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, grants TEXT NOT NULL DEFAULT '[]',
         settings TEXT NOT NULL DEFAULT '{}', last_error TEXT, installed TEXT NOT NULL, updated TEXT NOT NULL);",
+    // v3: connection-list groups. Membership stays in each connection's `group` field;
+    // this table holds per-group metadata (display order, colour, collapsed state).
+    // Backfilled from the groups already named on saved connections.
+    "CREATE TABLE connection_groups (name TEXT PRIMARY KEY, color TEXT, collapsed INTEGER NOT NULL DEFAULT 0,
+        sort INTEGER NOT NULL DEFAULT 0);
+     INSERT OR IGNORE INTO connection_groups(name, sort)
+        SELECT g, ROW_NUMBER() OVER (ORDER BY g) - 1 FROM
+        (SELECT DISTINCT trim(json_extract(body, '$.group')) AS g FROM connections
+         WHERE json_valid(body) AND trim(coalesce(json_extract(body, '$.group'), '')) <> '');",
 ];
 
 pub struct AppStore {
@@ -94,6 +103,67 @@ pub struct PluginRecord {
     pub updated: String,
 }
 
+/// Metadata for a named group in the connection list. Connections reference a
+/// group by name (`ConnectionConfig::group`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ConnectionGroup {
+    pub name: String,
+    /// CSS hex colour (`#rgb` / `#rrggbb`), or none for the default.
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub collapsed: bool,
+    #[serde(default)]
+    pub sort: i64,
+}
+
+const GROUP_NAME_ERR: &str = "group name must be 1-100 characters without control characters";
+
+/// Trim and validate a group name; empty means "no group".
+fn group_name(name: &str) -> DbResult<Option<String>> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Ok(None);
+    }
+    if n.chars().count() > 100 || n.chars().any(char::is_control) {
+        return Err(DbError::invalid(GROUP_NAME_ERR));
+    }
+    Ok(Some(n.to_string()))
+}
+
+fn valid_color(c: &str) -> bool {
+    let h = c.strip_prefix('#').unwrap_or("");
+    matches!(h.len(), 3 | 6) && h.chars().all(|x| x.is_ascii_hexdigit())
+}
+
+/// Rewrite the `group` of every connection currently in group `from`.
+fn regroup(tx: &rusqlite::Transaction<'_>, from: &str, to: Option<&str>) -> DbResult<usize> {
+    let rows: Vec<(String, String)> = {
+        let mut st = tx.prepare("SELECT id, body FROM connections").map_err(e)?;
+        let it = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?;
+        it.collect::<Result<_, _>>().map_err(e)?
+    };
+    let mut n = 0;
+    for (id, body) in rows {
+        let Ok(mut cfg) = serde_json::from_str::<ConnectionConfig>(&body) else { continue };
+        if cfg.group.as_deref().map(str::trim) != Some(from) {
+            continue;
+        }
+        cfg.group = to.map(str::to_string);
+        let body = serde_json::to_string(&cfg).map_err(|x| DbError::internal(x.to_string()))?;
+        tx.execute("UPDATE connections SET body = ?1 WHERE id = ?2", params![body, id]).map_err(e)?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// Create the group (appended after the existing ones) if it doesn't exist.
+fn ensure_group(c: &Connection, name: &str) -> DbResult<()> {
+    c.execute("INSERT OR IGNORE INTO connection_groups(name, sort) VALUES(?1, (SELECT coalesce(max(sort), -1) + 1 FROM connection_groups))", [name])
+        .map_err(e)?;
+    Ok(())
+}
+
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
@@ -119,19 +189,25 @@ impl AppStore {
     }
 
     // ---- connections ----
+    /// Saves a connection. Its group name is trimmed (empty = ungrouped) and the
+    /// group is created, appended at the end, if it is new.
     pub fn save_connection(&self, cfg: &ConnectionConfig) -> DbResult<()> {
         cfg.validate()?;
-        let body = serde_json::to_string(cfg).map_err(|x| DbError::internal(x.to_string()))?;
-        self.conn
-            .lock()
-            .unwrap()
-            .execute(
-                "INSERT INTO connections(id, body, created) VALUES(?1, ?2, ?3)
-                 ON CONFLICT(id) DO UPDATE SET body = excluded.body",
-                params![cfg.id.to_string(), body, now()],
-            )
-            .map_err(e)?;
-        Ok(())
+        let mut cfg = cfg.clone();
+        cfg.group = group_name(cfg.group.as_deref().unwrap_or(""))?;
+        let body = serde_json::to_string(&cfg).map_err(|x| DbError::internal(x.to_string()))?;
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction().map_err(e)?;
+        tx.execute(
+            "INSERT INTO connections(id, body, created) VALUES(?1, ?2, ?3)
+             ON CONFLICT(id) DO UPDATE SET body = excluded.body",
+            params![cfg.id.to_string(), body, now()],
+        )
+        .map_err(e)?;
+        if let Some(g) = &cfg.group {
+            ensure_group(&tx, g)?;
+        }
+        tx.commit().map_err(e)
     }
 
     pub fn get_connection(&self, id: Uuid) -> DbResult<ConnectionConfig> {
@@ -173,6 +249,85 @@ impl AppStore {
             tx.execute("UPDATE connections SET sort = ?1 WHERE id = ?2", params![i as i64, id.to_string()]).map_err(e)?;
         }
         tx.commit().map_err(e)
+    }
+
+    // ---- connection groups ----
+    pub fn list_groups(&self) -> DbResult<Vec<ConnectionGroup>> {
+        let c = self.conn.lock().unwrap();
+        let mut st = c.prepare("SELECT name, color, collapsed, sort FROM connection_groups ORDER BY sort, name").map_err(e)?;
+        let it =
+            st.query_map([], |r| Ok(ConnectionGroup { name: r.get(0)?, color: r.get(1)?, collapsed: r.get::<_, i64>(2)? != 0, sort: r.get(3)? })).map_err(e)?;
+        it.collect::<Result<_, _>>().map_err(e)
+    }
+
+    /// Creates a group (appended at the end) or updates its colour / collapsed
+    /// state. `sort` changes only through [`Self::reorder_groups`].
+    pub fn save_group(&self, g: &ConnectionGroup) -> DbResult<ConnectionGroup> {
+        let name = group_name(&g.name)?.ok_or_else(|| DbError::invalid(GROUP_NAME_ERR))?;
+        let color = g.color.as_deref().map(str::trim).filter(|c| !c.is_empty());
+        if color.is_some_and(|c| !valid_color(c)) {
+            return Err(DbError::invalid("group colour must be a hex colour like #3b82f6"));
+        }
+        {
+            let mut c = self.conn.lock().unwrap();
+            let tx = c.transaction().map_err(e)?;
+            ensure_group(&tx, &name)?;
+            tx.execute("UPDATE connection_groups SET color = ?1, collapsed = ?2 WHERE name = ?3", params![color, g.collapsed as i64, name]).map_err(e)?;
+            tx.commit().map_err(e)?;
+        }
+        self.list_groups()?.into_iter().find(|x| x.name == name).ok_or_else(|| DbError::internal("group vanished"))
+    }
+
+    /// Renames a group and moves its connections along. Fails if `to` already exists.
+    pub fn rename_group(&self, from: &str, to: &str) -> DbResult<()> {
+        let from = from.trim();
+        let to = group_name(to)?.ok_or_else(|| DbError::invalid(GROUP_NAME_ERR))?;
+        if from == to {
+            return Ok(());
+        }
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction().map_err(e)?;
+        let exists = |n: &str| tx.query_row("SELECT 1 FROM connection_groups WHERE name = ?1", [n], |_| Ok(())).optional().map(|x| x.is_some()).map_err(e);
+        if !exists(from)? {
+            return Err(DbError::new(ErrorKind::NotFound, "group not found"));
+        }
+        if exists(&to)? {
+            return Err(DbError::invalid(format!("a group named \"{to}\" already exists")));
+        }
+        tx.execute("UPDATE connection_groups SET name = ?1 WHERE name = ?2", params![to, from]).map_err(e)?;
+        regroup(&tx, from, Some(&to))?;
+        tx.commit().map_err(e)
+    }
+
+    /// Deletes a group; its connections become ungrouped. Returns how many moved.
+    pub fn delete_group(&self, name: &str) -> DbResult<usize> {
+        let name = name.trim();
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction().map_err(e)?;
+        tx.execute("DELETE FROM connection_groups WHERE name = ?1", [name]).map_err(e)?;
+        let n = regroup(&tx, name, None)?;
+        tx.commit().map_err(e)?;
+        Ok(n)
+    }
+
+    /// Sets the display order of groups; groups not listed follow, in their previous order.
+    pub fn reorder_groups(&self, names: &[String]) -> DbResult<()> {
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction().map_err(e)?;
+        tx.execute("UPDATE connection_groups SET sort = sort + ?1", [names.len() as i64]).map_err(e)?;
+        for (i, n) in names.iter().enumerate() {
+            tx.execute("UPDATE connection_groups SET sort = ?1 WHERE name = ?2", params![i as i64, n.trim()]).map_err(e)?;
+        }
+        tx.commit().map_err(e)
+    }
+
+    /// Moves one connection into `group` (created if new), or out of any group
+    /// when `group` is `None` or blank.
+    pub fn set_connection_group(&self, id: Uuid, group: Option<&str>) -> DbResult<ConnectionConfig> {
+        let mut cfg = self.get_connection(id)?;
+        cfg.group = group_name(group.unwrap_or(""))?;
+        self.save_connection(&cfg)?;
+        Ok(cfg)
     }
 
     // ---- snippets ----
@@ -476,6 +631,109 @@ mod tests {
         assert_eq!(s.get_connection(a.id).unwrap().name, "renamed");
         assert!(s.delete_connection(a.id).unwrap());
         assert!(s.get_connection(a.id).is_err());
+    }
+
+    fn grouped(name: &str, group: &str) -> ConnectionConfig {
+        let mut c = cfg(name);
+        c.group = Some(group.into());
+        c
+    }
+
+    fn group_of(s: &AppStore, id: Uuid) -> Option<String> {
+        s.get_connection(id).unwrap().group
+    }
+
+    #[test]
+    fn groups_created_with_connections_and_ordered() {
+        let s = AppStore::open_in_memory().unwrap();
+        s.save_connection(&grouped("a", "  Work ")).unwrap();
+        s.save_connection(&grouped("b", "Home")).unwrap();
+        s.save_connection(&grouped("c", "Work")).unwrap();
+        s.save_connection(&grouped("d", "   ")).unwrap();
+        let names: Vec<_> = s.list_groups().unwrap().into_iter().map(|g| g.name).collect();
+        assert_eq!(names, ["Work", "Home"], "trimmed, de-duplicated, in creation order; blank = ungrouped");
+        let d = s.list_connections().unwrap().into_iter().find(|c| c.config.name == "d").unwrap();
+        assert_eq!(d.config.group, None);
+        s.reorder_groups(&["Home".into()]).unwrap();
+        let names: Vec<_> = s.list_groups().unwrap().into_iter().map(|g| g.name).collect();
+        assert_eq!(names, ["Home", "Work"]);
+    }
+
+    #[test]
+    fn group_metadata_roundtrip_and_validation() {
+        let s = AppStore::open_in_memory().unwrap();
+        let g = s.save_group(&ConnectionGroup { name: "Prod".into(), color: Some("#ff0000".into()), collapsed: true, sort: 99 }).unwrap();
+        assert_eq!(g, ConnectionGroup { name: "Prod".into(), color: Some("#ff0000".into()), collapsed: true, sort: 0 });
+        let g2 = s.save_group(&ConnectionGroup { collapsed: false, color: None, ..g }).unwrap();
+        assert!(!g2.collapsed && g2.color.is_none());
+        assert!(s.save_group(&ConnectionGroup { name: " ".into(), color: None, collapsed: false, sort: 0 }).is_err());
+        assert!(s.save_group(&ConnectionGroup { name: "x".into(), color: Some("red;}".into()), collapsed: false, sort: 0 }).is_err());
+        assert!(s.save_group(&ConnectionGroup { name: "a\nb".into(), color: None, collapsed: false, sort: 0 }).is_err());
+        assert!(s.save_group(&ConnectionGroup { name: "x".repeat(101), color: None, collapsed: false, sort: 0 }).is_err());
+        assert_eq!(s.list_groups().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn rename_and_delete_group_move_connections() {
+        let s = AppStore::open_in_memory().unwrap();
+        let a = grouped("a", "Old");
+        let b = grouped("b", "Old");
+        let c = grouped("c", "Other");
+        for x in [&a, &b, &c] {
+            s.save_connection(x).unwrap();
+        }
+        s.save_group(&ConnectionGroup { name: "Old".into(), color: Some("#123".into()), collapsed: true, sort: 0 }).unwrap();
+        assert!(s.rename_group("Old", "Other").is_err(), "no silent merge");
+        assert!(s.rename_group("Missing", "X").is_err());
+        s.rename_group("Old", "New").unwrap();
+        assert_eq!(group_of(&s, a.id).as_deref(), Some("New"));
+        assert_eq!(group_of(&s, b.id).as_deref(), Some("New"));
+        assert_eq!(group_of(&s, c.id).as_deref(), Some("Other"));
+        let g = s.list_groups().unwrap();
+        assert_eq!(g[0], ConnectionGroup { name: "New".into(), color: Some("#123".into()), collapsed: true, sort: 0 }, "metadata kept");
+        assert_eq!(s.delete_group("New").unwrap(), 2);
+        assert_eq!(group_of(&s, a.id), None);
+        assert_eq!(group_of(&s, b.id), None);
+        assert_eq!(group_of(&s, c.id).as_deref(), Some("Other"));
+        assert_eq!(s.list_groups().unwrap().into_iter().map(|g| g.name).collect::<Vec<_>>(), ["Other"]);
+        assert_eq!(s.list_connections().unwrap().len(), 3, "deleting a group never deletes connections");
+    }
+
+    #[test]
+    fn move_connection_between_groups() {
+        let s = AppStore::open_in_memory().unwrap();
+        let a = cfg("a");
+        s.save_connection(&a).unwrap();
+        assert_eq!(s.set_connection_group(a.id, Some("Team")).unwrap().group.as_deref(), Some("Team"));
+        assert_eq!(s.list_groups().unwrap()[0].name, "Team");
+        s.set_connection_group(a.id, None).unwrap();
+        assert_eq!(group_of(&s, a.id), None);
+        s.set_connection_group(a.id, Some("")).unwrap();
+        assert_eq!(group_of(&s, a.id), None);
+        assert!(s.set_connection_group(Uuid::new_v4(), Some("Team")).is_err());
+    }
+
+    #[test]
+    fn v3_migration_backfills_groups_from_existing_connections() {
+        let mut c = Connection::open_in_memory().unwrap();
+        {
+            let tx = c.transaction().unwrap();
+            tx.execute_batch(MIGRATIONS[0]).unwrap();
+            tx.execute_batch(MIGRATIONS[1]).unwrap();
+            tx.pragma_update(None, "user_version", 2).unwrap();
+            for (n, g) in [("a", Some("Zeta")), ("b", Some("Alpha")), ("c", None), ("d", Some("Zeta"))] {
+                let mut x = cfg(n);
+                x.group = g.map(Into::into);
+                tx.execute("INSERT INTO connections(id, body, created) VALUES(?1, ?2, 'x')", params![x.id.to_string(), serde_json::to_string(&x).unwrap()])
+                    .unwrap();
+            }
+            tx.execute("INSERT INTO connections(id, body, created) VALUES('bad', 'not json', 'x')", []).unwrap();
+            tx.commit().unwrap();
+        }
+        let s = AppStore::init(c).unwrap();
+        let g = s.list_groups().unwrap();
+        assert_eq!(g.iter().map(|g| (g.name.as_str(), g.sort)).collect::<Vec<_>>(), [("Alpha", 0), ("Zeta", 1)]);
+        assert_eq!(s.list_connections().unwrap().len(), 4);
     }
 
     #[test]
