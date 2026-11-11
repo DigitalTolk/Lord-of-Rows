@@ -28,6 +28,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
     <header className="relative flex h-[42px] shrink-0 items-center gap-1 border-b border-border bg-panel px-2">
       <button className="icon-btn" aria-label={t('shell.toggleSidebar')} title={t('shell.toggleSidebar')} onClick={onToggleSidebar}><Icon name="sidebar" /></button>
       <button className="icon-btn" aria-label={t('conn.title')} title={t('conn.title')} onClick={() => useApp.setState({ launcher: true })}><Icon name="db" /></button>
+      <button className="icon-btn" aria-label={t('windows.new')} title={`${t('windows.new')} (${displayCombo(DEFAULT_KEYS.newWindow)})`} onClick={() => void useApp.getState().openWindow()}><Icon name="window" /></button>
       <span className="mx-1 h-5 border-s border-border" aria-hidden />
       <button className="icon-btn" title={`${t('query.newTab')} (${displayCombo(DEFAULT_KEYS.newQuery)})`} aria-label={t('query.newTab')} disabled={!s} onClick={() => openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' })}><Icon name="sql" /></button>
       <button className="icon-btn" title={t('common.refresh')} aria-label={t('common.refresh')} disabled={!s} onClick={() => s && loadObjects(s.session_id, s.activeSchema)}><Icon name="refresh" /></button>
@@ -62,6 +63,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
           ))}
           <div role="separator" className="my-1 border-t border-border" />
           <button role="menuitem" className="menu-item" onClick={() => { useApp.setState({ launcher: true }); setMenu(null); }}>{t('shell.openAnother')}</button>
+          <button role="menuitem" className="menu-item" onClick={() => { void useApp.getState().openWindow(); setMenu(null); }}>{t('windows.new')}</button>
           <button role="menuitem" className="menu-item text-danger" onClick={() => { void closeSession(s.session_id); setMenu(null); }}>{t('shell.disconnectName', { name: s.config.name })}</button>
         </MenuPopup>
       )}
@@ -233,7 +235,8 @@ export function CommandPalette() {
   const cmds: Cmd[] = useMemo(() => {
     const list: Cmd[] = [
       { id: 'new-query', label: t('query.newTab'), hint: displayCombo(DEFAULT_KEYS.newQuery), run: () => st.openTab({ kind: 'query', title: t('shell.queryTab'), sessionId: s?.session_id, sql: '' }) },
-      { id: 'new-conn', label: t('conn.new'), run: () => useApp.setState({ connectionDialog: {} }) },
+      { id: 'new-conn', label: t('conn.new'), hint: displayCombo(DEFAULT_KEYS.newConnection), run: () => useApp.setState({ connectionDialog: {} }) },
+      { id: 'new-window', label: t('windows.new'), hint: displayCombo(DEFAULT_KEYS.newWindow), run: () => void st.openWindow() },
       { id: 'settings', label: t('settings.title'), hint: displayCombo(DEFAULT_KEYS.settings), run: tool('settings', t('settings.title')) },
       { id: 'audit', label: t('audit.title'), run: tool('audit', t('audit.title')) },
       { id: 'diff', label: t('diff.title'), run: tool('diff', t('diff.title')) },
@@ -261,6 +264,13 @@ export function CommandPalette() {
           list.push({ id: `obj:${schema}.${o.name}`, label: `${o.kind === 'table' ? '▦' : '◫'} ${schema ? schema + '.' : ''}${o.name}`, run: () => st.openTab({ kind: 'table', title: o.name, sessionId: s.session_id, target: { schema: o.schema, table: o.name } }) });
         }
       }
+    }
+    const activeQuery = st.tabs.find((x) => x.id === st.activeTab && x.kind === 'query');
+    if (activeQuery) {
+      list.push(
+        { id: 'split-right', label: activeQuery.split === 'right' ? t('split.close') : t('split.right'), hint: displayCombo(DEFAULT_KEYS.splitEditor), run: () => st.toggleSplit(activeQuery.id, 'right') },
+        { id: 'split-down', label: activeQuery.split === 'down' ? t('split.close') : t('split.down'), run: () => st.toggleSplit(activeQuery.id, 'down') },
+      );
     }
     for (const c of st.connections) list.push({ id: `conn:${c.config.id}`, label: `⏻ ${c.config.name}`, hint: t(`env.${c.config.environment}`), run: () => st.openSession(c.config.id).catch((e) => st.toast('error', String(e.message ?? e))) });
     for (const tb of st.tabs) list.push({ id: `tab:${tb.id}`, label: `⇥ ${tb.title}`, run: () => useApp.setState({ activeTab: tb.id }) });

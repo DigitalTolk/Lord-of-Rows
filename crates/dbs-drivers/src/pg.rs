@@ -29,11 +29,13 @@ pub struct PgConnection {
     task: tokio::task::JoinHandle<()>,
 }
 
-/// Build a native-tls connector honouring the connection's TLS settings.
-/// Certificate and hostname verification are ON unless the user explicitly
-/// chose `VerifyCa` (hostname not verified). There is no "accept any cert" mode.
+/// Build a native-tls connector honouring the connection's SSL mode:
+/// * `VerifyIdentity`: certificate chain + hostname verified.
+/// * `VerifyCa`: chain verified, hostname not verified.
+/// * `Required` / `Preferred`: encrypted, certificate NOT verified (the user's explicit choice;
+///   `Preferred` additionally falls back to plaintext, see the `ssl_mode` call in `connect`).
 pub fn build_tls(cfg: &TlsConfig) -> DbResult<Option<TlsConnector>> {
-    if cfg.mode == TlsMode::Disable {
+    if cfg.mode == TlsMode::Disabled {
         return Ok(None);
     }
     let mut b = TlsConnector::builder();
@@ -49,8 +51,15 @@ pub fn build_tls(cfg: &TlsConfig) -> DbResult<Option<TlsConnector>> {
         let id = Identity::from_pkcs8(&cert, &key).map_err(|e| DbError::new(ErrorKind::Tls, format!("invalid client identity: {e}")))?;
         b.identity(id);
     }
-    if cfg.mode == TlsMode::VerifyCa {
-        b.danger_accept_invalid_hostnames(true);
+    match cfg.mode {
+        TlsMode::VerifyIdentity | TlsMode::Disabled => {}
+        TlsMode::VerifyCa => {
+            b.danger_accept_invalid_hostnames(true);
+        }
+        TlsMode::Required | TlsMode::Preferred => {
+            b.danger_accept_invalid_certs(true);
+            b.danger_accept_invalid_hostnames(true);
+        }
     }
     b.build().map(Some).map_err(|e| DbError::new(ErrorKind::Tls, e.to_string()))
 }
@@ -130,7 +139,12 @@ impl DatabaseDriver for PgDriver {
         pc.connect_timeout(Duration::from_secs(cfg.connect_timeout_secs as u64));
         pc.keepalives(true);
         pc.keepalives_idle(Duration::from_secs(30));
-        pc.ssl_mode(if cfg.tls.mode == TlsMode::Disable { tokio_postgres::config::SslMode::Disable } else { tokio_postgres::config::SslMode::Require });
+        pc.ssl_mode(match cfg.tls.mode {
+            TlsMode::Disabled => tokio_postgres::config::SslMode::Disable,
+            // libpq `prefer`: TLS when the server offers it, plaintext otherwise.
+            TlsMode::Preferred => tokio_postgres::config::SslMode::Prefer,
+            TlsMode::Required | TlsMode::VerifyCa | TlsMode::VerifyIdentity => tokio_postgres::config::SslMode::Require,
+        });
         drop(secrets);
 
         let notices: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -314,6 +328,65 @@ impl PgConnection {
             duration_ms: elapsed_ms(t),
             notices: self.take_notices(),
         })
+    }
+
+    /// Streaming counterpart of [`Self::run_one`]: rows go to `sink` as they arrive
+    /// from the `RowStream` (bounded by the sink's backpressure).
+    async fn stream_one(&self, idx: usize, text: &str, sink: &mut RowSink) -> DbResult<()> {
+        let t = Instant::now();
+        let stmt = match self.client.prepare(text).await {
+            Ok(s) => s,
+            Err(e) => {
+                let code = e.as_db_error().map(|d| d.code().code().to_string());
+                if code.as_deref() == Some("0A000") {
+                    // Simple protocol has no row stream; materialise (capped) and replay.
+                    let r = self.run_simple(idx, text, sink.max_rows(), t).await?;
+                    return sink.replay(vec![r]).await;
+                }
+                return Err(map_pg_err(e));
+            }
+        };
+        if stmt.columns().is_empty() {
+            let n = self.client.execute(&stmt, &[]).await.map_err(map_pg_err)?;
+            return sink
+                .end_statement(StatementSummary {
+                    statement_index: idx,
+                    sql_excerpt: excerpt(text),
+                    rows_affected: Some(n),
+                    duration_ms: elapsed_ms(t),
+                    notices: self.take_notices(),
+                })
+                .await;
+        }
+        let columns: Vec<ColumnMeta> =
+            stmt.columns().iter().map(|c| ColumnMeta { name: c.name().into(), type_name: c.type_().name().into(), nullable: None, table: None }).collect();
+        let ncol = columns.len();
+        let stream = self.client.query_raw(&stmt, std::iter::empty::<PgParam>()).await.map_err(map_pg_err)?;
+        pin_mut!(stream);
+        sink.begin_result(idx, excerpt(text), columns).await?;
+        while let Some(r) = stream.next().await {
+            let r = r.map_err(map_pg_err)?;
+            if sink.is_full() {
+                // Past the cap: drain without decoding so the connection stays in sync.
+                sink.mark_truncated();
+                continue;
+            }
+            let mut row = Vec::with_capacity(ncol);
+            for i in 0..ncol {
+                row.push(r.try_get::<_, PgAny>(i).map(|v| v.0).unwrap_or_else(|e| Value::Other { type_name: "error".into(), text: e.to_string() }));
+            }
+            sink.push_row(row).await?;
+        }
+        let affected = stream.rows_affected();
+        let verb = text.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+        sink.end_statement(StatementSummary {
+            statement_index: idx,
+            sql_excerpt: excerpt(text),
+            rows_affected: if matches!(verb.as_str(), "INSERT" | "UPDATE" | "DELETE" | "MERGE" | "WITH") { affected } else { None },
+            duration_ms: elapsed_ms(t),
+            notices: self.take_notices(),
+        })
+        .await
     }
 
     fn default_schema(s: Option<&str>) -> String {
@@ -678,6 +751,23 @@ impl DatabaseConnection for PgConnection {
                 }
             }
             Ok(out)
+        };
+        guarded(fut, cancel, opts.timeout_ms, || self.send_cancel()).await
+    }
+
+    async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
+        let stmts = dbs_safety::split_statements(sql, Dialect::Postgres);
+        let n = stmts.len();
+        let fut = async {
+            for (i, s) in stmts.iter().enumerate() {
+                if let Err(mut e) = self.stream_one(i, &s.text, &mut sink).await {
+                    if n > 1 && e.kind != ErrorKind::Cancelled {
+                        e.message = format!("statement {} failed: {}", i + 1, e.message);
+                    }
+                    return Err(e);
+                }
+            }
+            Ok(())
         };
         guarded(fut, cancel, opts.timeout_ms, || self.send_cancel()).await
     }

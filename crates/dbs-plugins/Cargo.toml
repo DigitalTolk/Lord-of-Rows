@@ -1,0 +1,22 @@
+[package]
+name = "dbs-plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Sandboxed WebAssembly plugin runtime, package validation and signing for DB Studio"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+thiserror.workspace = true
+semver = "1"
+ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
+zip = { version = "9.5", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+# No WASI, no component model, no async: the guest sees only the exports we call.
+# `pulley`: modules run in the portable interpreter (no JIT memory; see runtime.rs).
+wasmtime = { version = "50", default-features = false, features = ["cranelift", "pulley", "runtime", "std"] }
+
+[dev-dependencies]
+wat = "1"

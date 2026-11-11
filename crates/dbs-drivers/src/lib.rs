@@ -10,6 +10,7 @@
 //! Engines without a module here are reported as unsupported by
 //! [`driver_for`]; see FEATURE_MATRIX.md.
 
+pub mod dynamo;
 pub mod mysql;
 pub mod pg;
 mod pg_types;
@@ -25,6 +26,7 @@ pub fn driver_for(engine: Engine) -> Option<Box<dyn DatabaseDriver>> {
         Engine::MySql => Some(Box::new(mysql::MySqlDriver)),
         Engine::Sqlite => Some(Box::new(sqlite::SqliteDriver)),
         Engine::Redis => Some(Box::new(redis::RedisDriver)),
+        Engine::DynamoDb => Some(Box::new(dynamo::DynamoDriver)),
         _ => None,
     }
 }

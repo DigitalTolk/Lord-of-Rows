@@ -16,7 +16,8 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | MariaDB / Percona / SingleStore | `mysql` (wire-compatible) | IMPLEMENTED_UNVERIFIED | no server in test matrix yet |
 | SQLite 3.5x | `sqlite` (rusqlite, bundled) | TESTED | IT `sqlite_end_to_end`, E2E |
 | Redis 7 | `redis` | TESTED | IT `redis_end_to_end`, E2E |
-| SQL Server, Oracle, MongoDB, Cassandra, DynamoDB, Elasticsearch, ClickHouse, BigQuery, Snowflake, Cloudflare D1, Vertica, DuckDB, libSQL, Turso | — | NOT_STARTED | shown as "coming soon" (disabled) in the UI |
+| DynamoDB | `dynamo` (official AWS SDK) | TESTED against DynamoDB Local 3.3; real AWS IMPLEMENTED_UNVERIFIED | IT `dynamo_end_to_end` (paging, filters, counts, PartiQL, exact N, conditional-update conflicts, read-only, bad creds/endpoint), E2E `16-dynamodb` (connect, browse, PartiQL, edit + commit). Profiles/SSO/default chain unverified |
+| SQL Server, Oracle, MongoDB, Cassandra, Elasticsearch, ClickHouse, BigQuery, Snowflake, Cloudflare D1, Vertica, DuckDB, libSQL, Turso | — | NOT_STARTED | shown as "coming soon" (disabled) in the UI |
 
 ## Connections & security
 
@@ -26,7 +27,11 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Passwords in OS keychain (Secret Service on Linux) | TESTED on Linux | E2E (saved → reconnect after restart) |
 | macOS Keychain / Windows Credential Manager | IMPLEMENTED_UNVERIFIED | needs native runs |
 | Connection URL import (password split out to keychain) | TESTED | UT `url_parsing...`, E2E MySQL/SQLite/Redis via URL |
-| TLS verify-full / verify-ca / custom CA / client certs | TESTED (verify-full + CA, untrusted-cert rejection) | IT postgres TLS, E2E production over TLS |
+| SSL modes PREFERRED / DISABLED / REQUIRED / VERIFY-CA / VERIFY-IDENTITY (Postgres family) | TESTED | IT `postgres_end_to_end` (each mode, CA vs no CA, hostname mismatch), E2E production over VERIFY-IDENTITY + CA |
+| SSL modes on MySQL / MariaDB (PREFERRED with no-TLS fallback, REQUIRED, VERIFY-*) | TESTED (MySQL: PREFERRED/REQUIRED encrypted, VERIFY-* reject self-signed; MariaDB: PREFERRED connects) | IT `mysql_ssl_modes`, `mariadb_ssl_preferred`, E2E `MySQL connection with SSL mode REQUIRED` |
+| SSL modes on Redis (PREFERRED falls back to plain TCP; REQUIRED/VERIFY-* via TLS) | TESTED against plaintext Redis only (DISABLED, PREFERRED fallback, REQUIRED refuses) | IT `redis_ssl_modes`; TLS-enabled Redis IMPLEMENTED_UNVERIFIED |
+| Custom CA / client certs (path chosen with native picker, `pick_cert_path`) | TESTED (CA, Postgres); client certs IMPLEMENTED_UNVERIFIED | IT postgres TLS; native picker not drivable from WebDriver (E2E sets the CA via URL `sslrootcert`) |
+| Production refuses DISABLED/PREFERRED to non-local hosts unless tunnelled | TESTED | UT `rejects_plaintext_remote_production`, E2E `plaintext production connections are refused` |
 | Plaintext refused for remote production | TESTED | UT `rejects_plaintext_remote_production`, E2E |
 | SSH tunnel: password, private key, encrypted key, agent | TESTED (agent: IMPLEMENTED_UNVERIFIED) | IT `dbs-ssh/tests/tunnel.rs` (6), E2E `15-ssh` (4) |
 | SSH strict host-key checking (unknown→confirm, changed→refuse) | TESTED | IT `changed_host_key_is_refused`, E2E decline/trust |
@@ -38,15 +43,20 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 
 | Feature | Status | Evidence |
 |---|---|---|
-| Launcher, engine picker, connection form | TESTED | E2E |
+| Launcher, engine picker, connection form (status color, tag, safe mode, Host/IP or socket, keychain / ask every time, bootstrap commands, SSL mode + keys, Over SSH) | TESTED | E2E, vitest `ConnectionDialog.test.tsx` |
 | Connection rail (multiple DBs), per-connection tabs | TESTED | E2E `connection rail…` |
 | Object tree (tables/views/functions/sequences/enums/triggers) + context menu | TESTED (tree), menu IMPLEMENTED_UNVERIFIED | E2E |
 | Active schema = default for SQL (`search_path` / `USE`) | TESTED | IT + E2E schema switch |
 | Monaco SQL editor, autocomplete, format, run current/selection/all | TESTED (run/all); others IMPLEMENTED_UNVERIFIED | E2E |
 | Query cancel, timeouts | TESTED | IT + E2E cancel |
 | Multiple result sets, messages, notices, SQLSTATE errors | TESTED | E2E |
+| Streaming results in the SQL editor (batched rows over a Tauri Channel, first batch 500 rows, ack-based flow control, `query.maxRows` cap with truncated flag, Stop cancels) | SQLite TESTED; Postgres / MySQL / MariaDB IMPLEMENTED_UNVERIFIED (IT written, not yet run in the Docker regression); UI IMPLEMENTED_UNVERIFIED (E2E perf records first-rows time, no dedicated assertion) | IT `streaming.rs` (`sqlite_streaming`, `postgres_streaming`, `mysql_streaming`, `mariadb_streaming`), UT `dbs-core::stream` (6), UT `commands::tests` (shared safety gate / audit / ack window, 6), vitest `lib/stream.test.ts` (8) |
 | Virtualized grid, PK-ordered paging, sort, filters | TESTED (paging); sort/filter IMPLEMENTED_UNVERIFIED (backend UT) | E2E, UT `page_query_is_parameterised` |
 | Staged edits, SQL review, commit, optimistic-concurrency conflicts | TESTED | E2E edit/commit/conflict, IT `crud_scenario` |
+| Grid context menu (Quick Look, Set Value ▸, Refresh, Paste / Paste to Selected, Add Row, Duplicate, Copy Rows / Cells (As ▸ CSV/TSV/JSON/SQL INSERT/SQL UPDATE/Markdown), Copy All Column Values, Quick Filter ▸, Import, Export Current Page ▸, Delete) + shortcuts | IMPLEMENTED_UNVERIFIED in the app; formatting/paste/selection logic TESTED (UT) | UT `copyFormats` / `gridOps` / `gridSelection` / `DataGrid` (jsdom); E2E `45-grid-context-menu` written, not yet run |
+| Grid cell-range selection (click, Shift+click, Cmd/Ctrl+click toggle, drag, row-number select) | IMPLEMENTED_UNVERIFIED (selection model UT) | UT `gridSelection` |
+| Foreign-key "→" link to the referenced row (filtered table tab) | IMPLEMENTED_UNVERIFIED | UT `DataGrid` (callback only) |
+| Export current page (`export_rows` command) | IMPLEMENTED_UNVERIFIED; Rust not compiled in this change's verification | native save dialog not drivable by WebDriver |
 | Structure view + designer (DDL preview, reversibility) | TESTED (view), designer UT | E2E Structure/DDL, UT `dbs-schema` |
 | Schema diff & migrations | IMPLEMENTED_UNVERIFIED in UI; engine TESTED | UT `dbs-schema` (7) |
 | ER diagram | TESTED | E2E |
@@ -54,6 +64,8 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Dashboards / charts | IMPLEMENTED_UNVERIFIED | |
 | Command palette | TESTED | E2E |
 | Session restore (tabs re-attach) | TESTED | E2E `after restart…` |
+| Multiple windows: New Window (macOS File menu, toolbar, connection menu, palette, Mod+Shift+N); each window has its own tabs and its own sessions; closing a window disconnects only its sessions; title "Lord of the Rows — &lt;connection&gt;"; only the main window persists/restores tabs | IMPLEMENTED_UNVERIFIED | UT `closing_a_window_takes_only_its_own_sessions` (real SQLite sessions), `navigation_guard_allows_only_bundled_content`; vitest `store.test.ts` (window-scoped restore/persist, title); E2E `40-windows-split` written, not yet run |
+| Split editor panes (right/down, Mod+\\, toolbar, palette): each pane own text, run, results; split layout + both texts persisted with the tab | IMPLEMENTED_UNVERIFIED | vitest `store.test.ts` (toggle, persist/restore); E2E `40-windows-split` written, not yet run |
 | Themes (light/dark/high contrast), UI scale | TESTED (dark) | E2E |
 | Import CSV/TSV/JSON/JSONL, export CSV/TSV/JSON/JSONL/SQL/XLSX/MD/XML | engine TESTED, UI IMPLEMENTED_UNVERIFIED | UT `dbs-io` (13); native file dialogs not drivable by WebDriver |
 | Backup/restore (pg_dump, mysqldump, SQLite backup API) | SQLite TESTED (IT); pg_dump/mysqldump IMPLEMENTED_UNVERIFIED | IT `sqlite_end_to_end` |
@@ -92,7 +104,7 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 
 | Feature | Status | Evidence |
 |---|---|---|
-| UI strings in `src/i18n/en.json` (i18next plurals, no hardcoded English in views/components) | TESTED (UT) except connection dialog | vitest `locales.test.ts` (every en key referenced from source). `ConnectionDialog.tsx` still has ~25 hardcoded labels (being redesigned on another branch) |
+| UI strings in `src/i18n/en.json` (i18next plurals, no hardcoded English in views/components) | TESTED (UT) | vitest `locales.test.ts` (every en key referenced from source); engine/DB form field labels come from `formSpec` and are translated too, English text unchanged for E2E |
 | German, Spanish, Arabic translations; key/plural-form/placeholder parity with English | TESTED (UT) | vitest `locales.test.ts` (per locale: missing, extra, empty, placeholders; CLDR plural categories via `Intl.PluralRules`). Translations are AI-produced and not yet reviewed by native speakers |
 | Language picker (System default + each language), persisted, `<html lang dir>` sync | TESTED (UT) | vitest `locales.test.ts` (system mapping), `a11y.test.tsx` (`dir=rtl`/`lang=ar`) |
 | RTL layout (Arabic) with logical Tailwind utilities; Monaco, data grid, SQL/JSON blocks pinned LTR | IMPLEMENTED_UNVERIFIED | axe passes in Arabic (jsdom, no layout); not yet looked at in the real webview |
@@ -101,7 +113,24 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Keyboard: tree (`role=tree`, arrows), tab bar (roving tabindex, arrows, Delete), rail (arrows), context menus (Shift+F10), dialog focus trap + focus return, keyboard sidebar resize | TESTED (UT) | vitest `a11y.test.tsx` keyboard suite; see `docs/ACCESSIBILITY.md` |
 | Screen reader (VoiceOver/NVDA) | NOT_STARTED | manual checklist in `docs/ACCESSIBILITY.md` |
 
+## Plugins (spec §24)
+
+Tested natively on macOS arm64 (`cargo test -p dbs-plugins`), not in the Docker matrix yet.
+
+| Feature | Status | Evidence |
+|---|---|---|
+| Wasm sandbox (wasmtime/Pulley interpreter, no imports/WASI, fresh instance per call) | TESTED | UT `dbs-plugins` (imports rejected, echo, example plugin) |
+| CPU (fuel) and memory limits; trap/OOB pointer/bad UTF-8 contained | TESTED | UT infinite loop, memory hog, OOB pointers, trap |
+| Manifest validation (id, semver, API version, capabilities, settings), compatibility check | TESTED | UT `manifest_validation`, `compatibility_check` |
+| `.dbsplugin` zip validation (traversal, extra/duplicate entries, size caps, zip bomb) | TESTED | UT `zip_path_traversal…`, `oversized_entries_rejected` |
+| ed25519 signatures (verified fingerprint vs unsigned; tamper/escalation detected) | TESTED | UT `signature_verifies_and_detects_tampering` |
+| Capability gating (declared **and** granted) | TESTED | UT `capability_gating` |
+| Registry (store migration v2), install/upgrade/remove, grants, enable/disable, settings, audit | IMPLEMENTED_UNVERIFIED | UT `plugin_registry` for the store only; Tauri commands not exercised by E2E yet |
+| Settings → Plugins UI, "Format with <plugin>", "Export with plugin…" | IMPLEMENTED_UNVERIFIED | vitest for menu filtering only; not driven by E2E yet |
+| Example plugin `examples/plugins/uppercase-keywords` | TESTED | UT `example_plugin_formats_sql` |
+| `read_schema` capability | IMPLEMENTED_UNVERIFIED | runtime + gating only; no UI entry point yet |
+
 ## Not started (spec items)
 
-Plugin system, signed installers (macOS DMG/notarization, Windows MSI/MSIX),
+Signed installers (macOS DMG/notarization, Windows MSI/MSIX),
 CI pipelines, accessibility audit with assistive tech (manual screen-reader pass).

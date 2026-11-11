@@ -78,7 +78,7 @@ fn explain_network(msg: &str) -> String {
     let l = msg.to_ascii_lowercase();
     let advice = if l.contains("no route to host") || l.contains("os error 65") {
         if cfg!(target_os = "macos") {
-            Some("The server could not be reached. If it is on your local network or VPN (e.g. 192.168.x.x / 10.x), macOS may be blocking DB Studio: open System Settings → Privacy & Security → Local Network and enable DB Studio, then try again.")
+            Some("The server could not be reached. If it is on your local network or VPN (e.g. 192.168.x.x / 10.x), macOS may be blocking Lord of the Rows: open System Settings → Privacy & Security → Local Network and enable Lord of the Rows, then try again.")
         } else {
             Some("The server could not be reached: check the host, VPN and firewall.")
         }
@@ -105,7 +105,11 @@ pub fn redact_secrets(input: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         let rest = &lower[i..];
-        let key_len = ["password=", "pwd=", "passwd=", "secret=", "token="].iter().find(|k| rest.starts_with(**k)).map(|k| k.len());
+        // `secret_access_key=` / `credential=` / `signature=` cover AWS SigV4 and config-file echoes.
+        let key_len = ["password=", "pwd=", "passwd=", "secret=", "token=", "secret_access_key=", "credential=", "signature="]
+            .iter()
+            .find(|k| rest.starts_with(**k))
+            .map(|k| k.len());
         if let Some(k) = key_len {
             out.push_str(&input[i..i + k]);
             out.push_str("***");
@@ -157,6 +161,12 @@ mod tests {
     fn redacts_url_userinfo() {
         let s = redact_secrets("failed: postgres://alice:s3cr3t@db.local:5432/app");
         assert_eq!(s, "failed: postgres://alice:***@db.local:5432/app");
+    }
+
+    #[test]
+    fn redacts_aws_credentials() {
+        let s = redact_secrets("aws_secret_access_key=wJalrXUtnFEMI/K7MDENG Credential=AKIAEXAMPLE/20240101/us-east-1/dynamodb/aws4_request, Signature=abc123");
+        assert!(!s.contains("wJalrXUtnFEMI") && !s.contains("AKIAEXAMPLE") && !s.contains("abc123"), "{s}");
     }
 
     #[test]

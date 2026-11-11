@@ -2,15 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { confirmDecision } from '../components/confirm';
 import { DataGrid } from '../components/DataGrid';
-import { copyAs } from '../components/Results';
 import { Dialog, ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { StructureView } from './StructureView';
 import { addRow, buildChanges, emptyStaged, History, pendingCount, setCell, setInsertedCell, toggleDelete, type StagedState } from '../lib/changes';
 import { api } from '../lib/ipc';
 import type { ExportFormat, FilterCondition, FilterOp, ResultSet, SortDir, TableDescription, Value } from '../lib/types';
-import { parseInput } from '../lib/value';
+import { editableText, parseInput } from '../lib/value';
 import { fmtNumber } from '../lib/format';
+import { useTableGridActions, type GridFilter } from './useTableGridActions';
 import { errMsg, useApp, type Tab } from '../store';
 
 const OPS: [FilterOp, string][] = [['eq', '='], ['ne', '≠'], ['lt', '<'], ['le', '≤'], ['gt', '>'], ['ge', '≥'], ['contains', 'contains'], ['starts_with', 'starts with'], ['ends_with', 'ends with'], ['is_null', 'is NULL'], ['is_not_null', 'is not NULL'], ['in', 'in (a,b,c)']];
@@ -38,6 +38,8 @@ export function TableView({ tab }: { tab: Tab }) {
   const hist = useRef(new History<StagedState>());
   const [mode, setMode] = useState<'data' | 'structure'>('data');
   const isKeyValue = s?.config.engine === 'redis';
+  // DynamoDB browses with Scan: no server-side ordering, and the count may only be an estimate.
+  const isDynamo = s?.config.engine === 'dynamo_db';
   const editable = !!s?.capabilities.inline_edit && !s.config.read_only && !isKeyValue;
   const keyCols = desc?.primary_key ?? [];
   const pending = pendingCount(staged);
@@ -49,7 +51,7 @@ export function TableView({ tab }: { tab: Tab }) {
     try {
       const d = desc ?? (await api.describeTable(s.session_id, target).catch(() => null));
       // Without an explicit sort, order by primary key so paging is stable.
-      const order: [string, SortDir][] = sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
+      const order: [string, SortDir][] = isDynamo ? [] : sort.length ? sort : (d?.primary_key ?? []).map((c) => [c, 'asc']);
       const [r, c] = await Promise.all([
         api.fetchTable(s.session_id, target, { offset: page * pageSize, limit: pageSize, order_by: order, filters: applied }),
         api.countRows(s.session_id, target, applied).catch(() => null),
@@ -64,7 +66,7 @@ export function TableView({ tab }: { tab: Tab }) {
     } finally {
       setLoading(false);
     }
-  }, [s, target, page, pageSize, sort, applied, desc]);
+  }, [s, target, page, pageSize, sort, applied, desc, isDynamo]);
 
   useEffect(() => {
     void load();
@@ -136,17 +138,13 @@ export function TableView({ tab }: { tab: Tab }) {
     }
   };
 
-  const copy = async (rows: number[], cols: string[], fmt: ExportFormat = 'tsv') => {
-    if (!rs) return;
-    const ci = cols.length ? cols.map((c) => columns.findIndex((x) => x.name === c)) : columns.map((_, i) => i);
-    const data = (rows.length ? rows.filter((r) => r < rs.rows.length).map((r) => rs.rows[r]) : rs.rows).map((r) => ci.map((i) => r[i]));
-    try {
-      await copyAs(ci.map((i) => columns[i]), data, fmt, target.table);
-      toast('info', t('table.copiedRows', { count: data.length, formatted: fmtNumber(data.length) }));
-    } catch (e) {
-      toast('error', errMsg(e));
-    }
+  // Grid context menu (Quick Filter, FK links): adapter onto the tab's filter mechanism.
+  const setGridFilters = (fs: GridFilter[]) => {
+    setFilters(fs.map((f) => ({ column: f.column, op: f.op, text: f.value ? editableText(f.value) : '' })));
+    setApplied(fs.map((f) => ({ column: f.column, op: f.op, value: f.value ?? null, values: [] })));
+    setPage(0);
   };
+  const gridActions = useTableGridActions({ tab, session: s, target, desc, rs, staged, change, count, editable, reload: () => void load(), setFilters: setGridFilters });
 
   const exportAll = async (format: ExportFormat) => {
     if (!s) return;
@@ -272,11 +270,11 @@ export function TableView({ tab }: { tab: Tab }) {
           staged={staged}
           editable={editable}
           sort={sort}
-          onSort={sortBy}
+          onSort={isDynamo ? undefined : sortBy}
           onEdit={onEdit}
           onEditInserted={(i, c, v) => change(setInsertedCell(staged, i, c, v))}
           onSelectRows={setSelRows}
-          onCopy={(r, c) => copy(r, c)}
+          {...gridActions}
           ariaLabel={t('table.gridLabel', { table: header })}
         />
       ) : null}
@@ -287,7 +285,13 @@ export function TableView({ tab }: { tab: Tab }) {
         </div>
         {mode === 'data' && (
           <>
-            <span className="text-muted" aria-live="polite">{count != null ? t(applied.length ? 'table.rowCountFiltered' : 'table.rowCount', { count, formatted: fmtNumber(count) }) : ''}</span>
+            <span className="text-muted" aria-live="polite">
+              {count != null
+                ? t(applied.length ? 'table.rowCountFiltered' : 'table.rowCount', { count, formatted: fmtNumber(count) })
+                : isDynamo && !applied.length && desc?.estimated_rows != null
+                  ? t('table.rowEstimate', { count: desc.estimated_rows, formatted: fmtNumber(desc.estimated_rows) })
+                  : ''}
+            </span>
             {loading && <Spinner label={t('common.loading')} />}
             <div className="ms-auto flex items-center gap-1">
               <button className="icon-btn h-6 w-6" disabled={page === 0} onClick={() => setPage(page - 1)} aria-label={t('table.prevPage')}><Icon name="chevronRight" size={14} className="rotate-180 rtl:rotate-0" /></button>

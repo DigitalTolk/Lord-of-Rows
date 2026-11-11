@@ -14,7 +14,8 @@ import { api } from './lib/ipc';
 import { applyLanguage, LANGUAGE_SETTING, parseLanguagePref } from './i18n';
 import { applyThemeClasses, cachedThemePref, cacheThemePref, onOsThemeChange, osTheme, parseThemePref, resolveTheme, THEME_SETTING } from './lib/theme';
 import { DEFAULT_KEYS, displayCombo, eventCombo, matches, type KeyAction } from './lib/keys';
-import { errMsg, useApp, type Tab } from './store';
+import { currentWindowLabel, persistsWorkspace, setWindowTitle, windowTitle } from './lib/windows';
+import { errMsg, useApp, workspaceSnapshot, type Tab } from './store';
 import { AuditView } from './views/AuditView';
 import { BackupView } from './views/BackupView';
 import { DashboardView } from './views/DashboardView';
@@ -23,14 +24,14 @@ import { ERView } from './views/ERView';
 import { HistoryView } from './views/HistoryView';
 import { ImportView } from './views/ImportView';
 import { MonitorView } from './views/MonitorView';
-import { QueryView } from './views/QueryView';
+import { QuerySplitView } from './views/QuerySplitView';
 import { SettingsView } from './views/SettingsView';
 import { StructureView } from './views/StructureView';
 import { TableView } from './views/TableView';
 
 function View({ tab }: { tab: Tab }) {
   switch (tab.kind) {
-    case 'query': return <QueryView tab={tab} />;
+    case 'query': return <QuerySplitView tab={tab} />;
     case 'table': return <TableView tab={tab} />;
     case 'structure': return <StructureView tab={tab} />;
     case 'diff': return <DiffView />;
@@ -105,14 +106,21 @@ export default function App() {
     st.init().catch((e) => setError(errMsg(e)));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Persist query tabs (text only) for session restore.
+  // Persist query tabs (text + split layout) for session restore. Only the main
+  // window persists, so extra windows never overwrite its saved workspace.
   useEffect(() => {
+    if (!persistsWorkspace(currentWindowLabel())) return;
     const h = setTimeout(() => {
-      const tabs = st.tabs.filter((x) => x.kind === 'query').map(({ id, kind, title, sql, pinned }) => ({ id, kind, title, sql: (sql ?? '').slice(0, 200_000), pinned }));
-      void api.setSetting('workspace.tabs', tabs).catch(() => undefined);
+      void api.setSetting('workspace.tabs', workspaceSnapshot(st.tabs)).catch(() => undefined);
     }, 1000);
     return () => clearTimeout(h);
   }, [st.tabs]);
+
+  // Window title: "Lord of the Rows — <connection>".
+  const titleConnection = st.activeSession ? st.sessions[st.activeSession]?.config.name : undefined;
+  useEffect(() => {
+    void setWindowTitle(windowTitle(t('app.name'), titleConnection));
+  }, [titleConnection, t]);
 
   // Global shortcuts.
   useEffect(() => {
@@ -143,6 +151,8 @@ export default function App() {
       else if (is('settings')) st.openTab({ kind: 'settings', title: t('settings.title') });
       else if (is('toggleSidebar')) setSidebar((x) => !x);
       else if (is('newConnection')) useApp.setState({ connectionDialog: {} });
+      else if (is('newWindow')) void st.openWindow();
+      else if (is('splitEditor') && (tabs[cur] ?? tabs[0])?.kind === 'query') st.toggleSplit((tabs[cur] ?? tabs[0]).id);
       else if (is('focusMode')) void st.setSetting('workspace.focus', !st.settings['workspace.focus']);
       else handled = false;
       if (handled) {

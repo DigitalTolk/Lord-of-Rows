@@ -69,7 +69,8 @@ impl DatabaseDriver for MySqlDriver {
         } else {
             b = b.ip_or_hostname(cfg.host.clone().unwrap_or_default()).tcp_port(cfg.effective_port().unwrap_or(3306));
         }
-        if cfg.tls.mode != TlsMode::Disable {
+        let plain: Opts = b.clone().into();
+        if cfg.tls.mode != TlsMode::Disabled {
             let mut ssl = SslOpts::default();
             if let Some(ca) = &cfg.tls.ca_cert_path {
                 ssl = ssl.with_root_certs(vec![std::path::PathBuf::from(ca).into()]);
@@ -83,17 +84,28 @@ impl DatabaseDriver for MySqlDriver {
                 let id = mysql_async::ClientIdentity::new(std::path::PathBuf::from(cert).into());
                 ssl = ssl.with_client_identity(Some(id));
             }
-            if cfg.tls.mode == TlsMode::VerifyCa {
-                ssl = ssl.with_danger_skip_domain_validation(true);
-            }
+            ssl = match cfg.tls.mode {
+                TlsMode::VerifyIdentity | TlsMode::Disabled => ssl,
+                TlsMode::VerifyCa => ssl.with_danger_skip_domain_validation(true),
+                TlsMode::Required | TlsMode::Preferred => ssl.with_danger_accept_invalid_certs(true).with_danger_skip_domain_validation(true),
+            };
             b = b.ssl_opts(Some(ssl));
         }
-        let opts: Opts = b.into();
-        let connect = Conn::new(opts.clone());
-        let conn = tokio::time::timeout(Duration::from_secs(cfg.connect_timeout_secs as u64), connect)
-            .await
-            .map_err(|_| DbError::new(ErrorKind::Timeout, "connection timed out"))?
-            .map_err(map_err)?;
+        let timeout = Duration::from_secs(cfg.connect_timeout_secs as u64);
+        let dial = |opts: Opts| async move {
+            tokio::time::timeout(timeout, Conn::new(opts)).await.map_err(|_| DbError::new(ErrorKind::Timeout, "connection timed out"))
+        };
+        let mut opts: Opts = b.into();
+        let conn = match dial(opts.clone()).await? {
+            // PREFERRED (MySQL client default): only when the server doesn't offer TLS at all,
+            // retry in plaintext. Any other TLS failure is reported, never silently downgraded.
+            Err(mysql_async::Error::Driver(mysql_async::DriverError::NoClientSslFlagFromServer)) if cfg.tls.mode == TlsMode::Preferred => {
+                tracing::info!("server does not support TLS; SSL mode PREFERRED falls back to plaintext");
+                opts = plain;
+                dial(opts.clone()).await?.map_err(map_err)?
+            }
+            r => r.map_err(map_err)?,
+        };
         let conn_id = conn.id();
         let me = MySqlConnection { conn: Mutex::new(conn), opts, conn_id, engine: cfg.engine };
         if cfg.read_only {
@@ -313,6 +325,73 @@ impl MySqlConnection {
         }
         Ok(out)
     }
+
+    /// Streaming counterpart of [`Self::run_script`] using `query_iter`: rows are
+    /// read one at a time and pushed to `sink` (which applies backpressure).
+    async fn stream_script(&self, sql: &str, sink: &mut RowSink) -> DbResult<()> {
+        let stmts = dbs_safety::split_statements(sql, Dialect::MySql);
+        let n = stmts.len();
+        let mut c = self.conn.lock().await;
+        for (idx, st) in stmts.iter().enumerate() {
+            let label = |mut e: DbError| {
+                if n > 1 && e.kind != ErrorKind::Cancelled {
+                    e.message = format!("statement {} failed: {}", idx + 1, e.message);
+                }
+                e
+            };
+            let t = Instant::now();
+            let mut res = c.query_iter(st.text.as_str()).await.map_err(|e| label(map_err(e)))?;
+            // A statement (e.g. CALL) may produce several result sets. The summary of
+            // the last one is held back so warnings can be attached to it.
+            let mut pending: Option<StatementSummary> = None;
+            loop {
+                let cols: Vec<mysql_async::Column> = res.columns().as_deref().map(|c| c.to_vec()).unwrap_or_default();
+                if let Some(p) = pending.take() {
+                    sink.end_statement(p).await?;
+                }
+                if !cols.is_empty() {
+                    let meta = cols
+                        .iter()
+                        .map(|c| ColumnMeta {
+                            name: c.name_str().into_owned(),
+                            type_name: type_name(c),
+                            nullable: Some(!c.flags().contains(ColumnFlags::NOT_NULL_FLAG)),
+                            table: Some(c.org_table_str().into_owned()).filter(|s| !s.is_empty()),
+                        })
+                        .collect();
+                    sink.begin_result(idx, excerpt(&st.text), meta).await?;
+                }
+                while let Some(mut row) = res.next().await.map_err(|e| label(map_err(e)))? {
+                    if sink.is_full() {
+                        sink.mark_truncated();
+                        continue; // drain without decoding
+                    }
+                    let vals = (0..cols.len()).map(|i| decode(row.take(i).unwrap_or(mysql_async::Value::NULL), &cols[i])).collect();
+                    sink.push_row(vals).await?;
+                }
+                pending = Some(StatementSummary {
+                    statement_index: idx,
+                    sql_excerpt: excerpt(&st.text),
+                    rows_affected: if cols.is_empty() { Some(res.affected_rows()) } else { None },
+                    duration_ms: elapsed_ms(t),
+                    notices: vec![],
+                });
+                if res.is_empty() {
+                    break;
+                }
+            }
+            drop(res);
+            if let Some(mut p) = pending {
+                if c.get_warnings() > 0 {
+                    if let Ok(w) = c.query::<(String, u32, String), _>("SHOW WARNINGS LIMIT 50").await {
+                        p.notices = w.into_iter().map(|(lvl, code, msg)| format!("{lvl} {code}: {msg}")).collect();
+                    }
+                }
+                sink.end_statement(p).await?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -528,6 +607,10 @@ impl DatabaseConnection for MySqlConnection {
 
     async fn execute(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken) -> DbResult<Vec<StatementResult>> {
         guarded(self.run_script(sql, opts.max_rows), cancel, opts.timeout_ms, || self.kill_query()).await
+    }
+
+    async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
+        guarded(self.stream_script(sql, &mut sink), cancel, opts.timeout_ms, || self.kill_query()).await
     }
 
     async fn execute_params(&self, stmt: &GeneratedStatement) -> DbResult<u64> {
