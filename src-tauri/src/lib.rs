@@ -5,6 +5,7 @@
 mod ai;
 mod backup;
 mod commands;
+mod plugins;
 mod state;
 mod updater;
 
@@ -60,6 +61,7 @@ pub fn run() {
                 running: Mutex::new(HashMap::new()),
                 grants: Mutex::new(HashMap::new()),
                 known_hosts: dir.join("known_hosts"),
+                plugins: plugins::PluginHost::new(dir.join("plugins"))?,
             });
             // Main window is created here (not in tauri.conf.json) so a navigation
             // guard can be attached: the webview may only ever show bundled content.
@@ -138,6 +140,15 @@ pub fn run() {
             updater::check_update,
             updater::install_update,
             updater::restart_after_update,
+            plugins::plugin_list,
+            plugins::plugin_inspect,
+            plugins::plugin_install,
+            plugins::plugin_remove,
+            plugins::plugin_set_enabled,
+            plugins::plugin_set_grants,
+            plugins::plugin_set_settings,
+            plugins::plugin_format_sql,
+            plugins::plugin_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lord of the Rows");

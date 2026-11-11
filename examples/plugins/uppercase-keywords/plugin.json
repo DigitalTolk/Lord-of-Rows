@@ -1,0 +1,10 @@
+{
+  "id": "dev.dbstudio.examples.uppercase-keywords",
+  "name": "Uppercase keywords",
+  "version": "1.0.0",
+  "api_version": 1,
+  "min_app_version": "0.1.0",
+  "description": "Uppercases SQL keywords. Leaves string literals, quoted identifiers and comments untouched.",
+  "author": "DB Studio examples",
+  "capabilities": ["format_sql"]
+}

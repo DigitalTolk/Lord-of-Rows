@@ -121,4 +121,13 @@ export const api = {
   checkUpdate: () => call<T.UpdateCheck>('check_update'),
   installUpdate: (version: string) => call<{ version: string; restart_required: boolean }>('install_update', { version }),
   restartAfterUpdate: () => call<void>('restart_after_update'),
+  pluginList: () => call<T.PluginInfo[]>('plugin_list'),
+  pluginInspect: (grant: string) => call<T.PluginPreview>('plugin_inspect', { grant }),
+  pluginInstall: (grant: string, wasmSha256: string, confirmUntrusted: boolean) => call<T.PluginInfo>('plugin_install', { grant, wasmSha256, confirmUntrusted }),
+  pluginRemove: (id: string) => call<void>('plugin_remove', { id }),
+  pluginSetEnabled: (id: string, enabled: boolean) => call<T.PluginInfo>('plugin_set_enabled', { id, enabled }),
+  pluginSetGrants: (id: string, grants: T.PluginCapability[]) => call<T.PluginInfo>('plugin_set_grants', { id, grants }),
+  pluginSetSettings: (id: string, settings: Record<string, unknown>) => call<T.PluginInfo>('plugin_set_settings', { id, settings }),
+  pluginFormatSql: (id: string, sql: string) => call<string>('plugin_format_sql', { id, sql }),
+  pluginExport: (id: string, grant: string, columns: T.ColumnMeta[], rows: T.Value[][]) => call<{ rows: number; path: string }>('plugin_export', { id, grant, columns, rows }),
 };

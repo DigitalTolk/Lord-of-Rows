@@ -226,3 +226,15 @@ export interface AiStatus { settings: AiSettings; has_api_key: boolean }
 export interface AiPreviewRequest { task: AiTask; input: string; sql?: string | null; session_id?: string | null; include_dialect: boolean; tables: TableTarget[] }
 export interface AiPreview { token: string; task: AiTask; system: string; user: string; text: string; bytes: number; provider: AiProvider; model: string; base_url: string }
 export interface AiAnswer { text: string; sql?: string | null; truncated: boolean; provider: AiProvider; model: string; duration_ms: number }
+export type PluginCapability = 'format_sql' | 'export_format' | 'read_query_results' | 'read_schema';
+export type PluginSigner = { kind: 'unsigned' } | { kind: 'verified'; public_key: string; fingerprint: string };
+export interface PluginSettingSpec { key: string; label: string; type: 'bool' | 'string' | 'number'; default: unknown }
+export interface PluginManifest {
+  id: string; name: string; version: string; api_version: number; min_app_version: string; description: string; author: string;
+  capabilities: PluginCapability[]; export?: { label: string; extension: string } | null; settings?: PluginSettingSpec[];
+}
+export interface PluginInfo {
+  id: string; version: string; manifest: PluginManifest; signer: PluginSigner; wasm_sha256: string; enabled: boolean;
+  grants: PluginCapability[]; settings: Record<string, unknown>; last_error?: string | null; installed: string; updated: string; incompatible?: string | null;
+}
+export interface PluginPreview { manifest: PluginManifest; signer: PluginSigner; wasm_sha256: string; installed_version?: string | null; signer_changed: boolean; incompatible?: string | null }

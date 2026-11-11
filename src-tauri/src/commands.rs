@@ -816,8 +816,8 @@ fn open_writer(g: &FileGrant, gzip: bool) -> R<Box<dyn std::io::Write + Send>> {
 
 #[derive(Serialize)]
 pub struct ExportReport {
-    rows: u64,
-    path: String,
+    pub(crate) rows: u64,
+    pub(crate) path: String,
 }
 
 #[tauri::command]

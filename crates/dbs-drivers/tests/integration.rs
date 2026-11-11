@@ -483,3 +483,55 @@ async fn redis_end_to_end() {
     assert_eq!(e.kind, ErrorKind::PolicyBlocked);
     exec(&*c, "DEL it:list it:str").await;
 }
+
+/// Accounts using the deprecated-but-common `sha256_password` plugin (MySQL 5.7/8.x).
+/// Plaintext connection exercises the RSA public-key exchange (patched mysql_async).
+#[tokio::test]
+async fn mysql_sha256_password_auth() {
+    if !it_enabled() {
+        return;
+    }
+    let host = std::env::var("DBS_IT_MYSQL_HOST").unwrap_or("localhost".into());
+    let port = std::env::var("DBS_IT_MYSQL_PORT").ok().and_then(|p| p.parse().ok());
+    let mut root = cfg(Engine::MySql, Some(&host), None);
+    root.port = port;
+    root.username = Some("root".into());
+    let rc = driver_for(Engine::MySql)
+        .unwrap()
+        .connect(&root, ConnectSecrets { password: Some("dbs_root_test".into()) })
+        .await
+        .expect("root connect");
+    exec(
+        &*rc,
+        "DROP USER IF EXISTS 'it_sha256'@'%', 'it_sha256_empty'@'%';
+         CREATE USER 'it_sha256'@'%' IDENTIFIED WITH sha256_password BY 'S3cret-sha256!';
+         CREATE USER 'it_sha256_empty'@'%' IDENTIFIED WITH sha256_password BY ''",
+    )
+    .await;
+
+    let mut u = cfg(Engine::MySql, Some(&host), None);
+    u.port = port;
+    u.username = Some("it_sha256".into());
+    let c = driver_for(Engine::MySql)
+        .unwrap()
+        .connect(&u, ConnectSecrets { password: Some("S3cret-sha256!".into()) })
+        .await
+        .expect("sha256_password connect over plaintext (RSA)");
+    let r = exec(&*c, "SELECT CURRENT_USER()").await;
+    assert!(format!("{:?}", first_rows(&r)[0][0]).contains("it_sha256"));
+
+    let bad = driver_for(Engine::MySql)
+        .unwrap()
+        .connect(&u, ConnectSecrets { password: Some("wrong".into()) })
+        .await;
+    assert!(bad.is_err(), "wrong password must be rejected");
+
+    u.username = Some("it_sha256_empty".into());
+    driver_for(Engine::MySql)
+        .unwrap()
+        .connect(&u, ConnectSecrets { password: None })
+        .await
+        .expect("sha256_password with empty password");
+
+    exec(&*rc, "DROP USER 'it_sha256'@'%', 'it_sha256_empty'@'%'").await;
+}

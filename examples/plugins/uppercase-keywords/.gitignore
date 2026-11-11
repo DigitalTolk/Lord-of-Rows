@@ -1,0 +1,4 @@
+/target
+/plugin.wasm
+Cargo.lock
+*.hex

@@ -47,6 +47,7 @@ pub struct AppState {
     pub grants: Mutex<HashMap<String, FileGrant>>,
     /// App-managed SSH known_hosts (separate from ~/.ssh/known_hosts).
     pub known_hosts: PathBuf,
+    pub plugins: crate::plugins::PluginHost,
 }
 
 impl AppState {

@@ -73,7 +73,7 @@
     "historyNonProd": "Non-production connections only", "historyAlways": "Always", "auditText": "Query text in audit log", "auditOmit": "Omit (default)",
     "auditHash": "Hash only", "auditRedacted": "Redacted (literals removed)", "reset": "Reset all settings", "reducedMotion": "Reduce motion",
     "uiScale": "Interface scale", "telemetry": "Telemetry: none. This app sends no analytics.", "exportSettings": "Export settings", "importSettings": "Import settings",
-    "clearHistory": "Clear query history", "language": "Language", "updates": "Updates" },
+    "clearHistory": "Clear query history", "language": "Language", "updates": "Updates", "plugins": "Plugins" },
   "updates": { "channel": "Update channel", "stable": "Stable", "beta": "Beta", "autoCheck": "Check for updates on startup",
     "autoCheckHint": "Off by default: Lord of the Rows makes no network requests unless you enable this or click Check now.",
     "endpointStable": "Stable manifest URL", "endpointBeta": "Beta manifest URL", "endpointHint": "HTTPS URL of the signed latest.json manifest for this channel.",

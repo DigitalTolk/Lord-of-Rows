@@ -27,6 +27,10 @@ const MIGRATIONS: &[&str] = &[
      CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
      CREATE TABLE documents (kind TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, body TEXT NOT NULL,
         updated TEXT NOT NULL, PRIMARY KEY(kind, id));",
+    // v2: installed plugins (the wasm itself lives in the app data dir)
+    "CREATE TABLE plugins (id TEXT PRIMARY KEY, version TEXT NOT NULL, manifest TEXT NOT NULL, signer TEXT NOT NULL,
+        wasm_sha256 TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, grants TEXT NOT NULL DEFAULT '[]',
+        settings TEXT NOT NULL DEFAULT '{}', last_error TEXT, installed TEXT NOT NULL, updated TEXT NOT NULL);",
 ];
 
 pub struct AppStore {
@@ -69,6 +73,24 @@ pub struct Document {
     pub id: String,
     pub name: String,
     pub body: serde_json::Value,
+    pub updated: String,
+}
+
+/// Registry row for an installed plugin. `manifest`/`signer` are opaque JSON
+/// owned by `dbs-plugins`; `grants` are capability names the user approved.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginRecord {
+    pub id: String,
+    pub version: String,
+    pub manifest: serde_json::Value,
+    pub signer: serde_json::Value,
+    pub wasm_sha256: String,
+    pub enabled: bool,
+    pub grants: Vec<String>,
+    pub settings: serde_json::Value,
+    /// Set when the plugin failed at run time (it is then disabled).
+    pub last_error: Option<String>,
+    pub installed: String,
     pub updated: String,
 }
 
@@ -331,6 +353,82 @@ impl AppStore {
     }
 }
 
+impl AppStore {
+    // ---- plugins ----
+    pub fn save_plugin(&self, p: &PluginRecord) -> DbResult<PluginRecord> {
+        let mut p = p.clone();
+        p.updated = now();
+        if p.installed.is_empty() {
+            p.installed = p.updated.clone();
+        }
+        let js = |v: &serde_json::Value| v.to_string();
+        let grants = serde_json::to_string(&p.grants).map_err(|x| DbError::internal(x.to_string()))?;
+        self.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO plugins(id,version,manifest,signer,wasm_sha256,enabled,grants,settings,last_error,installed,updated)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+                 ON CONFLICT(id) DO UPDATE SET version=excluded.version, manifest=excluded.manifest, signer=excluded.signer,
+                 wasm_sha256=excluded.wasm_sha256, enabled=excluded.enabled, grants=excluded.grants, settings=excluded.settings,
+                 last_error=excluded.last_error, updated=excluded.updated",
+                params![
+                    p.id,
+                    p.version,
+                    js(&p.manifest),
+                    js(&p.signer),
+                    p.wasm_sha256,
+                    p.enabled,
+                    grants,
+                    js(&p.settings),
+                    p.last_error,
+                    p.installed,
+                    p.updated
+                ],
+            )
+            .map_err(e)?;
+        Ok(p)
+    }
+
+    fn plugin_rows(&self, id: Option<&str>) -> DbResult<Vec<PluginRecord>> {
+        let c = self.conn.lock().unwrap();
+        let mut st = c
+            .prepare("SELECT id,version,manifest,signer,wasm_sha256,enabled,grants,settings,last_error,installed,updated FROM plugins WHERE ?1 IS NULL OR id=?1 ORDER BY id")
+            .map_err(e)?;
+        let json = |s: String| serde_json::from_str(&s).unwrap_or(serde_json::Value::Null);
+        let rows = st
+            .query_map([id], |r| {
+                Ok(PluginRecord {
+                    id: r.get(0)?,
+                    version: r.get(1)?,
+                    manifest: json(r.get(2)?),
+                    signer: json(r.get(3)?),
+                    wasm_sha256: r.get(4)?,
+                    enabled: r.get(5)?,
+                    grants: serde_json::from_str(&r.get::<_, String>(6)?).unwrap_or_default(),
+                    settings: json(r.get(7)?),
+                    last_error: r.get(8)?,
+                    installed: r.get(9)?,
+                    updated: r.get(10)?,
+                })
+            })
+            .map_err(e)?;
+        rows.collect::<Result<_, _>>().map_err(e)
+    }
+
+    pub fn list_plugins(&self) -> DbResult<Vec<PluginRecord>> {
+        self.plugin_rows(None)
+    }
+
+    pub fn get_plugin(&self, id: &str) -> DbResult<PluginRecord> {
+        self.plugin_rows(Some(id))?.pop().ok_or_else(|| DbError::new(ErrorKind::NotFound, "plugin is not installed"))
+    }
+
+    pub fn delete_plugin(&self, id: &str) -> DbResult<bool> {
+        Ok(self.conn.lock().unwrap().execute("DELETE FROM plugins WHERE id=?1", [id]).map_err(e)? > 0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,5 +509,32 @@ mod tests {
         s.save_document("dashboard", "d1", "Sales", &serde_json::json!({"widgets": []})).unwrap();
         assert_eq!(s.list_documents("dashboard").unwrap().len(), 1);
         assert!(s.save_document("evil", "x", "x", &serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn plugin_registry() {
+        let s = AppStore::open_in_memory().unwrap();
+        let rec = PluginRecord {
+            id: "com.example.p".into(),
+            version: "1.0.0".into(),
+            manifest: serde_json::json!({"id": "com.example.p"}),
+            signer: serde_json::json!({"kind": "unsigned"}),
+            wasm_sha256: "ab".into(),
+            enabled: false,
+            grants: vec![],
+            settings: serde_json::json!({}),
+            last_error: None,
+            installed: String::new(),
+            updated: String::new(),
+        };
+        s.save_plugin(&rec).unwrap();
+        let mut got = s.get_plugin("com.example.p").unwrap();
+        assert!(!got.enabled && got.grants.is_empty() && !got.installed.is_empty());
+        got.enabled = true;
+        got.grants = vec!["format_sql".into()];
+        s.save_plugin(&got).unwrap();
+        assert_eq!(s.list_plugins().unwrap()[0].grants, ["format_sql"]);
+        assert!(s.delete_plugin("com.example.p").unwrap());
+        assert!(s.get_plugin("com.example.p").is_err());
     }
 }
