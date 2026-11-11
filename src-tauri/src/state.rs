@@ -18,6 +18,9 @@ pub struct Session {
     pub conn: Arc<dyn DatabaseConnection>,
     /// Keeps the SSH tunnel open for the lifetime of the session.
     pub _tunnel: Option<dbs_ssh::Tunnel>,
+    /// Label of the window that opened the session. Sessions are owned by one
+    /// window; closing that window disconnects them (see `take_window_sessions`).
+    pub owner: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -53,6 +56,12 @@ impl AppState {
     pub fn session(&self, id: &str) -> DbResult<Arc<Session>> {
         let id = Uuid::parse_str(id).map_err(|_| DbError::invalid("invalid session id"))?;
         self.sessions.lock().unwrap().get(&id).cloned().ok_or_else(|| DbError::new(ErrorKind::NotFound, "session is not open"))
+    }
+
+    /// Removes and returns every session owned by window `label`, so the caller
+    /// can close the connections. Other windows' sessions are untouched.
+    pub fn take_window_sessions(&self, label: &str) -> Vec<Arc<Session>> {
+        take_owned(&mut self.sessions.lock().unwrap(), label)
     }
 
     pub fn policy_for(&self, cfg: &ConnectionConfig) -> SafetyPolicy {
@@ -91,8 +100,82 @@ impl AppState {
     }
 }
 
+fn take_owned(map: &mut HashMap<Uuid, Arc<Session>>, label: &str) -> Vec<Arc<Session>> {
+    let mut taken = Vec::new();
+    map.retain(|_, s| {
+        if s.owner == label {
+            taken.push(s.clone());
+            false
+        } else {
+            true
+        }
+    });
+    taken
+}
+
 pub fn random_key() -> [u8; 32] {
     let mut k = [0u8; 32];
     getrandom::getrandom(&mut k).expect("OS RNG unavailable");
     k
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dbs_core::{ConnectSecrets, Engine, EnvironmentKind, TlsConfig};
+
+    async fn sqlite_session(dir: &std::path::Path, owner: &str) -> Arc<Session> {
+        let path = dir.join(format!("{owner}-{}.db", Uuid::new_v4()));
+        // An empty file is a valid (empty) SQLite database; the driver refuses to create new files.
+        std::fs::write(&path, b"").unwrap();
+        let config = ConnectionConfig {
+            id: Uuid::new_v4(),
+            name: owner.into(),
+            engine: Engine::Sqlite,
+            host: None,
+            port: None,
+            database: Some(path.to_string_lossy().into_owned()),
+            username: None,
+            socket_path: None,
+            tls: TlsConfig::default(),
+            ssh: None,
+            environment: EnvironmentKind::Local,
+            read_only: false,
+            color: None,
+            group: None,
+            tags: vec![],
+            notes: None,
+            favorite: false,
+            connect_timeout_secs: 5,
+            query_timeout_secs: None,
+            init_sql: None,
+            tunnel: None,
+        };
+        let conn = dbs_drivers::driver_for(Engine::Sqlite).unwrap().connect(&config, ConnectSecrets::default()).await.expect("sqlite connect");
+        Arc::new(Session { id: Uuid::new_v4(), config, conn: Arc::from(conn), _tunnel: None, owner: owner.into() })
+    }
+
+    #[tokio::test]
+    async fn closing_a_window_takes_only_its_own_sessions() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut map = HashMap::new();
+        for owner in ["main", "window-1", "window-1", "window-2"] {
+            let s = sqlite_session(dir.path(), owner).await;
+            map.insert(s.id, s);
+        }
+        let taken = take_owned(&mut map, "window-1");
+        assert_eq!(taken.len(), 2);
+        assert!(taken.iter().all(|s| s.owner == "window-1"));
+        assert_eq!(map.len(), 2);
+        assert!(map.values().all(|s| s.owner != "window-1"));
+        // The taken connections are real and can be closed; the others stay usable.
+        for s in taken {
+            s.conn.close().await.unwrap();
+        }
+        for s in map.values() {
+            s.conn.ping().await.unwrap();
+        }
+        assert!(take_owned(&mut map, "window-1").is_empty());
+        assert_eq!(take_owned(&mut map, "main").len(), 1);
+    }
 }

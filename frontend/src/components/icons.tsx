@@ -39,7 +39,10 @@ const P: Record<string, string> = {
   sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4',
   moon: 'M20 14.2A8 8 0 1 1 9.8 4a6.4 6.4 0 0 0 10.2 10.2z',
   monitor: 'M3 5h18v11H3zM8.5 20h7M12 16v4',
-  contrast: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18',
+  splitRight: 'M4 5h16v14H4zM12 5v14',
+  splitDown: 'M4 5h16v14H4zM4 12h16',
+  window: 'M3 6h14v12H3zM7 6V3h14v12h-4',
+  contrast:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 3v18',
 };
 
 export type IconName = keyof typeof P;

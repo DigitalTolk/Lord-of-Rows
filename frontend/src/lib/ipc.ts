@@ -24,6 +24,8 @@ async function call<R>(cmd: string, args?: Record<string, unknown>): Promise<R> 
 
 export const api = {
   appInfo: () => call<T.AppInfo>('app_info'),
+  /** Opens another app window (own tabs, own sessions); resolves to its label. */
+  openWindow: () => call<string>('open_window'),
   openPrivacySettings: (pane: 'local_network') => call<void>('open_privacy_settings', { pane }),
 
   listConnections: () => call<T.StoredConnection[]>('list_connections'),

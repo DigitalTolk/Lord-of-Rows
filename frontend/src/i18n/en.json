@@ -1,5 +1,7 @@
 {
   "app": { "name": "Lord of the Rows" },
+  "windows": { "new": "New window" },
+  "split": { "right": "Split editor right", "down": "Split editor down", "close": "Close split pane", "rotate": "Change split orientation", "pane": "Editor pane {{n}}", "resize": "Resize editor panes" },
   "common": {
     "save": "Save", "cancel": "Cancel", "delete": "Delete", "close": "Close", "refresh": "Refresh", "search": "Search",
     "connect": "Connect", "disconnect": "Disconnect", "test": "Test", "ok": "OK", "edit": "Edit", "duplicate": "Duplicate",

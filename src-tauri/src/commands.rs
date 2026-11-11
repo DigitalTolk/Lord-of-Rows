@@ -422,7 +422,13 @@ pub struct SessionOpened {
 }
 
 #[tauri::command]
-pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password: Option<String>, trust_host_key: Option<String>) -> R<SessionOpened> {
+pub async fn open_session(
+    window: tauri::WebviewWindow,
+    st: State<'_, AppState>,
+    connection_id: Uuid,
+    password: Option<String>,
+    trust_host_key: Option<String>,
+) -> R<SessionOpened> {
     let cfg = st.store.get_connection(connection_id)?;
     let secrets = resolve_secrets(&st, &cfg, password)?;
     let ssh_secrets = resolve_ssh_secrets(&st, &cfg, None, None)?;
@@ -442,7 +448,10 @@ pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password
             e.detail = Some(format!("trusted SSH host key {}", trust_host_key.clone().unwrap_or_default()))
         });
     }
-    st.sessions.lock().unwrap().insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn), _tunnel: tunnel }));
+    st.sessions
+        .lock()
+        .unwrap()
+        .insert(id, Arc::new(Session { id, config: cfg.clone(), conn: Arc::from(conn), _tunnel: tunnel, owner: window.label().to_string() }));
     st.store.touch_connection(cfg.id)?;
     audit(&st, Category::ConnectionOpened, Outcome::Success, Some(&cfg), |e| {
         e.session_id = Some(id.to_string());
@@ -452,8 +461,12 @@ pub async fn open_session(st: State<'_, AppState>, connection_id: Uuid, password
 }
 
 #[tauri::command]
-pub async fn close_session(st: State<'_, AppState>, session_id: String) -> R<()> {
+pub async fn close_session(window: tauri::WebviewWindow, st: State<'_, AppState>, session_id: String) -> R<()> {
     let s = st.session(&session_id)?;
+    // A window may only disconnect the sessions it opened.
+    if s.owner != window.label() {
+        return Err(DbError::new(ErrorKind::Permission, "session belongs to another window"));
+    }
     st.sessions.lock().unwrap().remove(&s.id);
     s.conn.close().await
 }
