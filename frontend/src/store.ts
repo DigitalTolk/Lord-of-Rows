@@ -3,7 +3,7 @@ import i18n from './i18n';
 import { api } from './lib/ipc';
 import { withHostKeyTrust } from './lib/hostkey';
 import { autoCheckForUpdates } from './lib/updates';
-import { currentWindowLabel, persistsWorkspace } from './lib/windows';
+import { closeCurrentWindow, currentWindowLabel, persistsWorkspace } from './lib/windows';
 import type { AppInfo, ObjectRef, SessionOpened, StoredConnection, TableTarget } from './lib/types';
 
 export type TabKind = 'query' | 'table' | 'structure' | 'diff' | 'audit' | 'monitor' | 'er' | 'settings' | 'import' | 'backup' | 'history' | 'dashboard';
@@ -78,6 +78,7 @@ interface State {
   /** Toggle a query tab's split. With `dir`, switch to that layout (or close the split if it is already in it). */
   toggleSplit(id: string, dir?: SplitDir): void;
   openWindow(): Promise<void>;
+  closeWindow(): Promise<void>;
   toast(kind: 'info' | 'error' | 'ok', text: string): void;
 }
 
@@ -249,6 +250,14 @@ export const useApp = create<State>((set, get) => ({
   async openWindow() {
     try {
       await api.openWindow();
+    } catch (e) {
+      get().toast('error', errMsg(e));
+    }
+  },
+
+  async closeWindow() {
+    try {
+      await closeCurrentWindow();
     } catch (e) {
       get().toast('error', errMsg(e));
     }

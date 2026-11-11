@@ -11,6 +11,7 @@ export const DEFAULT_KEYS = {
   toggleSidebar: 'Mod+B',
   newConnection: 'Mod+N',
   newWindow: 'Mod+Shift+N',
+  closeWindow: 'Mod+Shift+W',
   splitEditor: 'Mod+\\',
   focusMode: 'Mod+Shift+F',
 } as const;

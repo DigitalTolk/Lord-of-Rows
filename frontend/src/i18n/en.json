@@ -745,7 +745,8 @@
     "notTrusted": "SSH host key not trusted; connection cancelled."
   },
   "windows": {
-    "new": "New window"
+    "new": "New window",
+    "close": "Close window"
   },
   "split": {
     "right": "Split editor right",

@@ -163,8 +163,11 @@ describe('multiple windows', () => {
       assert.equal(await editorCount(), 2);
 
       // Close the second window: its session (and only its session) is disconnected.
+      // WebKitWebDriver's "close window" only drops its handle (the Tauri window gets no close
+      // event), so close it the way a user does: the app's Close Window command (Mod+Shift+W).
       await b.switchToWindow(second);
-      await b.closeWindow();
+      await b.execute(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'W', code: 'KeyW', ctrlKey: true, shiftKey: true, bubbles: true })));
+      await until(async () => (await b.getWindowHandles()).length === before.length, 'second window closed', 15000).catch(() => {});
       await b.switchToWindow(main);
       await until(async () => (await appBackends()) === base, 'second window session closed', 20000);
       await setPane(2, "select 'main-still-connected' as v");

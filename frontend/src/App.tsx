@@ -152,6 +152,7 @@ export default function App() {
       else if (is('toggleSidebar')) setSidebar((x) => !x);
       else if (is('newConnection')) useApp.setState({ connectionDialog: {} });
       else if (is('newWindow')) void st.openWindow();
+      else if (is('closeWindow')) void st.closeWindow();
       else if (is('splitEditor') && (tabs[cur] ?? tabs[0])?.kind === 'query') st.toggleSplit((tabs[cur] ?? tabs[0]).id);
       else if (is('focusMode')) void st.setSetting('workspace.focus', !st.settings['workspace.focus']);
       else handled = false;

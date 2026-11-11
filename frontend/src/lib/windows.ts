@@ -18,6 +18,11 @@ export function currentWindowLabel(): string {
  * Session restore is per app launch and only for the main window: secondary
  * windows start empty and never overwrite the main window's saved tabs.
  */
+/** Closes this window the same way the title-bar button does; the backend then disconnects its sessions. */
+export async function closeCurrentWindow(): Promise<void> {
+  await getCurrentWindow().close();
+}
+
 export const persistsWorkspace = (label: string) => label === MAIN_WINDOW;
 
 export function windowTitle(app: string, connection?: string | null): string {

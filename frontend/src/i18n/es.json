@@ -768,7 +768,8 @@
     "notTrusted": "No se confió en la clave del host SSH; conexión cancelada."
   },
   "windows": {
-    "new": "Nueva ventana"
+    "new": "Nueva ventana",
+    "close": "Cerrar ventana"
   },
   "split": {
     "right": "Dividir el editor a la derecha",

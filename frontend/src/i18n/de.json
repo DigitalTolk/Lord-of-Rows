@@ -745,7 +745,8 @@
     "notTrusted": "SSH-Hostschlüssel nicht vertraut; Verbindung abgebrochen."
   },
   "windows": {
-    "new": "Neues Fenster"
+    "new": "Neues Fenster",
+    "close": "Fenster schließen"
   },
   "split": {
     "right": "Editor rechts teilen",
