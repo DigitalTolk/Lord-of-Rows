@@ -50,6 +50,7 @@ Test platform for everything below: **Linux (Debian bookworm, arm64) in Docker**
 | Monaco SQL editor, autocomplete, format, run current/selection/all | TESTED (run/all); others IMPLEMENTED_UNVERIFIED | E2E |
 | Query cancel, timeouts | TESTED | IT + E2E cancel |
 | Multiple result sets, messages, notices, SQLSTATE errors | TESTED | E2E |
+| Streaming results in the SQL editor (batched rows over a Tauri Channel, first batch 500 rows, ack-based flow control, `query.maxRows` cap with truncated flag, Stop cancels) | SQLite TESTED; Postgres / MySQL / MariaDB IMPLEMENTED_UNVERIFIED (IT written, not yet run in the Docker regression); UI IMPLEMENTED_UNVERIFIED (E2E perf records first-rows time, no dedicated assertion) | IT `streaming.rs` (`sqlite_streaming`, `postgres_streaming`, `mysql_streaming`, `mariadb_streaming`), UT `dbs-core::stream` (6), UT `commands::tests` (shared safety gate / audit / ack window, 6), vitest `lib/stream.test.ts` (8) |
 | Virtualized grid, PK-ordered paging, sort, filters | TESTED (paging); sort/filter IMPLEMENTED_UNVERIFIED (backend UT) | E2E, UT `page_query_is_parameterised` |
 | Staged edits, SQL review, commit, optimistic-concurrency conflicts | TESTED | E2E edit/commit/conflict, IT `crud_scenario` |
 | Structure view + designer (DDL preview, reversibility) | TESTED (view), designer UT | E2E Structure/DDL, UT `dbs-schema` |

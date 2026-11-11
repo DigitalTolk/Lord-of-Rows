@@ -188,6 +188,66 @@ fn run_script(c: &Connection, sql: &str, opts: &ExecOptions) -> DbResult<Vec<Sta
     Ok(out)
 }
 
+/// Streaming counterpart of [`run_script`]: steps rows on the blocking thread
+/// and hands them to `sink`, which blocks while the consumer is behind.
+fn stream_script(c: &Connection, sql: &str, sink: &mut RowSink) -> DbResult<()> {
+    let stmts = dbs_safety::split_statements(sql, Dialect::Sqlite);
+    for (idx, st) in stmts.iter().enumerate() {
+        stream_statement(c, idx, &st.text, sink).map_err(|mut e| {
+            if stmts.len() > 1 && e.kind != ErrorKind::Cancelled {
+                e.message = format!("statement {} failed: {}", idx + 1, e.message);
+            }
+            e
+        })?;
+    }
+    Ok(())
+}
+
+fn stream_statement(c: &Connection, idx: usize, text: &str, sink: &mut RowSink) -> DbResult<()> {
+    if sink.is_cancelled() {
+        return Err(DbError::new(ErrorKind::Cancelled, "query cancelled"));
+    }
+    let t = Instant::now();
+    let mut stmt = c.prepare(text).map_err(map_err)?;
+    let ncols = stmt.column_count();
+    if ncols == 0 {
+        let n = stmt.execute([]).map_err(map_err)?;
+        sink.end_statement_blocking(StatementSummary {
+            statement_index: idx,
+            sql_excerpt: excerpt(text),
+            rows_affected: Some(n as u64),
+            duration_ms: elapsed_ms(t),
+            notices: vec![],
+        })?;
+        return Ok(());
+    }
+    let cols: Vec<ColumnMeta> = stmt
+        .columns()
+        .map(|col| ColumnMeta { name: col.name().to_string(), type_name: col.decl_type().unwrap_or("").to_string(), nullable: None, table: None })
+        .collect();
+    let decls: Vec<Option<String>> = stmt.columns().map(|c| c.decl_type().map(String::from)).collect();
+    sink.begin_result_blocking(idx, excerpt(text), cols)?;
+    let mut rows = stmt.query([]).map_err(map_err)?;
+    while let Some(r) = rows.next().map_err(map_err)? {
+        if sink.is_full() {
+            // SQLite computes rows lazily: stop stepping instead of draining.
+            sink.mark_truncated();
+            break;
+        }
+        let row = (0..ncols).map(|i| r.get_ref(i).map(|v| sqlite_value(v, decls[i].as_deref())).unwrap_or(Value::Null)).collect();
+        sink.push_row_blocking(row)?;
+    }
+    drop(rows);
+    let changes = c.changes();
+    sink.end_statement_blocking(StatementSummary {
+        statement_index: idx,
+        sql_excerpt: excerpt(text),
+        rows_affected: (changes > 0 && !text.trim_start().to_ascii_uppercase().starts_with("SELECT")).then_some(changes),
+        duration_ms: elapsed_ms(t),
+        notices: vec![],
+    })
+}
+
 fn query_rows(c: &Connection, sql: &str, params: &[Value], max: usize) -> DbResult<ResultSet> {
     let mut stmt = c.prepare(sql).map_err(map_err)?;
     let ps = params.iter().map(to_sqlite).collect::<DbResult<Vec<_>>>()?;
@@ -421,6 +481,13 @@ impl DatabaseConnection for SqliteConnection {
         let o = opts.clone();
         let ih = self.interrupt.clone();
         let fut = self.with(move |c| run_script(c, &sql, &o));
+        guarded(fut, cancel, opts.timeout_ms, || async move { ih.interrupt() }).await
+    }
+
+    async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
+        let sql = sql.to_string();
+        let ih = self.interrupt.clone();
+        let fut = self.with(move |c| stream_script(c, &sql, &mut sink));
         guarded(fut, cancel, opts.timeout_ms, || async move { ih.interrupt() }).await
     }
 

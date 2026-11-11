@@ -75,6 +75,18 @@ pub trait DatabaseConnection: Send + Sync {
     /// policy has already been applied by the caller.
     async fn execute(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken) -> DbResult<Vec<StatementResult>>;
 
+    /// Like [`Self::execute`], but delivers rows incrementally through `sink`
+    /// (batched, capped at the sink's `max_rows` per result set, with
+    /// backpressure). The safety policy has already been applied by the caller.
+    /// The default materialises via `execute` and replays; engines with a
+    /// cursor/stream API override it.
+    async fn execute_stream(&self, sql: &str, opts: &ExecOptions, cancel: CancellationToken, mut sink: RowSink) -> DbResult<()> {
+        let mut o = opts.clone();
+        o.max_rows = sink.max_rows();
+        let results = self.execute(sql, &o, cancel).await?;
+        sink.replay(results).await
+    }
+
     /// Execute one application-generated parameterised statement.
     async fn execute_params(&self, stmt: &GeneratedStatement) -> DbResult<u64>;
 

@@ -35,7 +35,8 @@
     "snippets": "Snippets", "running": "Running…", "rowsAffected": "{{n}} rows affected", "rowsReturned": "{{n}} rows",
     "truncated": "Result limited to {{n}} rows", "noResults": "Run a query to see results", "messages": "Messages", "duration": "{{ms}} ms",
     "grid": "Grid", "json": "JSON", "text": "Text", "chart": "Chart", "record": "Record", "statement": "Statement {{n}}",
-    "snippetName": "Snippet name", "export": "Export results"
+    "snippetName": "Snippet name", "export": "Export results",
+    "loadingRows": "Loading… {{n}} rows", "completedIn": "Completed in {{ms}} ms", "cancelledAfter": "Cancelled after {{ms}} ms"
   },
   "safety": {
     "title": "Review before running", "blocked": "Blocked by safety policy", "productionBanner": "PRODUCTION — changes affect live data",

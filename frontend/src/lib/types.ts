@@ -94,6 +94,8 @@ export interface StatementResult {
   rows_affected?: number | null;
   duration_ms: number;
   notices: string[];
+  /** Rows are still arriving (streaming run). */
+  streaming?: boolean;
 }
 
 export type ObjectKind =

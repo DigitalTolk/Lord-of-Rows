@@ -9,13 +9,16 @@ import { ask } from '../components/ask';
 import { ErrorBox, Spinner } from '../components/ui';
 import { Icon } from '../components/icons';
 import { api, IpcError } from '../lib/ipc';
+import { runStream } from '../lib/stream';
 import { monaco, registerSqlCompletion, setCompletionSource, useEditorTheme } from '../lib/monaco';
 import { formatters, usePlugins } from '../lib/plugins';
 import { DEFAULT_KEYS, displayCombo } from '../lib/keys';
 import { family } from '../lib/sqlgen';
 import { displayValue } from '../lib/value';
-import type { StatementResult } from '../lib/types';
+import type { DbError, StatementResult } from '../lib/types';
 import { errMsg, useApp, type Tab } from '../store';
+
+const dbErrorText = (e: DbError) => `${e.message}${e.code ? ` [${e.code}]` : ''}${e.hint ? `\nHint: ${e.hint}` : ''}`;
 
 const formatterLang = (e: string) => (family(e as never) === 'pg' ? 'postgresql' : family(e as never) === 'mysql' ? 'mysql' : family(e as never) === 'sqlite' ? 'sqlite' : family(e as never) === 'mssql' ? 'transactsql' : 'sql');
 
@@ -27,6 +30,8 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
   const s = tab.sessionId ? sessions[tab.sessionId] : undefined;
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const [running, setRunning] = useState<string | null>(null);
+  const [runId, setRunId] = useState('');
+  const [streamedRows, setStreamedRows] = useState(0);
   const [results, setResults] = useState<StatementResult[]>([]);
   const [messages, setMessages] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +97,7 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
       setMessages([]);
       const queryId = crypto.randomUUID();
       setRunning(queryId);
+      setStreamedRows(0);
       try {
         // Backend evaluates the safety policy; confirm if required, then run with the token.
         const ev = await api.evaluateSql(s.session_id, sql);
@@ -103,13 +109,25 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
           token = c.token;
           typed = c.typed;
         }
-        const r = await api.runSql({ session_id: s.session_id, sql, query_id: queryId, confirm_token: token, typed_confirmation: typed ?? null });
+        // Rows stream in batches; the grid is usable while they arrive.
+        setResults([]);
+        setRunId(queryId);
+        const r = await runStream({
+          start: (onMessage) => api.runSqlStream({ session_id: s.session_id, sql, query_id: queryId, confirm_token: token, typed_confirmation: typed ?? null }, onMessage),
+          ack: (seq) => void api.ackQueryStream(queryId, seq).catch(() => undefined),
+          onUpdate: (snap, n) => {
+            setResults(snap);
+            setStreamedRows(n);
+          },
+        });
         setResults(r.results);
-        setMessages([`Completed in ${r.duration_ms} ms`]);
+        setStreamedRows(r.rowCount);
+        setMessages([r.cancelled ? t('query.cancelledAfter', { ms: r.duration_ms }) : t('query.completedIn', { ms: r.duration_ms })]);
         // Refresh the object tree after DDL.
         if (ev.statements.some((x) => ['CREATE', 'ALTER', 'DROP', 'RENAME'].includes(x.verb))) void useApp.getState().loadObjects(s.session_id, s.activeSchema);
+        if (r.error) throw new IpcError(r.error);
       } catch (e) {
-        const msg = e instanceof IpcError ? `${e.err.message}${e.err.code ? ` [${e.err.code}]` : ''}${e.err.hint ? `\nHint: ${e.err.hint}` : ''}` : errMsg(e);
+        const msg = e instanceof IpcError ? dbErrorText(e.err) : errMsg(e);
         setError(msg);
         // Highlight "at character N" positions.
         const m = /at character (\d+)/.exec(msg);
@@ -121,7 +139,7 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
         setRunning(null);
       }
     },
-    [s, isRedis],
+    [s, isRedis, t],
   );
 
   const cancel = () => {
@@ -170,6 +188,7 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
           rs = await api.explainSql(s.session_id, sql.trim().replace(/;$/, ''), true, c.token, c.typed);
         } else throw e;
       }
+      setRunId(crypto.randomUUID());
       setResults([{ statement_index: 0, sql_excerpt: analyze ? 'EXPLAIN ANALYZE' : 'EXPLAIN', result: rs, duration_ms: 0, notices: [] }]);
     } catch (e) {
       setError(errMsg(e));
@@ -235,7 +254,7 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
         <button className="btn btn-primary h-6 px-2" onClick={() => run('selection')} disabled={!s || !!running} title="Run selection or current statement (⌘/Ctrl+Enter)"><Icon name="play" size={12} fill="currentColor" /> {t('query.run')}</button>
         <button className="btn h-6 px-2" onClick={() => run('all')} disabled={!s || !!running} title="⌘/Ctrl+Shift+Enter">{t('query.runAll')}</button>
         <button className="icon-btn h-6 w-6" onClick={cancel} disabled={!running} title={`${t('query.cancel')} (⌘/Ctrl+.)`} aria-label={t('query.cancel')}><Icon name="stop" size={13} /></button>
-        {running && <Spinner label={t('query.running')} />}
+        {running && <Spinner label={streamedRows > 0 ? t('query.loadingRows', { n: streamedRows.toLocaleString() }) : t('query.running')} />}
         {!isRedis && (
           <>
             <span className="mx-1 h-4 border-l border-border" />
@@ -312,7 +331,14 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
           onMouseDown={startDrag}
           onKeyDown={(e) => { if (e.key === 'ArrowUp') setSplit((x) => Math.max(0.15, x - 0.05)); if (e.key === 'ArrowDown') setSplit((x) => Math.min(0.85, x + 0.05)); }} />
         <div className="min-h-0 flex-1">
-          {error ? <div className="p-2"><ErrorBox error={error} /></div> : <Results results={results} messages={messages} />}
+          {error && !results.length ? (
+            <div className="p-2"><ErrorBox error={error} /></div>
+          ) : (
+            <div className="flex h-full min-h-0 flex-col">
+              {error && <div className="shrink-0 p-2"><ErrorBox error={error} /></div>}
+              <div className="min-h-0 flex-1"><Results results={results} messages={messages} runId={runId} /></div>
+            </div>
+          )}
         </div>
       </div>
       {aiEnabled && aiOpen && !isRedis && <AiPanel session={s} sources={{ sql: editorSql, error, plan: lastPlan }} onInsert={insertSql} onClose={() => setAiOpen(false)} />}
