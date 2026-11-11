@@ -85,7 +85,7 @@ jobs:
   macos-unsigned:
     # Unsigned universal build (no signing secrets in CI by design).
     needs: [rust, frontend]
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
