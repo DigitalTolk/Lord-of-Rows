@@ -57,6 +57,14 @@ export interface StoredConnection {
   sort: number;
 }
 
+/** Connection-list group metadata (dbs-store). Membership is `ConnectionConfig.group`. */
+export interface ConnectionGroup {
+  name: string;
+  color?: string | null;
+  collapsed: boolean;
+  sort: number;
+}
+
 export type Value =
   | { t: 'null' }
   | { t: 'bool'; v: boolean }

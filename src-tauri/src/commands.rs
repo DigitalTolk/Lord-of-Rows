@@ -6,7 +6,7 @@ use dbs_audit::{AuditEntry, AuditFilter, Category, NewEvent, Outcome, VerifyRepo
 use dbs_core::*;
 use dbs_safety::{Classified, Decision, Evaluation, Risk};
 use dbs_secrets::{SecretKind, SecretStore};
-use dbs_store::{Document, HistoryEntry, Snippet, StoredConnection};
+use dbs_store::{ConnectionGroup, Document, HistoryEntry, Snippet, StoredConnection};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tokio_util::sync::CancellationToken;
@@ -145,6 +145,40 @@ pub fn delete_connection(st: State<'_, AppState>, id: Uuid) -> R<()> {
 #[tauri::command]
 pub fn reorder_connections(st: State<'_, AppState>, ids: Vec<Uuid>) -> R<()> {
     st.store.reorder_connections(&ids)
+}
+
+// Connection-list groups. Membership is the connection's `group` field; the
+// store keeps per-group order, colour and collapsed state.
+
+#[tauri::command]
+pub fn list_connection_groups(st: State<'_, AppState>) -> R<Vec<ConnectionGroup>> {
+    st.store.list_groups()
+}
+
+#[tauri::command]
+pub fn save_connection_group(st: State<'_, AppState>, group: ConnectionGroup) -> R<ConnectionGroup> {
+    st.store.save_group(&group)
+}
+
+#[tauri::command]
+pub fn rename_connection_group(st: State<'_, AppState>, from: String, to: String) -> R<()> {
+    st.store.rename_group(&from, &to)
+}
+
+/// Deletes the group only; its connections become ungrouped. Returns how many moved.
+#[tauri::command]
+pub fn delete_connection_group(st: State<'_, AppState>, name: String) -> R<usize> {
+    st.store.delete_group(&name)
+}
+
+#[tauri::command]
+pub fn reorder_connection_groups(st: State<'_, AppState>, names: Vec<String>) -> R<()> {
+    st.store.reorder_groups(&names)
+}
+
+#[tauri::command]
+pub fn set_connection_group(st: State<'_, AppState>, id: Uuid, group: Option<String>) -> R<ConnectionConfig> {
+    st.store.set_connection_group(id, group.as_deref())
 }
 
 fn resolve_secrets(st: &AppState, cfg: &ConnectionConfig, override_pw: Option<String>) -> R<ConnectSecrets> {
