@@ -62,7 +62,8 @@ export function ImportConnectionsDialog({ onClose }: { onClose: () => void }) {
       const p = await api.importConnectionsPreview(req);
       setPreview(p);
       setSel(defaultSelection(p.rows));
-      setOpts((o) => ({ ...o, import_passwords: false }));
+      // Nothing is read from another app's keychain until first connect, so bringing passwords along is the default.
+      setOpts((o) => ({ ...o, import_passwords: true }));
       setStep('preview');
     } catch (e) {
       setError(errMsg(e));
@@ -288,6 +289,7 @@ function ResultStep({ result }: { result: ConnImportResult }) {
       <p className="font-medium">{t('importConn.imported', { count: result.imported.length })}</p>
       {result.groups_created > 0 && <p>{t('importConn.groupsCreated', { count: result.groups_created })}</p>}
       {result.passwords_imported > 0 && <p>{t('importConn.passwordsImported', { count: result.passwords_imported })}</p>}
+      {result.passwords_deferred > 0 && <p>{t('importConn.passwordsDeferred', { count: result.passwords_deferred })}</p>}
       {result.failed.length > 0 && (
         <section>
           <h3 className="label">{t('importConn.failed', { count: result.failed.length })}</h3>

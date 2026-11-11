@@ -44,7 +44,7 @@ const api = vi.hoisted(() => ({
   }),
   importConnectionsApply: vi.fn(async (...args: unknown[]) => {
     void args;
-    return { imported: [{ key: 'a', id: 'n1' }], failed: [], passwords_imported: 1, password_errors: [], groups_created: 1 };
+    return { imported: [{ key: 'a', id: 'n1' }], failed: [], passwords_imported: 1, passwords_deferred: 0, password_errors: [], groups_created: 1 };
   }),
   pickFile: vi.fn(async () => null),
   listConnections: vi.fn(async () => []),
@@ -90,9 +90,8 @@ describe('ImportConnectionsDialog', () => {
     expect(screen.getByText('Will skip: host is required')).toBeTruthy();
     expect(screen.getAllByText('db.example.com:5432 : app', { selector: 'td' }).length).toBe(4);
 
-    const pw = screen.getByRole('checkbox', { name: /Also import saved passwords from the macOS Keychain/ }) as HTMLInputElement;
-    expect(pw.checked).toBe(false); // opt-in
-    fireEvent.click(pw);
+    const pw = screen.getByRole('checkbox', { name: /Bring saved passwords from the macOS Keychain/ }) as HTMLInputElement;
+    expect(pw.checked).toBe(true); // on by default: nothing is read until first connect
     fireEvent.click(box('Orders'));
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Import 2 connections' }));

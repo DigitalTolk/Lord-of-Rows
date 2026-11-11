@@ -985,7 +985,24 @@
     "deleteGroupConfirm_one": "Gruppe „{{name}}“ löschen? Ihre {{count}} Verbindung wird nach „Ohne Gruppe“ verschoben. Es wird keine Verbindung gelöscht.",
     "deleteGroupConfirm_other": "Gruppe „{{name}}“ löschen? Ihre {{count}} Verbindungen werden nach „Ohne Gruppe“ verschoben. Es wird keine Verbindung gelöscht.",
     "groupCount_one": "{{count}} Verbindung",
-    "groupCount_other": "{{count}} Verbindungen"
+    "groupCount_other": "{{count}} Verbindungen",
+    "select": "Verbindungen auswählen",
+    "selectionToolbar": "Auswahl",
+    "selectAll": "Alle auswählen",
+    "selectAllShown": "Alle angezeigten auswählen",
+    "selectDone": "Fertig",
+    "selectedCount_one": "{{count}} ausgewählt",
+    "selectedCount_other": "{{count}} ausgewählt",
+    "deleteManyTitle_one": "{{count}} Verbindung löschen",
+    "deleteManyTitle_other": "{{count}} Verbindungen löschen",
+    "deleteManyConfirm_one": "{{count}} Verbindung löschen? Gespeicherte Passwörter werden ebenfalls entfernt. Das kann nicht rückgängig gemacht werden.",
+    "deleteManyConfirm_other": "{{count}} Verbindungen löschen? Gespeicherte Passwörter werden ebenfalls entfernt. Das kann nicht rückgängig gemacht werden.",
+    "deleteManyProd_one": "{{count}} davon ist eine Produktionsverbindung.",
+    "deleteManyProd_other": "{{count}} davon sind Produktionsverbindungen.",
+    "deletedMany_one": "{{count}} Verbindung gelöscht",
+    "deletedMany_other": "{{count}} Verbindungen gelöscht",
+    "deleteManyFailed_one": "{{count}} Verbindung konnte nicht gelöscht werden",
+    "deleteManyFailed_other": "{{count}} Verbindungen konnten nicht gelöscht werden"
   },
   "filter": {
     "title": "Filter",
@@ -1141,8 +1158,8 @@
     "keepGroups": "Gruppen übernehmen (bei Bedarf anlegen)",
     "keepEnv": "Umgebungs-Tags übernehmen",
     "keepEnvHint": "Produktionsverbindungen bleiben Produktion, damit die Sicherheitsregeln für Produktion gelten.",
-    "passwordsKeychain": "Auch gespeicherte Passwörter aus dem macOS-Schlüsselbund importieren",
-    "passwordsKeychainHint": "macOS fragt für jedes gespeicherte Passwort um Erlaubnis. Passwörter werden direkt im Schlüsselbund dieser App gespeichert und nie angezeigt.",
+    "passwordsKeychain": "Gespeicherte Passwörter aus dem macOS-Schlüsselbund übernehmen",
+    "passwordsKeychainHint": "Jetzt wird nichts gelesen. Beim ersten Verbinden mit einer importierten Verbindung fragt macOS einmal nach diesem einen Passwort; danach liegt es im Schlüsselbund dieser App. Passwörter werden nie angezeigt.",
     "passwordsIncluded": "In den URLs enthaltene Passwörter importieren",
     "noPasswords": "Passwörter werden aus {{source}} nicht importiert; geben Sie sie beim ersten Verbinden ein.",
     "imported_one": "{{count}} Verbindung importiert",
@@ -1154,7 +1171,9 @@
     "failed_one": "{{count}} konnte nicht importiert werden",
     "failed_other": "{{count}} konnten nicht importiert werden",
     "passwordErrors_one": "{{count}} Passwort konnte nicht importiert werden",
-    "passwordErrors_other": "{{count}} Passwörter konnten nicht importiert werden"
+    "passwordErrors_other": "{{count}} Passwörter konnten nicht importiert werden",
+    "passwordsDeferred_one": "{{count}} gespeichertes Passwort wird beim ersten Verbinden geholt",
+    "passwordsDeferred_other": "{{count}} gespeicherte Passwörter werden jeweils beim ersten Verbinden geholt"
   },
   "redis": {
     "databases": "Datenbanken",

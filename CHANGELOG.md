@@ -1,8 +1,13 @@
 # Changelog
 
 ## Unreleased
+<<<<<<< HEAD
 - Access requests: request time-limited database access from an access-management provider without leaving the app. Add a provider (first one: passhub), sign in through the browser (single sign-on, PKCE + loopback redirect; the session token stays in the OS keychain), pick a database grouped by environment, choose read-only or read & write and the databases, give a reason, and follow the request (waiting for your manager → provisioning with a live log → ready). **Connect** fetches the password once into the keychain and opens the connection; later connects reuse it. Approvers get an Approvals inbox (approve / reject with a reason). Saved connections show a key badge with the time left, warn 15 minutes before the access ends, and when it ends (or the request is revoked) the password is wiped and the connection is marked "Expired — request again". Providers plug in through a provider-neutral interface (`crates/dbs-access`).
 - Access requests, continued: Active / Pending / History filters with search and environment chips; an Approvals "Decided" tab; a request detail drawer (timeline, provisioning log, reveals left, copyable connection details); optional ticket references; one-click "Request again"; expiry banners in the workspace (15 and 5 minutes) and a graceful "Access ended" state that keeps your tabs; a Dock badge, "Review" toasts and multi-select approve for approvers; command palette entries; preconfigured providers (`providers.json`) and `lordoftherows://access` links for company rollout.
+=======
+- Import: saved passwords from another app's keychain (TablePlus) are no longer read during import, which made macOS ask once per connection. Each is read the first time you connect to that connection (one prompt), then kept in this app's keychain. Bringing passwords along is now on by default.
+- Connection list: Select mode (checkbox button next to New group) with Select all / Select all shown, ⌘A and a bulk Delete with one confirmation that counts production connections.
+>>>>>>> fix/import-keychain-prompts
 
 ## 0.1.2
 - Redis key browser: logical databases (db0, db1, …) as schemas with key counts (sidebar, schema rail, Open database picker); a lazily expanded namespace tree (configurable separator, bounded SCAN batches with "Load more"); a SCAN-paged key grid (key, type, TTL, size, value preview) with a server-side Key pattern; values by type (string/JSON, hash, list, set, sorted set, stream, JSON documents) paged in the detail panel; staged key edits (set, TTL, rename, delete, field/member add/remove) previewed as commands and committed through the safety policy. `KEYS` is never used.

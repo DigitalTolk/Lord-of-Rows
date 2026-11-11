@@ -275,7 +275,7 @@ export interface ConnImportRow {
 export interface ConnImportPreview { preview_id: string; source: ConnImportSource; label: string; passwords_supported: boolean; rows: ConnImportRow[] }
 export interface ConnImportOptions { keep_groups: boolean; keep_environment: boolean; import_passwords: boolean }
 export interface ConnImportError { key: string; name: string; error: string }
-export interface ConnImportResult { imported: { key: string; id: string }[]; failed: ConnImportError[]; passwords_imported: number; password_errors: ConnImportError[]; groups_created: number }
+export interface ConnImportResult { imported: { key: string; id: string }[]; failed: ConnImportError[]; passwords_imported: number; passwords_deferred: number; password_errors: ConnImportError[]; groups_created: number }
 
 // AI assistant (optional, disabled by default). Prompts are built and redacted in Rust.
 export type AiTask = 'explain_sql' | 'generate_sql' | 'optimize_sql' | 'explain_error' | 'explain_plan' | 'suggest_indexes' | 'summarize_schema';

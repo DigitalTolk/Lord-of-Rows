@@ -17,6 +17,7 @@ vi.mock('../lib/ipc', () => ({
     deleteConnectionGroup: vi.fn(async () => 1),
     reorderConnectionGroups: vi.fn(async () => undefined),
     setConnectionGroup: vi.fn(async () => ({})),
+    deleteConnection: vi.fn(async () => undefined),
   },
   IpcError: class extends Error {},
 }));
@@ -169,5 +170,38 @@ describe('ConnectionList', () => {
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
     });
     expect(api.saveConnectionGroup).toHaveBeenCalledWith({ name: 'Clients', color: null, collapsed: false, sort: 0 });
+  });
+
+  it('selects all shown connections and deletes them after one confirmation', async () => {
+    await renderList();
+    fireEvent.click(screen.getByRole('button', { name: 'Select connections' }));
+    expect(screen.getByRole('listbox').getAttribute('aria-multiselectable')).toBe('true');
+    // Clicking a row toggles it instead of selecting it for connect.
+    fireEvent.click(screen.getByRole('option', { name: /Scratch/ }));
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(screen.getByText('1 selected')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all' }));
+    expect(screen.getByText('4 selected')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText(/Delete 4 connections\? .*1 of them is a production connection/)).toBeTruthy();
+    expect(api.deleteConnection).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    });
+    expect((api.deleteConnection as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]).sort()).toEqual(['Old', 'Orders', 'Reports', 'Scratch']);
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull();
+  });
+
+  it('"select all" respects the search filter, and Escape leaves selection mode', async () => {
+    await renderList();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'or' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Select connections' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select all shown' }));
+    const shown = screen.getAllByRole('option').length;
+    expect(screen.getByText(`${shown} selected`)).toBeTruthy();
+    expect(shown).toBeLessThan(connections.length);
+    fireEvent.keyDown(screen.getAllByRole('option')[0], { key: 'Escape' });
+    expect(screen.queryByRole('toolbar', { name: 'Selection' })).toBeNull();
+    expect(api.deleteConnection).not.toHaveBeenCalled();
   });
 });

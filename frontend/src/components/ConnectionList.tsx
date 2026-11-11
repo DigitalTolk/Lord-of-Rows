@@ -54,6 +54,10 @@ export function ConnectionList({
   const [menu, setMenu] = useState<Menu | null>(null);
   const [dragging, setDragging] = useState(false);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  // Multi-select mode (bulk delete): `picked` holds connection ids.
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
   const loadGroups = useCallback(async () => {
@@ -75,6 +79,58 @@ export function ConnectionList({
   const expanded = useCallback((g: ConnectionGroup) => filtering || !g.collapsed, [filtering]);
   const nav = useMemo(() => navItems(sections, expanded), [sections, expanded]);
   const byId = useMemo(() => new Map(connections.map((c) => [c.config.id, c])), [connections]);
+  /** Connections the current search / environment filter shows (collapsed groups included). */
+  const visibleIds = useMemo(() => sections.flatMap((s) => s.items.map((c) => c.config.id)), [sections]);
+  // Forget picks for connections that no longer exist.
+  useEffect(() => {
+    setPicked((p) => {
+      const next = new Set([...p].filter((id) => byId.has(id)));
+      return next.size === p.size ? p : next;
+    });
+  }, [byId]);
+  const pickedVisible = visibleIds.filter((id) => picked.has(id)).length;
+  const allPicked = visibleIds.length > 0 && pickedVisible === visibleIds.length;
+  const togglePick = (id: string) =>
+    setPicked((p) => {
+      const next = new Set(p);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setPicked((p) => {
+      const next = new Set(p);
+      if (allPicked) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  const exitSelecting = () => {
+    setSelecting(false);
+    setPicked(new Set());
+  };
+  const deletePicked = async () => {
+    const ids = [...picked].filter((id) => byId.has(id));
+    if (ids.length === 0) return;
+    const prod = ids.filter((id) => byId.get(id)!.config.environment === 'production').length;
+    const msg = t('connList.deleteManyConfirm', { count: ids.length, formatted: fmtNumber(ids.length) }) + (prod > 0 ? ' ' + t('connList.deleteManyProd', { count: prod, formatted: fmtNumber(prod) }) : '');
+    if (!(await ask.confirm(t('connList.deleteManyTitle', { count: ids.length, formatted: fmtNumber(ids.length) }), msg, true))) return;
+    setDeleting(true);
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        await api.deleteConnection(id);
+      } catch {
+        failed++;
+      }
+    }
+    setDeleting(false);
+    await reloadConnections();
+    const done = ids.length - failed;
+    if (failed > 0) toast('error', t('connList.deleteManyFailed', { count: failed, formatted: fmtNumber(failed) }));
+    if (done > 0) toast('ok', t('connList.deletedMany', { count: done, formatted: fmtNumber(done) }));
+    exitSelecting();
+  };
+
   const groupByName = (name: string) => sections.find((s) => s.group?.name === name)?.group ?? groups.find((g) => g.name === name);
 
   const activeKey = (focusKey && nav.some((n) => navKey(n) === focusKey) ? focusKey : null) ?? (sel && nav.some((n) => n.kind === 'conn' && n.id === sel) ? `c:${sel}` : null) ?? (nav[0] ? navKey(nav[0]) : null);
@@ -243,6 +299,16 @@ export function ConnectionList({
 
   // ---- keyboard ----
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (selecting && !menu) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        return exitSelecting();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        return setPicked((p) => new Set([...p, ...visibleIds]));
+      }
+    }
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-nav]');
     if (!el || menu) return;
     const i = nav.findIndex((n) => navKey(n) === el.dataset.nav);
@@ -283,6 +349,7 @@ export function ConnectionList({
       case ' ':
         handled();
         if (g) return toggle(g);
+        if (n.kind === 'conn' && selecting) return togglePick(n.id);
         if (n.kind === 'conn' && e.key === 'Enter') return onConnect(n.id);
         return;
       case 'ContextMenu':
@@ -303,7 +370,8 @@ export function ConnectionList({
 
   const row = (c: StoredConnection, group: string | null) => {
     const cfg = c.config;
-    const active = sel === cfg.id;
+    const isPicked = selecting && picked.has(cfg.id);
+    const active = selecting ? isPicked : sel === cfg.id;
     const key = `c:${cfg.id}`;
     const prod = cfg.environment === 'production';
     const sub = connectionSubtitle(cfg);
@@ -317,7 +385,7 @@ export function ConnectionList({
         data-nav={key}
         data-env={cfg.environment}
         data-expired={expired || undefined}
-        draggable
+        draggable={!selecting}
         onDragStart={(e) => {
           e.dataTransfer.setData(DND_TYPE, cfg.id);
           e.dataTransfer.effectAllowed = 'move';
@@ -330,10 +398,14 @@ export function ConnectionList({
         onFocus={() => setFocusKey(key)}
         onClick={() => {
           setFocusKey(key);
+          if (selecting) return togglePick(cfg.id);
           onSelect(cfg.id);
         }}
-        onDoubleClick={() => onConnect(cfg.id)}
+        onDoubleClick={() => {
+          if (!selecting) onConnect(cfg.id);
+        }}
         onContextMenu={(e) => {
+          if (selecting) return e.preventDefault();
           setFocusKey(key);
           onSelect(cfg.id);
           openMenuAt(e, { kind: 'conn', c });
@@ -342,6 +414,15 @@ export function ConnectionList({
           prod ? 'border-danger-solid' : 'border-transparent'
         } ${active ? 'row-selected' : prod ? 'bg-danger/5 hover:bg-danger/10' : 'hover:bg-hover'}`}
       >
+        {selecting && (
+          <span
+            aria-hidden
+            data-testid="conn-pick"
+            className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${isPicked ? 'border-on-solid bg-on-solid/20 text-on-solid' : 'border-border bg-bg'}`}
+          >
+            {isPicked && <Icon name="check" size={12} strokeWidth={3} />}
+          </span>
+        )}
         <div className="relative shrink-0">
           <EngineBadge engine={cfg.engine} size={34} dim={expired} />
           {cfg.color && <span className="absolute -bottom-0.5 -end-0.5 h-2.5 w-2.5 rounded-full border-2 border-bg" style={{ background: cfg.color }} />}
@@ -360,7 +441,7 @@ export function ConnectionList({
             {sub || ' '}
           </div>
         </div>
-        {busy === cfg.id ? (
+        {selecting ? null : busy === cfg.id ? (
           <Spinner />
         ) : (
           // Mouse shortcut only: axe rejects any button (even tabIndex -1) inside role=option;
@@ -397,7 +478,43 @@ export function ConnectionList({
           <button className="icon-btn" aria-label={t('connList.newGroup')} title={t('connList.newGroup')} onClick={() => void newGroup()}>
             <Icon name="folderPlus" />
           </button>
+          <button
+            className={`icon-btn ${selecting ? 'bg-accent/15 text-accent' : ''}`}
+            aria-label={t('connList.select')}
+            title={t('connList.select')}
+            aria-pressed={selecting}
+            disabled={connections.length === 0}
+            onClick={() => (selecting ? exitSelecting() : setSelecting(true))}
+          >
+            <Icon name="checkSquare" />
+          </button>
         </div>
+        {selecting && (
+          <div className="flex items-center gap-2 rounded-md bg-panel px-2 py-1.5 text-[0.85rem]" role="toolbar" aria-label={t('connList.selectionToolbar')}>
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={allPicked}
+                ref={(el) => {
+                  if (el) el.indeterminate = pickedVisible > 0 && !allPicked;
+                }}
+                disabled={visibleIds.length === 0}
+                onChange={toggleAll}
+              />
+              {filtering ? t('connList.selectAllShown') : t('connList.selectAll')}
+            </label>
+            <span className="flex-1 text-muted" aria-live="polite">
+              {t('connList.selectedCount', { count: picked.size, formatted: fmtNumber(picked.size) })}
+            </span>
+            <button className="btn btn-danger h-7 px-2.5 text-[0.85rem]" disabled={picked.size === 0 || deleting} onClick={() => void deletePicked()}>
+              {deleting ? <Spinner /> : <Icon name="trash" size={14} />}
+              {t('common.delete')}
+            </button>
+            <button className="btn h-7 px-2.5 text-[0.85rem]" onClick={exitSelecting}>
+              {t('connList.selectDone')}
+            </button>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label={t('connList.envFilter')}>
           <Chip pressed={envs.size === 0} onClick={() => setEnvs(new Set())}>
             {t('connList.envAll')}
@@ -409,7 +526,7 @@ export function ConnectionList({
           ))}
         </div>
       </div>
-      <div ref={listRef} className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label={t('conn.title')} onKeyDown={onKeyDown}>
+      <div ref={listRef} className="min-h-0 flex-1 overflow-auto py-1" role="listbox" aria-label={t('conn.title')} aria-multiselectable={selecting || undefined} onKeyDown={onKeyDown}>
         {connections.length === 0 && groups.length === 0 && (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-muted">
             <Icon name="db" size={36} strokeWidth={1.2} />
