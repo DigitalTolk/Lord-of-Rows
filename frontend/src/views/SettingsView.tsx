@@ -1,12 +1,102 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ask } from '../components/ask';
 import { Field, Toolbar } from '../components/ui';
 import { api } from '../lib/ipc';
+import type { AiProvider, AiStatus } from '../lib/types';
 import { DEFAULT_KEYS, type KeyAction } from '../lib/keys';
 import { errMsg, useApp } from '../store';
 
-const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'keys', 'a11y'] as const;
+const SECTIONS = ['general', 'appearance', 'editor', 'grid', 'query', 'security', 'privacy', 'ai', 'keys', 'a11y'] as const;
+
+const DEFAULT_MODEL: Record<AiProvider, string> = { anthropic: 'claude-opus-5-5', openai_compatible: 'llama3.1' };
+const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
+
+function AiSettingsSection() {
+  const { t } = useTranslation();
+  const { settings, setSetting, toast } = useApp();
+  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [key, setKey] = useState('');
+  const [testing, setTesting] = useState(false);
+  const provider = (settings['ai.provider'] as AiProvider | undefined) ?? 'anthropic';
+  const [model, setModel] = useState(String(settings['ai.model'] ?? ''));
+  const [baseUrl, setBaseUrl] = useState(String(settings['ai.baseUrl'] ?? ''));
+  const refresh = () => api.aiStatus().then(setStatus).catch((e) => toast('error', errMsg(e)));
+  useEffect(() => {
+    void refresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = async (k: string, v: unknown) => {
+    try {
+      await setSetting(k, v);
+      await refresh();
+    } catch (e) {
+      toast('error', errMsg(e));
+    }
+  };
+  const enabled = settings['ai.enabled'] === true;
+
+  const saveKey = async (value: string) => {
+    try {
+      await api.aiSetApiKey(provider, value);
+      setKey('');
+      toast('ok', value ? t('ai.keySaved') : t('ai.keyRemoved'));
+      await refresh();
+    } catch (e) {
+      toast('error', errMsg(e));
+    }
+  };
+  const test = async () => {
+    setTesting(true);
+    try {
+      const a = await api.aiTest();
+      toast('ok', t('ai.testOk', { model: a.model, ms: a.duration_ms }));
+    } catch (e) {
+      toast('error', errMsg(e));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="mb-3 rounded border border-warn/40 bg-warn/10 p-2 text-sm">
+        <p className="mb-1 font-semibold">{t('ai.privacyTitle')}</p>
+        <ul className="list-disc pl-5">
+          {(['privacy1', 'privacy2', 'privacy3', 'privacy4', 'privacy5'] as const).map((k) => <li key={k}>{t(`ai.${k}`)}</li>)}
+        </ul>
+      </div>
+      <label className="mb-3 flex items-center gap-2 font-semibold">
+        <input type="checkbox" checked={enabled} onChange={(e) => void set('ai.enabled', e.target.checked)} />{t('ai.enable')}
+      </label>
+      <Field label={t('ai.provider')}>
+        <select className="input" value={provider} onChange={(e) => { setModel(''); void set('ai.provider', e.target.value).then(() => set('ai.model', '')); }}>
+          <option value="anthropic">{t('ai.providerAnthropic')}</option>
+          <option value="openai_compatible">{t('ai.providerOpenai')}</option>
+        </select>
+      </Field>
+      <Field label={t('ai.model')} hint={t('ai.modelHint', { model: DEFAULT_MODEL[provider] })}>
+        <input className="input font-mono" placeholder={DEFAULT_MODEL[provider]} value={model} onChange={(e) => setModel(e.target.value)} onBlur={() => model !== String(settings['ai.model'] ?? '') && void set('ai.model', model.trim())} />
+      </Field>
+      {provider === 'openai_compatible' && (
+        <Field label={t('ai.baseUrl')} hint={t('ai.baseUrlHint')}>
+          <input className="input font-mono" placeholder={DEFAULT_BASE_URL} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} onBlur={() => baseUrl !== String(settings['ai.baseUrl'] ?? '') && void set('ai.baseUrl', baseUrl.trim())} />
+        </Field>
+      )}
+      <Field label={t('ai.apiKey')} hint={status?.has_api_key ? t('ai.keyStored') : provider === 'anthropic' ? t('ai.keyRequired') : t('ai.keyOptional')}>
+        <input className="input font-mono" type="password" autoComplete="off" value={key} placeholder={status?.has_api_key ? '••••••••' : ''} onChange={(e) => setKey(e.target.value)} />
+      </Field>
+      <div className="mb-3 flex gap-2">
+        <button className="btn" disabled={!key.trim()} onClick={() => void saveKey(key.trim())}>{t('ai.saveKey')}</button>
+        {status?.has_api_key && <button className="btn text-danger" onClick={() => void saveKey('')}>{t('ai.removeKey')}</button>}
+        <button className="btn ml-auto" disabled={!enabled || testing} onClick={() => void test()} title={t('ai.testHint')}>{t('ai.test')}</button>
+      </div>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={settings['ai.redactLiterals'] !== false} onChange={(e) => void set('ai.redactLiterals', e.target.checked)} />{t('ai.redactLiterals')}
+      </label>
+      <p className="ml-6 text-xs text-muted">{t('ai.redactLiteralsHint')}</p>
+    </>
+  );
+}
 
 export function SettingsView() {
   const { t } = useTranslation();
@@ -123,6 +213,7 @@ export function SettingsView() {
               </tbody>
             </table>
           )}
+          {section === 'ai' && <AiSettingsSection />}
           {section === 'a11y' && (
             <label className="flex items-center gap-2"><input type="checkbox" checked={get('a11y.reduceMotion', false)} onChange={(e) => set('a11y.reduceMotion', e.target.checked)} />{t('settings.reducedMotion')}</label>
           )}

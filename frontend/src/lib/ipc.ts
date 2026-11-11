@@ -109,4 +109,11 @@ export const api = {
     call<{ tool: string; bytes: number; verified: boolean; notes: string[] }>('run_backup', { sessionId, grant, options }),
   runRestore: (sessionId: string, grant: string, confirmToken?: string | null, typedConfirmation?: string | null) =>
     call<{ tool: string; verified: boolean; notes: string[] }>('run_restore', { sessionId, grant, confirmToken: confirmToken ?? null, typedConfirmation: typedConfirmation ?? null }),
+
+  // AI assistant: Rust builds and redacts the prompt; only a previewed prompt (bound by its token) can be sent.
+  aiStatus: () => call<T.AiStatus>('ai_status'),
+  aiSetApiKey: (provider: T.AiProvider, key: string) => call<void>('ai_set_api_key', { provider, key }),
+  aiPreview: (req: T.AiPreviewRequest) => call<T.AiPreview>('ai_preview', { req }),
+  aiSend: (p: T.AiPreview) => call<T.AiAnswer>('ai_send', { req: { token: p.token, task: p.task, system: p.system, user: p.user } }),
+  aiTest: () => call<T.AiAnswer>('ai_test'),
 };

@@ -17,6 +17,7 @@ see [FEATURE_MATRIX.md](FEATURE_MATRIX.md), [BLOCKERS.md](BLOCKERS.md).
 - Structure view, table designer, schema diff → migrations (reversibility-aware)
 - ER diagram, monitoring, dashboards, command palette, themes
 - Production safe mode enforced in Rust; tamper-evident audit log; passwords in the OS keychain
+- Optional AI assistant (off by default; prompt preview + explicit send; see [docs/AI_ASSISTANT.md](docs/AI_ASSISTANT.md))
 
 ## Layout
 
@@ -30,6 +31,7 @@ crates/dbs-secrets   OS keychain
 crates/dbs-ssh       SSH tunnels
 crates/dbs-io        import/export
 crates/dbs-schema    schema diff, migrations, designer DDL
+crates/dbs-ai        optional AI assistant: prompt builders, redaction, provider clients
 src-tauri/           desktop shell + IPC commands
 frontend/            React UI
 e2e/                 WebDriver end-to-end tests (real app + real databases)

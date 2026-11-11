@@ -1,0 +1,20 @@
+[package]
+name = "dbs-ai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbs-core.workspace = true
+dbs-audit.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+uuid.workspace = true
+url = "2"
+# Same TLS stack as the database drivers (OS trust store). No redirects are followed.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+
+[dev-dependencies]
+tokio.workspace = true
