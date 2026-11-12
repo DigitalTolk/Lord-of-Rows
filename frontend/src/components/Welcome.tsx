@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { StoredConnection } from '../lib/types';
@@ -19,6 +19,8 @@ export function Welcome() {
   const { connections, info, openSession, toast, reloadConnections, openTab } = useApp();
   const [sel, setSel] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // Connections being opened right now (a ref, so a double-click's second event sees the first).
+  const opening = useRef(new Set<string>());
   const tab = useAccess((s) => s.launcherTab);
   const ready = useAccess((s) => readyCount(s.requests, Math.floor(Date.now() / 1000)));
 
@@ -33,6 +35,12 @@ export function Welcome() {
       toast('info', t('access.expiredConnect', { name: c.config.name }));
       return requestAgain(c);
     }
+    // Already open in this window: switch to it instead of opening a second session.
+    const open = Object.values(useApp.getState().sessions).find((x) => x.config.id === id);
+    if (open) return useApp.getState().switchSession(open.session_id);
+    // A double-click (or Enter + click) while it is still connecting: ignore the repeat.
+    if (opening.current.has(id)) return;
+    opening.current.add(id);
     setBusy(id);
     try {
       await openSession(id);
@@ -55,6 +63,7 @@ export function Welcome() {
         }
       } else toast('error', msg);
     } finally {
+      opening.current.delete(id);
       setBusy(null);
     }
   };
