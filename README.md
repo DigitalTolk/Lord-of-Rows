@@ -86,28 +86,60 @@ All screenshots are taken from the real app (Linux build, driven over WebDriver 
 
 ## Access requests
 
-If your organisation hands out database access through an access-management service, the
-launcher's **Access** tab (and Settings → Access) connects to it:
+If your organisation hands out time-limited database access through an access-management
+service, Lord of the Rows can request, track and use that access for you. The app talks to the
+service through an **access provider**, a small adapter for that product. Supported provider
+types appear in the **Add provider** picker (today: passhub).
 
-1. **Add a provider**: its type (currently passhub), a display name and its URL
-   (`https://…`; plain `http://` only for a server on this computer).
-2. **Sign in**: the browser opens the provider's single sign-on; the provider redirects back to a
-   one-shot listener on `127.0.0.1` (PKCE). The session token is kept in the OS keychain only.
-3. **Request access**: pick a database (grouped by environment), read-only or read & write, the
-   databases, and a reason. Your manager approves it in the provider (or in the app's
-   **Approvals** tab, if you are an approver).
-4. **Connect** once it is ready: the app fetches the password once, stores it in the keychain like
-   any saved connection and opens it. The connection is marked with a key and the time left;
-   you are warned 15 minutes before the access ends. When it ends (or is revoked) the password is
-   wiped and the connection shows "Expired — request again".
+### Add a provider
 
-Connections go directly to the database host (e.g. over your VPN); no tunnel is created.
-New providers implement the `AccessProvider` trait in `crates/dbs-access/src/providers/`.
+1. Open the launcher's **Access** tab (next to **Connections**), or **Settings → Access**.
+2. Click **Add provider** (or **+** next to the provider switcher, or **Add another provider**).
+3. Fill in:
+   - **Provider type**: the product your organisation uses.
+   - **Display name**: anything, e.g. "Company access". It is shown in the switcher and used as
+     the group name for connections created through it.
+   - **URL**: the service's address, e.g. `https://access.example.com`. It must be `https://`;
+     plain `http://` is accepted only for a server on this computer (local testing).
+4. **Sign in to <name>**. Your browser opens the provider's own sign-in (for example your
+   company single sign-on) and hands control back to the app; "Waiting for browser…" can be
+   cancelled and times out after 5 minutes. The session token is kept only in the OS keychain;
+   it is never shown, logged, or written to disk.
+
+You can add several providers; switch between them at the top of the Access tab. Each keeps
+its own sign-in. **Sign out** ends the session at the provider.
+
+### Request and connect
+
+- **Request access**: pick a database (grouped by environment, searchable), read-only or
+  read & write, the target databases, an optional ticket reference (e.g. `OPS-123`) and a
+  reason. The request appears under **Pending** until it is approved.
+- **My requests** has three tabs with live counts:
+  **Active** (ready first, soonest-expiring at the top, then provisioning and pending),
+  **Pending** (waiting for approval), and **History** (expired, revoked, rejected, cancelled,
+  failed). Search (⌘F) and environment chips filter every tab. Click a request's name for its
+  timeline, the provider's provisioning log and the connection details (never the password).
+- **Connect / Open**: once a request is ready, the app fetches the password **once**, stores it
+  in the keychain like any saved connection, creates the connection (environment, read-only for
+  read access) and opens it. Opening it again reuses the stored password. If the provider limits
+  how often a password can be revealed, the app shows how many reveals are left and asks before
+  using the last ones.
+- **Expiry**: managed connections show a key badge and the time left; the workspace status bar
+  counts down, and banners warn 15 and 5 minutes before the end. When access ends or is revoked,
+  running queries are cancelled, the connection closes behind an "Access ended" screen (your tabs
+  and SQL are kept), and the stored password is wiped. **Request again** pre-fills a new request.
+- **Approvals** (only for approvers, and only if the provider supports it): **Waiting** requests
+  with Approve, Reject (with a reason) and Approve-selected; **Decided** lists your past decisions.
+  The Dock badge shows how many requests are waiting.
+
+Connections go directly to the database host (for example over your VPN); no tunnel is created.
+Commands for all of this are in the palette (⌘K): "Request access…", "Show access requests",
+"Show approvals".
 
 ### Rolling out to a team
 
-**Preconfigured providers.** An organisation can deploy a `providers.json` that the app reads
-at start-up (for example with device management):
+**Preconfigured providers.** An organisation can deploy a `providers.json` that the app reads at
+start-up (for example with device management), so nobody has to type a URL:
 
 | Where | File |
 |---|---|
@@ -120,16 +152,46 @@ at start-up (for example with device management):
 [{ "kind": "passhub", "name": "Company access", "url": "https://access.example.com" }]
 ```
 
-Entries are validated like providers added in the app (`https://` only, except for a server
-on the same computer) and merged by URL; the system-wide file wins. They are shown as
-"Managed by your organization" and can't be edited or removed in the app. Invalid entries are
-skipped (logged).
+`kind` is a provider type from the **Add provider** picker. Entries are validated like providers
+added in the app and merged by URL; the system-wide file wins. They are shown as "Managed by your
+organization" and can't be edited or removed in the app. Invalid entries are skipped (logged).
 
 **Links.** `lordoftherows://access?provider=<url-encoded provider URL>&request=<request id>`
-opens the Access tab on that provider and shows the request (with Connect if it is ready).
-A link to a provider that isn't set up asks before adding it; links never sign in, add or
-connect anything by themselves. The scheme is registered by the installed app (macOS bundle;
-Linux and Windows at start-up).
+opens the Access tab on that provider and shows the request (with Connect if it is ready). An
+access-management service can put this link on its request pages. A link to a provider that
+isn't set up asks before adding it (add `&kind=<type>` to pick the type); links never sign in or
+connect by themselves. The scheme is registered by the installed app (macOS bundle; Linux and
+Windows at start-up).
+
+### Adding a new provider type
+
+Providers live in `crates/dbs-access/src/providers/`. Adding one is a single module plus one
+registry entry; the screens, filters, polling, keychain handling and expiry rules are shared and
+need no changes.
+
+1. Create `providers/<name>/` and implement the `AccessProvider` trait
+   (`crates/dbs-access/src/lib.rs`):
+
+   | Method | Required | Purpose |
+   |---|---|---|
+   | `kind`, `capabilities` | yes | identifier and the optional features below |
+   | `sign_in`, `sign_out`, `current_user` | yes | authentication (browser sign-in via the loopback helper in `loopback.rs`, an API token, …) |
+   | `list_resources` | yes | requestable databases, with environment and engine |
+   | `resource_targets` | if `targets` | the databases on one of them (otherwise users type names) |
+   | `create_request`, `list_requests`, `get_request` | yes | request and poll |
+   | `cancel_request` | if `cancel` | withdraw a pending request |
+   | `list_approvals`, `approve`, `reject` | if `approvals` | the Approvals tab |
+   | `list_decided` | if `decided_history` | the Decided tab (cursor-paged) |
+   | `connection_plan`, `fetch_credentials` | yes | host, port, user, database; then the secret, fetched once |
+
+2. Map the product's states onto the neutral `RequestStatus` values (`Pending`, `Provisioning`,
+   `Ready`, `Failed`, `Rejected`, `Expired`, `Revoked`, `Cancelled`): the tabs are built from
+   these. Map HTTP errors onto `AccessError` (a 401 must become `SignedOut`; transient failures
+   must not, so users are not signed out by a hiccup).
+3. Set `Capabilities` honestly: tabs and buttons for features a provider lacks are hidden.
+4. Register the type in `providers/mod.rs` (`provider_kinds` and `build_provider`).
+5. Test it against a mock HTTP server (see the passhub tests), and the shared rules against
+   `testing.rs`'s in-memory provider.
 
 ## Layout
 
