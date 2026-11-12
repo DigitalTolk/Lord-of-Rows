@@ -1702,7 +1702,7 @@ checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
 name = "dbs-access"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "dbs-core",
@@ -1723,7 +1723,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-ai"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dbs-audit",
  "dbs-core",
@@ -1739,7 +1739,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-audit"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "dbs-core",
@@ -1753,7 +1753,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-core"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -1766,7 +1766,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-drivers"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -1793,7 +1793,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-import"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dbs-core",
  "dbs-secrets",
@@ -1806,7 +1806,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-io"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "csv",
@@ -1819,7 +1819,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-plugins"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "ed25519-dalek",
  "hex",
@@ -1835,7 +1835,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-safety"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dbs-core",
  "hex",
@@ -1845,7 +1845,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-schema"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dbs-core",
  "serde",
@@ -1854,7 +1854,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-secrets"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dbs-core",
  "keyring",
@@ -1864,7 +1864,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-ssh"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "dbs-core",
  "dbs-drivers",
@@ -1878,7 +1878,7 @@ dependencies = [
 
 [[package]]
 name = "dbs-store"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "dbs-core",
@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "dbstudio"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
