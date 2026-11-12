@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn redacts_aws_credentials() {
-        let s = redact_secrets("aws_secret_access_key=wJalrXUtnFEMI/K7MDENG Credential=AKIAEXAMPLE/20240101/us-east-1/dynamodb/aws4_request, Signature=abc123");
+        let s = redact_secrets("aws_secret_access_key=wJalrXUtnFEMI/K7MDENG Credential=AKIAEXAMPLE/20240101/us-east-1/dynamodb/aws4_request, Signature=abc123"); // gitleaks:allow (AWS documentation example key)
         assert!(!s.contains("wJalrXUtnFEMI") && !s.contains("AKIAEXAMPLE") && !s.contains("abc123"), "{s}");
     }
 
