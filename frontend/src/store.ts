@@ -75,6 +75,13 @@ interface State {
   setSetting(key: string, value: unknown): Promise<void>;
   /** `database` (Postgres family): open the saved connection on another database of the same server. */
   openSession(connectionId: string, password?: string, database?: string): Promise<string>;
+  /**
+   * Open a saved connection from the launcher, the Access tab or the palette: switch to it when
+   * it is already open in this window, and ignore repeats while it is still connecting
+   * (double-click, Enter + click). Returns the session id, or null for an ignored repeat.
+   * `openSession` stays the way to deliberately open another session (e.g. another database).
+   */
+  openConnection(connectionId: string, password?: string): Promise<string | null>;
   closeSession(sessionId: string): Promise<void>;
   /** Access ended: cancel running queries, close the connection, keep the tabs (shown as ended). */
   endSession(sessionId: string): Promise<void>;
@@ -104,6 +111,8 @@ export interface ToastAction {
 }
 
 let toastId = 0;
+/** Connections being opened by `openConnection` right now. */
+const opening = new Set<string>();
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
 
 export const useApp = create<State>((set, get) => ({
@@ -137,6 +146,21 @@ export const useApp = create<State>((set, get) => ({
   async setSetting(key, value) {
     await api.setSetting(key, value);
     set({ settings: { ...get().settings, [key]: value } });
+  },
+
+  async openConnection(connectionId, password) {
+    const open = Object.values(get().sessions).find((x) => x.config.id === connectionId);
+    if (open) {
+      get().switchSession(open.session_id);
+      return open.session_id;
+    }
+    if (opening.has(connectionId)) return null;
+    opening.add(connectionId);
+    try {
+      return await get().openSession(connectionId, password);
+    } finally {
+      opening.delete(connectionId);
+    }
   },
 
   async openSession(connectionId, password, database) {

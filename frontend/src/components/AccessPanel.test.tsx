@@ -84,7 +84,7 @@ async function show() {
 
 beforeEach(() => {
   useAccess.setState({ providers: null, providerId: null, status: null, requests: null, approvals: null, error: null, notice: null, sheet: null, accessTab: 'mine', visible: 0 });
-  useApp.setState({ openSession, reloadConnections: vi.fn(async () => undefined) });
+  useApp.setState({ openSession, sessions: {}, reloadConnections: vi.fn(async () => undefined) });
   state.providers = [];
   state.status = { signed_in: false, signing_in: false };
   state.requests = [];
@@ -141,7 +141,7 @@ describe('AccessPanel', () => {
     });
     expect(api.accessConnectCheck).toHaveBeenCalledWith('p1', 'r2');
     expect(api.accessConnect).toHaveBeenCalledWith('p1', 'r2');
-    expect(openSession).toHaveBeenCalledWith('conn-1');
+    expect(openSession).toHaveBeenCalledWith('conn-1', undefined);
     fireEvent.click(screen.getByRole('tab', { name: /History/ }));
     expect(screen.getByText(/Rejected by Morgan/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request again' })).toBeTruthy();

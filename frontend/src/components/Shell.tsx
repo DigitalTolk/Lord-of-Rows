@@ -335,7 +335,7 @@ export function CommandPalette() {
         { id: 'split-down', label: activeQuery.split === 'down' ? t('split.close') : t('split.down'), run: () => st.toggleSplit(activeQuery.id, 'down') },
       );
     }
-    for (const c of st.connections) list.push({ id: `conn:${c.config.id}`, label: `⏻ ${c.config.name}`, hint: c.config.environment, run: () => st.openSession(c.config.id).catch((e) => st.toast('error', String(e.message ?? e))) });
+    for (const c of st.connections) list.push({ id: `conn:${c.config.id}`, label: `⏻ ${c.config.name}`, hint: c.config.environment, run: () => st.openConnection(c.config.id).catch((e) => st.toast('error', String(e.message ?? e))) });
     for (const tb of st.tabs) list.push({ id: `tab:${tb.id}`, label: `⇥ ${tb.title}`, run: () => useApp.setState({ activeTab: tb.id }) });
     return list;
   }, [st, s, t]); // eslint-disable-line react-hooks/exhaustive-deps

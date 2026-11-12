@@ -607,7 +607,7 @@ export async function connectRequest(r: Pick<AccessRequest, 'id'>, t: (k: string
     if (o.password_in_memory) app.toast('info', t('access.passwordInMemory'));
     void useAccess.getState().refreshRequests().catch(() => undefined);
     try {
-      await app.openSession(o.connection_id);
+      await app.openConnection(o.connection_id);
     } catch (e) {
       const cfg = useApp.getState().connections.find((c) => c.config.id === o.connection_id)?.config;
       if (cfg?.managed_by && /password|authentication|access_expired/i.test(`${errMsg(e)} ${errCode(e) ?? ''}`)) offerRequestAgain(cfg.managed_by, cfg.name, errMsg(e), t);

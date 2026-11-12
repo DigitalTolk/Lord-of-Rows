@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/ipc';
 import type { StoredConnection } from '../lib/types';
@@ -16,11 +16,9 @@ import { offerRequestAgain, requestAgainFor, useAccess } from '../lib/accessStor
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
   const { t } = useTranslation();
-  const { connections, info, openSession, toast, reloadConnections, openTab } = useApp();
+  const { connections, info, toast, reloadConnections, openTab } = useApp();
   const [sel, setSel] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  // Connections being opened right now (a ref, so a double-click's second event sees the first).
-  const opening = useRef(new Set<string>());
   const tab = useAccess((s) => s.launcherTab);
   const ready = useAccess((s) => readyCount(s.requests, Math.floor(Date.now() / 1000)));
 
@@ -35,15 +33,10 @@ export function Welcome() {
       toast('info', t('access.expiredConnect', { name: c.config.name }));
       return requestAgain(c);
     }
-    // Already open in this window: switch to it instead of opening a second session.
-    const open = Object.values(useApp.getState().sessions).find((x) => x.config.id === id);
-    if (open) return useApp.getState().switchSession(open.session_id);
-    // A double-click (or Enter + click) while it is still connecting: ignore the repeat.
-    if (opening.current.has(id)) return;
-    opening.current.add(id);
     setBusy(id);
     try {
-      await openSession(id);
+      // Switches to it when already open; ignores repeats while it is connecting.
+      await useApp.getState().openConnection(id);
     } catch (e) {
       const msg = errMsg(e);
       const m = c?.config.managed_by;
@@ -56,14 +49,13 @@ export function Welcome() {
         const pw = await ask.password(t('conn.password'), msg);
         if (pw) {
           try {
-            await openSession(id, pw);
+            await useApp.getState().openConnection(id, pw);
           } catch (e2) {
             toast('error', errMsg(e2));
           }
         }
       } else toast('error', msg);
     } finally {
-      opening.current.delete(id);
       setBusy(null);
     }
   };
