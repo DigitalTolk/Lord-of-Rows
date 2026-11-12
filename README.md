@@ -17,7 +17,7 @@ brew trust DigitalTolk/tools
 brew install --cask DigitalTolk/tools/lord-of-the-rows
 ```
 
-Or download the DMG from [Releases](https://github.com/DigitalTolk/Lord-of-Rows/releases). Builds are universal
+Or download the DMG from [Releases](https://github.com/DigitalTolk/Lord-of-the-Rows/releases). Builds are universal
 (Apple Silicon + Intel, macOS 11+), signed with DigitalTolk's Developer ID and notarized by Apple.
 Update with `brew update && brew upgrade --cask DigitalTolk/tools/lord-of-the-rows`.
 
