@@ -247,6 +247,12 @@ describe('production safety', () => {
     fail('prod-plaintext', async () => {
       await openLauncher();
       await newPgConnection('E2E Prod Plain', { env: 'Production' });
+      // Tagging a remote connection Production raises PREFERRED to REQUIRED by itself…
+      await waitText(b, 'because this connection is tagged Production');
+      const raised = await b.execute(() => document.querySelector('[role=dialog] select[aria-label="SSL mode"]')?.value);
+      assert.equal(raised, 'required');
+      // …and choosing a mode that can fall back to plaintext again is still refused.
+      await fill(b, 'SSL mode', 'preferred');
       await clickText(b, 'Connect', { exact: true });
       await waitText(b, 'SSL mode PREFERRED can send data unencrypted');
       await clickSel(b, 'button[aria-label="Close"]');
