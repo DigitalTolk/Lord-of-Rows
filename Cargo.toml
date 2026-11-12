@@ -69,3 +69,7 @@ opt-level = 3
 # Patched for sha256_password auth support (see vendor/mysql_async/PATCH.md)
 [patch.crates-io]
 mysql_async = { path = "vendor/mysql_async" }
+# russh 0.65.1 pins rsa =0.10.0-rc.18, which RUSTSEC-2023-0071 (Marvin timing attack)
+# still flags; upstream moved to rsa 0.10.0 (patched) in Eugeny/russh#821 but has not
+# released yet. Pinned to that exact upstream commit; drop this once russh > 0.65.1 is out.
+russh = { git = "https://github.com/Eugeny/russh", rev = "b541663a88381aab9f6af1af7bbadb02e155058a" }
