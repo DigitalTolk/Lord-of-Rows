@@ -899,7 +899,8 @@
     "openLocalNetwork": "Einstellungen für lokales Netzwerk öffnen",
     "keychain": "Schlüsselbund",
     "keySeparator": "Schlüsseltrenner",
-    "keySeparatorHint": "Gruppiert Schlüssel in der Seitenleiste in Namensräume (Standard \":\")"
+    "keySeparatorHint": "Gruppiert Schlüssel in der Seitenleiste in Namensräume (Standard \":\")",
+    "tlsRaisedForProd": "SSL-Modus auf REQUIRED gesetzt, weil diese Verbindung als Produktion markiert ist."
   },
   "copyErr": {
     "partialBinary": "Ein Binärwert wurde nur teilweise geladen; er kann nicht als {{as}} kopiert werden.",

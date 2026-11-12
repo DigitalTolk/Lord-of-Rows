@@ -61,6 +61,30 @@ describe('ConnectionDialog', () => {
     expect(screen.getByText(/signed by a trusted CA/)).toBeTruthy();
   });
 
+  it('tagging a remote connection Production raises PREFERRED to REQUIRED, but keeps a stronger mode', () => {
+    openPg();
+    fireEvent.change(screen.getByPlaceholderText('127.0.0.1'), { target: { value: 'db.example.com' } });
+    const ssl = screen.getByLabelText('SSL mode') as HTMLSelectElement;
+    const tag = screen.getByLabelText('Tag') as HTMLSelectElement;
+    fireEvent.change(tag, { target: { value: 'production' } });
+    expect(ssl.value).toBe('required');
+    expect(screen.getByText(/because this connection is tagged Production/)).toBeTruthy();
+    expect(screen.queryByText(/need REQUIRED or stronger/)).toBeNull();
+
+    fireEvent.change(tag, { target: { value: 'staging' } });
+    fireEvent.change(ssl, { target: { value: 'verify_identity' } });
+    fireEvent.change(tag, { target: { value: 'production' } });
+    expect(ssl.value).toBe('verify_identity');
+    expect(screen.queryByText(/because this connection is tagged Production/)).toBeNull();
+  });
+
+  it('a local Production connection keeps PREFERRED', () => {
+    openPg();
+    fireEvent.change(screen.getByPlaceholderText('127.0.0.1'), { target: { value: 'localhost' } });
+    fireEvent.change(screen.getByLabelText('Tag'), { target: { value: 'production' } });
+    expect((screen.getByLabelText('SSL mode') as HTMLSelectElement).value).toBe('preferred');
+  });
+
   it('SSL key buttons store the picked path and the clear button resets them', async () => {
     openPg();
     await act(async () => {

@@ -208,6 +208,8 @@ export function ConnectionDialog() {
   const [url, setUrl] = useState('');
   const [advanced, setAdvanced] = useState(false);
   const [bootstrap, setBootstrap] = useState(false);
+  // Set when tagging a connection Production raised its SSL mode to REQUIRED (shown as a note).
+  const [tlsRaised, setTlsRaised] = useState(false);
   const [socketMode, setSocketMode] = useState(!!existing?.socket_path);
   const supported = useMemo(() => new Set(info?.supported_engines ?? []), [info]);
   const close = () => useApp.setState({ connectionDialog: null });
@@ -257,6 +259,14 @@ export function ConnectionDialog() {
   const sshSecrets = { password: sshPassword === '' ? null : sshPassword, passphrase: sshPassphrase === '' ? null : sshPassphrase };
   const setSsh = (patch: Partial<SshConfig>) => set('ssh', ssh ? { ...ssh, ...patch } : null);
   const toggleSsh = () => set('ssh', ssh ? null : { host: '', port: 22, user: '', auth: 'password', private_key_path: null, jump_hosts: [], keepalive_secs: 30 });
+  // Production to a remote host must not fall back to plaintext: tagging a connection
+  // Production raises PREFERRED / DISABLED to REQUIRED (encrypted, certificate not verified)
+  // instead of leaving the form blocked. Any stronger mode the user picked is kept.
+  const setEnvironment = (env: EnvironmentKind) => {
+    const raise = env === 'production' && spec.ssl && remoteHost && mayBePlain;
+    setCfg((c) => (c ? { ...c, environment: env, ...(raise ? { tls: { ...c.tls, mode: 'required' as TlsMode } } : {}) } : c));
+    setTlsRaised(raise);
+  };
   const sslHint = SSL_MODES.find((m) => m.value === cfg.tls.mode)?.hint;
   const hasKeys = !!(cfg.tls.client_key_path || cfg.tls.client_cert_path || cfg.tls.ca_cert_path);
 
@@ -368,7 +378,7 @@ export function ConnectionDialog() {
             })}
           </div>
           <Field label={t('cdlg.tag')}>
-            <select className="input" value={cfg.environment} onChange={(e) => set('environment', e.target.value as EnvironmentKind)}>
+            <select className="input" value={cfg.environment} onChange={(e) => setEnvironment(e.target.value as EnvironmentKind)}>
               {ENVS.map((e) => (
                 <option key={e} value={e}>{t(`env.${e}`)}</option>
               ))}
@@ -488,6 +498,7 @@ export function ConnectionDialog() {
               <span />
               <p className="col-span-3 -mt-1 text-[0.82rem] text-muted">
                 {sslHint && t(sslHint)}
+                {tlsRaised && cfg.environment === 'production' && cfg.tls.mode === 'required' && <span className="block text-accent">{t('cdlg.tlsRaisedForProd')}</span>}
                 {mayBePlain && remoteHost && (
                   <span className={`block ${cfg.environment === 'production' ? 'text-danger' : 'text-warn'}`}>
                     {cfg.environment === 'production' ? t('cdlg.prodNeedsTls') : t('conn.plaintextWarning')}

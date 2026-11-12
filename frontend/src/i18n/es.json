@@ -928,7 +928,8 @@
     "openLocalNetwork": "Abrir ajustes de Red local",
     "keychain": "llavero",
     "keySeparator": "Separador de claves",
-    "keySeparatorHint": "Agrupa las claves en espacios de nombres en la barra lateral (predeterminado \":\")"
+    "keySeparatorHint": "Agrupa las claves en espacios de nombres en la barra lateral (predeterminado \":\")",
+    "tlsRaisedForProd": "Modo SSL cambiado a REQUIRED porque esta conexión está etiquetada como Producción."
   },
   "copyErr": {
     "partialBinary": "Un valor binario solo se cargó parcialmente; no se puede copiar como {{as}}.",

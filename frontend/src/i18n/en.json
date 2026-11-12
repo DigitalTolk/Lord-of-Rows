@@ -899,7 +899,8 @@
     "openLocalNetwork": "Open Local Network Settings",
     "keychain": "keychain",
     "keySeparator": "Key separator",
-    "keySeparatorHint": "Groups keys into namespaces in the sidebar (default \":\")"
+    "keySeparatorHint": "Groups keys into namespaces in the sidebar (default \":\")",
+    "tlsRaisedForProd": "SSL mode set to REQUIRED because this connection is tagged Production."
   },
   "copyErr": {
     "partialBinary": "A binary value was only partially loaded; it cannot be copied as {{as}}.",
