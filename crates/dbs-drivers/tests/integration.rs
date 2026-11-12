@@ -40,6 +40,7 @@ fn cfg(engine: Engine, host: Option<&str>, db: Option<&str>) -> ConnectionConfig
         query_timeout_secs: None,
         init_sql: None,
         key_separator: None,
+        managed_by: None,
         tunnel: None,
     }
 }
@@ -641,10 +642,17 @@ async fn redis_key_browser() {
     }
     assert_eq!(seen.len(), KB_BULK);
     assert!(starts.len() >= 20, "{} pages", starts.len());
-    // Re-reading an earlier page (cursor cache) returns the same keys.
+    // Re-reading an earlier page resumes from the cached cursor: the same page of keys.
+    // SCAN only guarantees full coverage, not identical batches: while Redis is still
+    // rehashing after the 10k inserts, a batch can shift by a key at the page edge.
+    // So compare as sets and allow a small difference at the boundary.
     let (at, keys) = &starts[3];
     let again = kv.scan_keys("db0", &pat, *at, 500, false).await.unwrap();
-    assert_eq!(&again.keys.iter().map(|k| k.key.clone()).collect::<Vec<_>>(), keys);
+    let before: std::collections::HashSet<&String> = keys.iter().collect();
+    let after: Vec<String> = again.keys.iter().map(|k| k.key.clone()).collect();
+    assert!(after.iter().all(|k| k.starts_with(&format!("{KB}bulk:"))), "{after:?}");
+    let common = after.iter().filter(|k| before.contains(k)).count();
+    assert!(common + 5 >= keys.len() && after.len() + 5 >= keys.len(), "re-read page drifted: {common} of {} keys in common", keys.len());
 
     // Match-all pages carry the DBSIZE total.
     let all = kv.scan_keys("db0", "*", 0, 100, true).await.unwrap();

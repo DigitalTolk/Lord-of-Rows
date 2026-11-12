@@ -1,0 +1,28 @@
+[package]
+name = "dbs-access"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dbs-core.workspace = true
+dbs-secrets.workspace = true
+dbs-store.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+getrandom = "0.2"
+url = "2"
+# Same TLS stack as dbs-ai (OS trust store). Redirects are never followed, so a session
+# token is only ever sent to the configured server.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+
+[features]
+# Exposes `dbs_access::testing` (mock HTTP server, in-memory fake provider) to other crates' tests.
+test-util = []

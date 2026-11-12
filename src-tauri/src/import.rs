@@ -12,6 +12,7 @@ use dbs_core::*;
 use dbs_import::load::{self, Env};
 use dbs_import::{ImportedConnection, SourceKind};
 use dbs_secrets::SecretKind;
+use dbs_store::DeferredSecret;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use uuid::Uuid;
@@ -267,6 +268,9 @@ pub struct ApplyResult {
     imported: Vec<ImportedRow>,
     failed: Vec<RowError>,
     passwords_imported: usize,
+    /// Connections whose saved password stays in the source app's keychain until
+    /// the first connect (see [`take_deferred_secret`]).
+    passwords_deferred: usize,
     password_errors: Vec<RowError>,
     groups_created: usize,
 }
@@ -276,13 +280,11 @@ pub struct ApplyResult {
 pub async fn import_connections_apply(app: tauri::AppHandle, request: ApplyRequest) -> R<ApplyResult> {
     tauri::async_runtime::spawn_blocking(move || {
         let st = app.state::<AppState>();
-        apply(&st, request, &|service, account| dbs_secrets::read_external_password(service, account))
+        apply(&st, request)
     })
     .await
     .map_err(|e| DbError::internal(e.to_string()))?
 }
-
-type KeychainReader<'a> = &'a dyn Fn(&str, &str) -> DbResult<Option<dbs_secrets::Secret>>;
 
 fn save_one(st: &AppState, row: &ImportedConnection, opts: ApplyOptions, supported: &[Engine]) -> R<ConnectionConfig> {
     let mut cfg = row.config.clone().ok_or_else(|| DbError::unsupported(&format!("the {} engine", row.source_engine)))?;
@@ -302,49 +304,82 @@ fn save_one(st: &AppState, row: &ImportedConnection, opts: ApplyOptions, support
     Ok(cfg)
 }
 
-/// Copies the row's passwords into our keychain. Returns how many were stored;
-/// `stop` is set after a keychain failure so the user isn't prompted again and again.
-fn import_passwords(
-    st: &AppState,
-    row: &ImportedConnection,
-    cfg: &ConnectionConfig,
-    read: KeychainReader<'_>,
-    stop: &mut bool,
-    errors: &mut Vec<RowError>,
-) -> usize {
-    let mut n = 0;
-    let err = |e: String| RowError { key: row.key.clone(), name: row.name.clone(), error: e };
-    if let Some(p) = &row.password {
-        match st.secrets.set(cfg.id, SecretKind::DbPassword, p.expose()) {
-            Ok(()) => n += 1,
-            Err(e) => errors.push(err(e.message)),
+/// Copies passwords that were part of the source data (e.g. in a URL) into our
+/// keychain. Returns how many were stored.
+fn import_passwords(st: &AppState, row: &ImportedConnection, cfg: &ConnectionConfig, errors: &mut Vec<RowError>) -> usize {
+    let Some(p) = &row.password else { return 0 };
+    match st.secrets.set(cfg.id, SecretKind::DbPassword, p.expose()) {
+        Ok(()) => {
+            audit(st, Category::CredentialChanged, Outcome::Success, Some(cfg), |e| e.detail = Some("imported".into()));
+            1
+        }
+        Err(e) => {
+            errors.push(RowError { key: row.key.clone(), name: row.name.clone(), error: e.message });
+            0
         }
     }
-    for item in &row.keychain {
-        if *stop {
-            errors.push(err("not attempted after an earlier keychain error".into()));
-            break;
-        }
-        match read(&item.service, &item.account) {
-            Ok(Some(secret)) => match st.secrets.set(cfg.id, item.kind, secret.expose()) {
-                Ok(()) => n += 1,
-                Err(e) => errors.push(err(e.message)),
-            },
-            // Nothing saved in the source for this connection.
-            Ok(None) => {}
-            Err(e) => {
-                *stop = true;
-                errors.push(err(e.message));
-            }
-        }
-    }
-    if n > 0 {
-        audit(st, Category::CredentialChanged, Outcome::Success, Some(cfg), |e| e.detail = Some("imported".into()));
-    }
-    n
 }
 
-pub(crate) fn apply(st: &AppState, req: ApplyRequest, read: KeychainReader<'_>) -> R<ApplyResult> {
+fn kind_tag(k: SecretKind) -> Option<&'static str> {
+    match k {
+        SecretKind::DbPassword => Some("db-password"),
+        SecretKind::SshPassword => Some("ssh-password"),
+        SecretKind::SshKeyPassphrase => Some("ssh-key-passphrase"),
+        _ => None,
+    }
+}
+
+/// Remembers the row's keychain references for the new connection instead of
+/// reading them now. Reading another app's keychain item makes macOS ask the user
+/// once per item, so importing 60 connections must not read 60 items up front:
+/// each is read on first use (see [`take_deferred_secret`]). Returns whether
+/// anything was deferred.
+fn defer_keychain_items(st: &AppState, row: &ImportedConnection, cfg: &ConnectionConfig, errors: &mut Vec<RowError>) -> bool {
+    let items: Vec<DeferredSecret> = row
+        .keychain
+        .iter()
+        .filter_map(|i| kind_tag(i.kind).map(|k| DeferredSecret { kind: k.into(), service: i.service.clone(), account: i.account.clone() }))
+        .collect();
+    if items.is_empty() {
+        return false;
+    }
+    match st.store.set_deferred_secrets(cfg.id, &items) {
+        Ok(()) => true,
+        Err(e) => {
+            errors.push(RowError { key: row.key.clone(), name: row.name.clone(), error: e.message });
+            false
+        }
+    }
+}
+
+/// Reads an item another application saved in the OS keychain.
+pub(crate) type KeychainReader<'a> = &'a dyn Fn(&str, &str) -> DbResult<Option<dbs_secrets::Secret>>;
+
+/// The production reader: macOS shows its permission prompt for this one item.
+pub(crate) fn os_keychain_reader(service: &str, account: &str) -> DbResult<Option<dbs_secrets::Secret>> {
+    dbs_secrets::read_external_password(service, account)
+}
+
+/// Called when a connection is about to be used and has no `kind` secret of its
+/// own: if the import left a reference to the source app's keychain item, read it
+/// now (one OS prompt), store it in our keychain and forget the reference.
+/// A missing item also forgets the reference; a denied or failed read keeps it so
+/// the next connect can ask again, and the connect simply proceeds without it.
+pub(crate) fn take_deferred_secret(st: &AppState, id: Uuid, kind: SecretKind, read: KeychainReader<'_>) -> Option<String> {
+    let tag = kind_tag(kind)?;
+    let item = st.store.deferred_secret(id, tag).ok().flatten()?;
+    let found = read(&item.service, &item.account).ok()?;
+    let _ = st.store.delete_deferred_secret(id, tag);
+    let value = found?.expose().to_string();
+    if st.secrets.set(id, kind, &value).is_ok() {
+        if let Ok(cfg) = st.store.get_connection(id) {
+            audit(st, Category::CredentialChanged, Outcome::Success, Some(&cfg), |e| e.detail = Some("imported on first use".into()));
+        }
+    }
+    Some(value)
+}
+
+pub(crate) fn apply(st: &AppState, req: ApplyRequest) -> R<ApplyResult> {
     let guard = st.import_preview.lock().unwrap();
     let preview =
         guard.as_ref().filter(|p| p.id == req.preview_id).ok_or_else(|| DbError::invalid("the import preview is out of date; load the source again"))?;
@@ -352,13 +387,15 @@ pub(crate) fn apply(st: &AppState, req: ApplyRequest, read: KeychainReader<'_>) 
     let groups_before: HashSet<String> = st.store.list_groups()?.into_iter().map(|g| g.name).collect();
     let wanted: HashSet<&str> = req.keys.iter().map(String::as_str).collect();
     let mut out = ApplyResult::default();
-    let mut stop = false;
     for row in preview.rows.iter().filter(|r| wanted.contains(r.key.as_str())) {
         match save_one(st, row, req.options, &supported) {
             Ok(cfg) => {
                 audit(st, Category::ConnectionCreated, Outcome::Success, Some(&cfg), |e| e.detail = Some("imported".into()));
                 if req.options.import_passwords {
-                    out.passwords_imported += import_passwords(st, row, &cfg, read, &mut stop, &mut out.password_errors);
+                    out.passwords_imported += import_passwords(st, row, &cfg, &mut out.password_errors);
+                    if defer_keychain_items(st, row, &cfg, &mut out.password_errors) {
+                        out.passwords_deferred += 1;
+                    }
                 }
                 out.imported.push(ImportedRow { key: row.key.clone(), id: cfg.id });
             }
@@ -373,10 +410,11 @@ pub(crate) fn apply(st: &AppState, req: ApplyRequest, read: KeychainReader<'_>) 
         e.object = Some(source);
         e.rows_affected = Some(out.imported.len() as u64);
         e.detail = Some(format!(
-            "imported={} failed={} passwords={} password_errors={} groups_created={}",
+            "imported={} failed={} passwords={} passwords_deferred={} password_errors={} groups_created={}",
             out.imported.len(),
             out.failed.len(),
             out.passwords_imported,
+            out.passwords_deferred,
             out.password_errors.len(),
             out.groups_created
         ));
@@ -413,6 +451,7 @@ mod tests {
         dup.name = "Dup".into();
         st.store.save_connection(&dup).unwrap();
 
+        // nosemgrep: rust.lang.security.temp-dir.temp-dir -- test scratch dir with a random name
         let dir = std::env::temp_dir().join(format!("lotr-import-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let grant = file_grant(&st, &dir, "data-sources.json", DBEAVER);
@@ -427,7 +466,6 @@ mod tests {
         assert_eq!(status("Dup"), RowStatus::Exists);
 
         let keys: Vec<String> = p.rows.iter().map(|r| r.key.clone()).collect();
-        let never = |_: &str, _: &str| -> DbResult<Option<dbs_secrets::Secret>> { panic!("no keychain reads for this source") };
         let res = apply(
             &st,
             ApplyRequest {
@@ -435,7 +473,6 @@ mod tests {
                 keys,
                 options: ApplyOptions { keep_groups: true, keep_environment: true, import_passwords: true },
             },
-            &never,
         )
         .unwrap();
         assert_eq!(res.imported.len(), 2, "{res:?}"); // Billing prod + Dup (explicitly selected)
@@ -456,7 +493,6 @@ mod tests {
                 keys: vec![],
                 options: ApplyOptions { keep_groups: true, keep_environment: true, import_passwords: false }
             },
-            &never
         )
         .is_err());
         std::fs::remove_dir_all(&dir).unwrap();
@@ -470,48 +506,84 @@ mod tests {
         assert_eq!(p.rows[0].password, PasswordInfo::Included);
         assert!(!serde_json::to_string(&p.rows).unwrap().contains("pw1"), "secrets never reach the webview");
         let keys = p.rows.iter().map(|r| r.key.clone()).collect();
-        let never = |_: &str, _: &str| -> DbResult<Option<dbs_secrets::Secret>> { Ok(None) };
         let res = apply(
             &st,
             ApplyRequest { preview_id: p.preview_id, keys, options: ApplyOptions { keep_groups: true, keep_environment: false, import_passwords: true } },
-            &never,
         )
         .unwrap();
         assert_eq!((res.imported.len(), res.passwords_imported), (2, 1));
         let id = res.imported[0].id;
         assert_eq!(st.secrets.get(id, SecretKind::DbPassword).unwrap().unwrap().expose(), "pw1");
+    }
 
-        // Keychain-backed rows: the reader is called with the source's service/account; a failure stops further reads.
-        let row = |key: &str| {
-            let (cfg, _) = dbs_import::urls::parse_url("postgres://u@h.example.com/d").unwrap();
-            let mut r = ImportedConnection::new(key, key, "PostgreSQL", Some(cfg));
-            r.keychain.push(dbs_import::KeychainItem { kind: SecretKind::DbPassword, service: "svc".into(), account: format!("{key}_database") });
-            r
-        };
-        *st.import_preview.lock().unwrap() = Some(Preview { id: "p2".into(), source: SourceKind::TablePlus, rows: vec![row("k1"), row("k2"), row("k3")] });
-        let calls = std::cell::RefCell::new(vec![]);
-        let reader = |s: &str, a: &str| -> DbResult<Option<dbs_secrets::Secret>> {
-            calls.borrow_mut().push(format!("{s}/{a}"));
-            if a.starts_with("k1") {
-                Ok(Some(dbs_secrets::Secret::new("from-keychain".into())))
-            } else {
-                Err(DbError::internal("user canceled"))
-            }
-        };
-        let res = apply(
-            &st,
+    fn keychain_row(key: &str) -> ImportedConnection {
+        let (cfg, _) = dbs_import::urls::parse_url("postgres://u@h.example.com/d").unwrap();
+        let mut r = ImportedConnection::new(key, key, "PostgreSQL", Some(cfg));
+        r.keychain.push(dbs_import::KeychainItem { kind: SecretKind::DbPassword, service: "svc".into(), account: format!("{key}_database") });
+        r
+    }
+
+    fn import_keychain_rows(st: &AppState, keys: &[&str], import_passwords: bool) -> ApplyResult {
+        *st.import_preview.lock().unwrap() =
+            Some(Preview { id: "p2".into(), source: SourceKind::TablePlus, rows: keys.iter().map(|k| keychain_row(k)).collect() });
+        apply(
+            st,
             ApplyRequest {
                 preview_id: "p2".into(),
-                keys: vec!["k1".into(), "k2".into(), "k3".into()],
-                options: ApplyOptions { keep_groups: true, keep_environment: true, import_passwords: true },
+                keys: keys.iter().map(|k| k.to_string()).collect(),
+                options: ApplyOptions { keep_groups: true, keep_environment: true, import_passwords },
             },
-            &reader,
         )
-        .unwrap();
-        assert_eq!(res.imported.len(), 3);
-        assert_eq!(res.passwords_imported, 1);
-        assert_eq!(calls.borrow().as_slice(), ["svc/k1_database", "svc/k2_database"]);
-        assert_eq!(res.password_errors.len(), 2);
-        assert_eq!(st.secrets.get(res.imported[0].id, SecretKind::DbPassword).unwrap().unwrap().expose(), "from-keychain");
+        .unwrap()
+    }
+
+    #[test]
+    fn keychain_passwords_are_read_on_first_connect_not_at_import() {
+        let st = crate::commands::tests::test_state();
+        // Importing never touches the source keychain (that would prompt once per item).
+        let res = import_keychain_rows(&st, &["k1", "k2", "k3"], true);
+        assert_eq!((res.imported.len(), res.passwords_imported, res.passwords_deferred), (3, 0, 3));
+        let id = |k: &str| res.imported.iter().find(|r| r.key == k).unwrap().id;
+        assert!(st.secrets.get(id("k1"), SecretKind::DbPassword).unwrap().is_none());
+
+        let calls = std::cell::RefCell::new(Vec::<String>::new());
+        let reader = |s: &str, a: &str| -> DbResult<Option<dbs_secrets::Secret>> {
+            calls.borrow_mut().push(format!("{s}/{a}"));
+            match a {
+                "k1_database" => Ok(Some(dbs_secrets::Secret::new("from-keychain".into()))),
+                "k2_database" => Err(DbError::internal("user canceled")),
+                _ => Ok(None),
+            }
+        };
+        let connect = |k: &str| {
+            let cfg = st.store.get_connection(id(k)).unwrap();
+            crate::commands::resolve_secrets_with(&st, &cfg, None, &reader).unwrap().password
+        };
+
+        // First connect reads the one item, copies it into our keychain and forgets the reference.
+        assert_eq!(connect("k1").as_deref(), Some("from-keychain"));
+        assert_eq!(st.secrets.get(id("k1"), SecretKind::DbPassword).unwrap().unwrap().expose(), "from-keychain");
+        assert_eq!(connect("k1").as_deref(), Some("from-keychain"));
+        assert_eq!(calls.borrow().len(), 1, "a second connect uses our own keychain entry");
+
+        // A denied prompt keeps the reference so the next connect can ask again.
+        assert_eq!(connect("k2"), None);
+        assert_eq!(connect("k2"), None);
+        // Nothing saved in the source: the reference is dropped after one look.
+        assert_eq!(connect("k3"), None);
+        assert_eq!(connect("k3"), None);
+        assert_eq!(calls.borrow().as_slice(), ["svc/k1_database", "svc/k2_database", "svc/k2_database", "svc/k3_database"]);
+
+        // Deleting a connection drops its pending reference.
+        st.store.delete_connection(id("k2")).unwrap();
+        assert!(st.store.deferred_secret(id("k2"), "db-password").unwrap().is_none());
+    }
+
+    #[test]
+    fn keychain_references_are_not_kept_without_import_passwords() {
+        let st = crate::commands::tests::test_state();
+        let res = import_keychain_rows(&st, &["k1"], false);
+        assert_eq!(res.passwords_deferred, 0);
+        assert!(st.store.deferred_secret(res.imported[0].id, "db-password").unwrap().is_none());
     }
 }

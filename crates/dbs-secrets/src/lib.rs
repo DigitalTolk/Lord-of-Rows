@@ -22,6 +22,8 @@ pub enum SecretKind {
     TlsClientKey,
     AuthToken,
     AiApiKey,
+    /// Session token of an access-management provider (owner = the provider id).
+    AccessToken,
 }
 
 impl SecretKind {
@@ -33,6 +35,7 @@ impl SecretKind {
             SecretKind::TlsClientKey => "tls-client-key",
             SecretKind::AuthToken => "auth-token",
             SecretKind::AiApiKey => "ai-api-key",
+            SecretKind::AccessToken => "access-token",
         }
     }
 }

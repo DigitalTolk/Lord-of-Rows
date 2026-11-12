@@ -10,6 +10,7 @@
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
+    // nosemgrep: rust.lang.security.args.args -- developer CLI; arguments are file paths chosen by the user running it
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !(3..=4).contains(&args.len()) {
         eprintln!("usage: pack <plugin.json> <plugin.wasm> <out.dbsplugin> [secret-key.hex]");

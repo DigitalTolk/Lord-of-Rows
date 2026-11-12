@@ -232,6 +232,10 @@ pub struct ConnectionConfig {
     /// sidebar tree (default `:`). Display only; never sent to the server.
     #[serde(default)]
     pub key_separator: Option<String>,
+    /// Set when an access provider created the connection: which request it belongs
+    /// to and when the access ends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub managed_by: Option<ManagedBy>,
     /// Runtime only (never saved): local SSH-tunnel endpoint. Drivers that can
     /// separate "address to dial" from "hostname to verify" (Postgres) dial this
     /// while still verifying TLS against `host`.
@@ -241,6 +245,35 @@ pub struct ConnectionConfig {
 
 fn default_connect_timeout() -> u32 {
     10
+}
+
+/// Origin of a connection that an access-management provider created (for example
+/// through the Access API), and the lifetime of the access it carries. The password lives in
+/// the OS keychain like any other connection's; once the access ends it is wiped and
+/// `expired` is set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ManagedBy {
+    /// The configured provider (see `dbs-access`).
+    pub provider_id: Uuid,
+    /// Provider implementation, e.g. `"access-api"`.
+    pub provider_kind: String,
+    pub request_id: String,
+    /// The provider's id for the credential that was fetched.
+    #[serde(default)]
+    pub credential_ref: Option<String>,
+    /// Unix seconds; `None` = no expiry announced.
+    #[serde(default)]
+    pub expires_at: Option<i64>,
+    /// The access ended (expired / revoked): the password was wiped and connecting is blocked.
+    #[serde(default)]
+    pub expired: bool,
+}
+
+impl ManagedBy {
+    /// Whether the access is over at `now` (unix seconds).
+    pub fn is_expired_at(&self, now: i64) -> bool {
+        self.expired || self.expires_at.is_some_and(|t| t <= now)
+    }
 }
 
 impl ConnectionConfig {
@@ -393,8 +426,34 @@ mod tests {
             query_timeout_secs: None,
             init_sql: None,
             key_separator: None,
+            managed_by: None,
             tunnel: None,
         }
+    }
+
+    #[test]
+    fn managed_by_is_optional_and_round_trips() {
+        // Configs saved before the field existed still load.
+        let mut v = serde_json::to_value(pg()).unwrap();
+        assert!(v.get("managed_by").is_none(), "omitted when unset");
+        v.as_object_mut().unwrap().remove("managed_by");
+        let back: ConnectionConfig = serde_json::from_value(v).unwrap();
+        assert!(back.managed_by.is_none());
+        let mut c = pg();
+        c.managed_by = Some(ManagedBy {
+            provider_id: Uuid::nil(),
+            provider_kind: "access-api".into(),
+            request_id: "r1".into(),
+            credential_ref: None,
+            expires_at: Some(100),
+            expired: false,
+        });
+        let back: ConnectionConfig = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        assert_eq!(back.managed_by, c.managed_by);
+        let m = back.managed_by.unwrap();
+        assert!(!m.is_expired_at(99));
+        assert!(m.is_expired_at(100));
+        assert!(ManagedBy { expired: true, expires_at: None, ..m }.is_expired_at(0));
     }
 
     #[test]

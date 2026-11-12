@@ -1,0 +1,3 @@
+# AWS's documented example credentials (wJalrXUtnFEMI…EXAMPLEKEY / AKIAEXAMPLE) in the
+# redact_secrets() test, crates/dbs-core/src/error.rs; not a real key.
+0e39dd87771fb907b382e7d5549037355d7fcf55:crates/dbs-core/src/error.rs:generic-api-key:133

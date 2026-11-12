@@ -97,10 +97,18 @@ impl DatabaseDriver for MySqlDriver {
         };
         let mut opts: Opts = b.into();
         let conn = match dial(opts.clone()).await? {
-            // PREFERRED (MySQL client default): only when the server doesn't offer TLS at all,
-            // retry in plaintext. Any other TLS failure is reported, never silently downgraded.
+            // PREFERRED (MySQL client default): when the server doesn't offer TLS at all, retry
+            // in plaintext. REQUIRED / VERIFY_* never downgrade.
             Err(mysql_async::Error::Driver(mysql_async::DriverError::NoClientSslFlagFromServer)) if cfg.tls.mode == TlsMode::Preferred => {
                 tracing::info!("server does not support TLS; SSL mode PREFERRED falls back to plaintext");
+                opts = plain;
+                dial(opts.clone()).await?.map_err(map_err)?
+            }
+            // PREFERRED also falls back when an encrypted connection "cannot be established"
+            // (MySQL's definition of the mode): typically an old server that only speaks
+            // TLS 1.0/1.1, which the system TLS stack refuses.
+            Err(mysql_async::Error::Io(mysql_async::IoError::Tls(e))) if cfg.tls.mode == TlsMode::Preferred => {
+                tracing::warn!("TLS handshake failed ({e}); SSL mode PREFERRED falls back to plaintext");
                 opts = plain;
                 dial(opts.clone()).await?.map_err(map_err)?
             }

@@ -5,6 +5,7 @@ import { fmtNumber } from '../lib/format';
 import { displayCombo } from '../lib/keys';
 import { useApp, type OpenSession } from '../store';
 import { EngineBadge } from './EngineBadge';
+import { ManagedChip } from './ManagedChip';
 import { Icon } from './icons';
 import { isContextMenuKey, menuAnchor, MenuPopup } from './ui';
 
@@ -62,6 +63,7 @@ export function ConnectionRail() {
               {count > 0 && <span className="absolute -end-2 -top-1.5 min-w-[16px] rounded-full bg-fg px-1 text-[0.62rem] leading-4 text-bg">{count}</span>}
             </span>
             <span className="line-clamp-2 w-full break-all text-center text-[0.62rem] leading-tight text-muted" aria-hidden>{s.config.name}</span>
+            {s.config.managed_by && <ManagedChip cfg={s.config} tiny />}
           </button>
         );
       })}
