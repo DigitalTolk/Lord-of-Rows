@@ -76,8 +76,16 @@ const envColors: Record<EnvironmentKind, string> = {
   custom: 'bg-panel text-muted border-border',
 };
 
-export function EnvBadge({ env }: { env: EnvironmentKind }) {
+/** Environment tag. `short`: compact label ("PROD", "DEV") for narrow places like the connection rail. */
+export function EnvBadge({ env, short }: { env: EnvironmentKind; short?: boolean }) {
   const { t } = useTranslation();
+  if (short) {
+    return (
+      <span className={`inline-flex h-[15px] max-w-full items-center whitespace-nowrap rounded-full border px-1 text-[0.56rem] font-semibold uppercase leading-none tracking-wide ${envColors[env]}`}>
+        <span className="truncate">{t(`connList.envShort.${env}`)}</span>
+      </span>
+    );
+  }
   return <span className={`inline-flex h-[18px] items-center rounded-full border px-1.5 text-[0.68rem] font-semibold uppercase tracking-wide ${envColors[env]}`}>{t(`env.${env}`)}</span>;
 }
 

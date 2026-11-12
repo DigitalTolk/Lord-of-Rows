@@ -8,6 +8,8 @@
 
 - Fix: MySQL/MariaDB with SSL mode PREFERRED now falls back to an unencrypted connection when the TLS handshake fails (e.g. a server that only speaks TLS 1.0/1.1), matching MySQL's own definition of the mode. REQUIRED and VERIFY modes never fall back.
 
+- Connection rail: every open connection shows its environment tag (LOCAL, DEV, STAGING, PROD…); production connections also get a red outline, so it is always clear where queries run.
+
 ## 0.1.2
 - Redis key browser: logical databases (db0, db1, …) as schemas with key counts (sidebar, schema rail, Open database picker); a lazily expanded namespace tree (configurable separator, bounded SCAN batches with "Load more"); a SCAN-paged key grid (key, type, TTL, size, value preview) with a server-side Key pattern; values by type (string/JSON, hash, list, set, sorted set, stream, JSON documents) paged in the detail panel; staged key edits (set, TTL, rename, delete, field/member add/remove) previewed as commands and committed through the safety policy. `KEYS` is never used.
 - Import connections from other database tools (TablePlus, DBeaver, Sequel Ace / Sequel Pro, pgAdmin, DataGrip) or a list of connection URLs, with a preview, duplicate detection, groups and environment tags kept, and optional import of TablePlus passwords from the macOS Keychain.

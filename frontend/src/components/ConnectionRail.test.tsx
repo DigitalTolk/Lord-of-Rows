@@ -35,4 +35,17 @@ describe('ConnectionRail', () => {
     await act(async () => fireEvent.click(options[0]));
     expect(useApp.getState().sessions.s1.activeSchema).toBe('billing_archive');
   });
+
+  it('tags each connection with its environment; production stands out', () => {
+    const prod = { ...session, session_id: 's2', config: { ...session.config, id: 'c2', name: 'Orders', environment: 'production' } } as unknown as OpenSession;
+    useOpenedSchemas.setState({ bySession: {} });
+    useApp.setState({ sessions: { s1: session, s2: prod }, activeSession: 's1', tabs: [] });
+    render(<ConnectionRail />);
+    expect(screen.getByText('Local')).toBeTruthy();
+    expect(screen.getByText('Prod')).toBeTruthy();
+    const prodButton = screen.getByRole('button', { name: /^Orders, Production/ });
+    expect(prodButton.className).toContain('ring-danger-solid');
+    expect(screen.getByRole('button', { name: /^Local MySQL, Local/ }).className).not.toContain('ring-danger-solid');
+  });
 });
+
