@@ -8,6 +8,8 @@ import { CommandPalette, panelDomId, StatusBar, TabBar, tabDomId, TopBar } from 
 import { Welcome } from './components/Welcome';
 import { OpenDatabaseHost, useDbPicker } from './components/OpenDatabaseDialog';
 import { ImportConnectionsHost } from './components/ImportConnectionsDialog';
+import { AccessWatcher } from './components/AccessWatcher';
+import { AccessEndedOverlay, AccessExpiryBanner } from './components/AccessBanner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ConnectionRail } from './components/ConnectionRail';
 import { Icon } from './components/icons';
@@ -245,7 +247,9 @@ export default function App() {
             )}
             <main className="flex min-w-0 flex-1 flex-col">
               {!focus && <TabBar />}
-              <div className="min-h-0 flex-1">
+              <AccessExpiryBanner />
+              <div className="relative min-h-0 flex-1">
+                <AccessEndedOverlay />
                 {/* Keep views mounted so editor state survives tab switches. */}
                 {st.tabs.map((tab) => (
                   <div key={tab.id} id={panelDomId(tab.id)} role="tabpanel" aria-labelledby={tabDomId(tab.id)} hidden={tab.id !== active?.id} className="h-full">
@@ -274,12 +278,13 @@ export default function App() {
       {st.paletteOpen && <CommandPalette />}
       <OpenDatabaseHost />
       <ImportConnectionsHost />
+      <AccessWatcher />
       {pending && <SafetyDialog pending={pending} />}
       <AskHost />
       {/* Live region stays mounted so screen readers announce toasts added later. */}
       <div role="log" aria-live="polite" aria-relevant="additions" aria-label={t('shell.notifications')} className="pointer-events-none fixed bottom-8 end-4 z-50 flex flex-col gap-1">
         {st.toasts.map((x) => (
-          <div key={x.id} role={x.kind === 'error' ? 'alert' : 'status'} dir="auto" className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="me-1.5 text-ok" aria-hidden>●</span>}{x.text}</div>
+          <div key={x.id} role={x.kind === 'error' ? 'alert' : 'status'} dir="auto" className={`pointer-events-auto max-w-md whitespace-pre-wrap rounded-lg border px-3 py-2 shadow-lg ${x.kind === 'error' ? 'border-danger-solid bg-danger-solid text-on-solid' : 'border-border bg-raised text-fg'}`}>{x.kind === 'ok' && <span className="me-1.5 text-ok" aria-hidden>●</span>}{x.text}{x.action && <button className={`btn ms-2 h-6 ${x.kind === 'error' ? '' : 'btn-primary'}`} onClick={() => { x.action?.run(); useApp.setState((s) => ({ toasts: s.toasts.filter((y) => y.id !== x.id) })); }}>{x.action.label}</button>}</div>
         ))}
       </div>
     </div>

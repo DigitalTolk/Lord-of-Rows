@@ -228,6 +228,7 @@ mod tests {
 
     #[test]
     fn finds_default_locations() {
+        // nosemgrep: rust.lang.security.temp-dir.temp-dir -- test scratch dir with a unique name
         let d = std::env::temp_dir().join(format!("dbs-import-detect-{}", std::process::id()));
         let dbv = d.join("share/DBeaverData/workspace6/General/.dbeaver");
         std::fs::create_dir_all(&dbv).unwrap();

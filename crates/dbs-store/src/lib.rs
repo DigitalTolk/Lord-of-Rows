@@ -40,7 +40,19 @@ const MIGRATIONS: &[&str] = &[
         SELECT g, ROW_NUMBER() OVER (ORDER BY g) - 1 FROM
         (SELECT DISTINCT trim(json_extract(body, '$.group')) AS g FROM connections
          WHERE json_valid(body) AND trim(coalesce(json_extract(body, '$.group'), '')) <> '');",
+    // v4: passwords an imported connection still has in another app's keychain,
+    // read (one OS prompt each) the first time the connection is used.
+    "CREATE TABLE deferred_secrets (connection_id TEXT NOT NULL, kind TEXT NOT NULL, service TEXT NOT NULL,
+        account TEXT NOT NULL, PRIMARY KEY(connection_id, kind));",
 ];
+
+/// A reference to a secret another application keeps in the OS keychain.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeferredSecret {
+    pub kind: String,
+    pub service: String,
+    pub account: String,
+}
 
 pub struct AppStore {
     conn: Mutex<Connection>,
@@ -233,7 +245,9 @@ impl AppStore {
     }
 
     pub fn delete_connection(&self, id: Uuid) -> DbResult<bool> {
-        let n = self.conn.lock().unwrap().execute("DELETE FROM connections WHERE id = ?1", [id.to_string()]).map_err(e)?;
+        let c = self.conn.lock().unwrap();
+        let n = c.execute("DELETE FROM connections WHERE id = ?1", [id.to_string()]).map_err(e)?;
+        c.execute("DELETE FROM deferred_secrets WHERE connection_id = ?1", [id.to_string()]).map_err(e)?;
         Ok(n > 0)
     }
 
@@ -426,6 +440,38 @@ impl AppStore {
         Ok(())
     }
 
+    // ---- deferred (not yet imported) keychain secrets ----
+    /// Replaces the connection's deferred secret references.
+    pub fn set_deferred_secrets(&self, id: Uuid, items: &[DeferredSecret]) -> DbResult<()> {
+        let mut c = self.conn.lock().unwrap();
+        let tx = c.transaction().map_err(e)?;
+        tx.execute("DELETE FROM deferred_secrets WHERE connection_id=?1", [id.to_string()]).map_err(e)?;
+        for d in items {
+            tx.execute(
+                "INSERT OR REPLACE INTO deferred_secrets(connection_id, kind, service, account) VALUES(?1,?2,?3,?4)",
+                params![id.to_string(), d.kind, d.service, d.account],
+            )
+            .map_err(e)?;
+        }
+        tx.commit().map_err(e)
+    }
+
+    pub fn deferred_secret(&self, id: Uuid, kind: &str) -> DbResult<Option<DeferredSecret>> {
+        self.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT kind, service, account FROM deferred_secrets WHERE connection_id=?1 AND kind=?2", params![id.to_string(), kind], |r| {
+                Ok(DeferredSecret { kind: r.get(0)?, service: r.get(1)?, account: r.get(2)? })
+            })
+            .optional()
+            .map_err(e)
+    }
+
+    pub fn delete_deferred_secret(&self, id: Uuid, kind: &str) -> DbResult<()> {
+        self.conn.lock().unwrap().execute("DELETE FROM deferred_secrets WHERE connection_id=?1 AND kind=?2", params![id.to_string(), kind]).map_err(e)?;
+        Ok(())
+    }
+
     // ---- settings ----
     pub fn get_setting(&self, k: &str) -> DbResult<Option<serde_json::Value>> {
         let v: Option<String> = self.conn.lock().unwrap().query_row("SELECT v FROM settings WHERE k=?1", [k], |r| r.get(0)).optional().map_err(e)?;
@@ -612,6 +658,7 @@ mod tests {
             query_timeout_secs: None,
             init_sql: None,
             key_separator: None,
+            managed_by: None,
             tunnel: None,
         }
     }

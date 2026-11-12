@@ -5,8 +5,9 @@ import { fmtNumber } from '../lib/format';
 import { displayCombo } from '../lib/keys';
 import { useApp, type OpenSession } from '../store';
 import { EngineBadge } from './EngineBadge';
+import { ManagedChip } from './ManagedChip';
 import { Icon } from './icons';
-import { isContextMenuKey, menuAnchor, MenuPopup } from './ui';
+import { EnvBadge, isContextMenuKey, menuAnchor, MenuPopup } from './ui';
 
 const ENV_DOT: Record<string, string> = { production: 'bg-danger', staging: 'bg-warn', testing: 'bg-purple', development: 'bg-accent', local: 'bg-ok', custom: 'bg-muted' };
 const ENV_COLOR: Record<string, string> = { production: 'rgb(var(--danger))', staging: 'rgb(var(--warn))', testing: 'rgb(var(--purple))', development: 'rgb(var(--accent))', local: 'rgb(var(--ok))', custom: 'rgb(var(--muted))' };
@@ -50,10 +51,10 @@ export function ConnectionRail() {
             data-session={s.session_id}
             onClick={() => switchSession(s.session_id)}
             onContextMenu={(e) => { e.preventDefault(); setMenu({ id: s.session_id, x: e.clientX, y: e.clientY }); }}
-            title={`${s.config.name}\n${s.server.version.split(' on ')[0]}${shortcut ? `\n${shortcut}` : ''}`}
-            aria-label={`${s.config.name}${active ? t('rail.active') : ''}`}
+            title={`${s.config.name} · ${t(`env.${s.config.environment}`)}\n${s.server.version.split(' on ')[0]}${shortcut ? `\n${shortcut}` : ''}`}
+            aria-label={`${s.config.name}, ${t(`env.${s.config.environment}`)}${active ? t('rail.active') : ''}`}
             aria-current={active}
-            className={`group relative flex w-[66px] shrink-0 flex-col items-center gap-0.5 rounded-xl px-0.5 py-1 transition-colors ${active ? 'bg-raised shadow-sm ring-1 ring-border' : 'hover:bg-hover'}`}
+            className={`group relative flex w-[66px] shrink-0 flex-col items-center gap-0.5 rounded-xl px-0.5 py-1 transition-colors ${active ? 'bg-raised shadow-sm' : 'hover:bg-hover'} ${s.config.environment === 'production' ? 'ring-1 ring-danger-solid/70' : active ? 'ring-1 ring-border' : ''}`}
           >
             {active && <span className="absolute -start-[5px] top-2 h-6 w-[3px] rounded-e bg-accent" aria-hidden />}
             <span className="relative" aria-hidden>
@@ -62,6 +63,8 @@ export function ConnectionRail() {
               {count > 0 && <span className="absolute -end-2 -top-1.5 min-w-[16px] rounded-full bg-fg px-1 text-[0.62rem] leading-4 text-bg">{count}</span>}
             </span>
             <span className="line-clamp-2 w-full break-all text-center text-[0.62rem] leading-tight text-muted" aria-hidden>{s.config.name}</span>
+            <span aria-hidden className="flex max-w-full"><EnvBadge env={s.config.environment} short /></span>
+            {s.config.managed_by && <ManagedChip cfg={s.config} tiny />}
           </button>
         );
       })}

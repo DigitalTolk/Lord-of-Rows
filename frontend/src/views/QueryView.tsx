@@ -18,7 +18,7 @@ import { displayValue } from '../lib/value';
 import i18n from '../i18n';
 import { fmtNumber } from '../lib/format';
 import type { DbError, StatementResult } from '../lib/types';
-import { errMsg, useApp, type Tab } from '../store';
+import { errMsg, SESSION_ENDING_EVENT, useApp, type Tab } from '../store';
 
 const dbErrorText = (e: DbError) => `${e.message}${e.code ? ` [${e.code}]` : ''}${e.hint ? `\n${i18n.t('query.hint', { hint: e.hint })}` : ''}`;
 
@@ -147,6 +147,17 @@ export function QueryView({ tab, pane = 0 }: { tab: Tab; pane?: 0 | 1 }) {
   const cancel = () => {
     if (running) api.cancelQuery(running).catch(() => undefined);
   };
+  // Access ended for this connection: stop the running query before the connection closes.
+  const runningRef = useRef(running);
+  runningRef.current = running;
+  useEffect(() => {
+    const onEnding = (e: Event) => {
+      const id = (e as CustomEvent<{ sessionId: string }>).detail?.sessionId;
+      if (id && id === s?.session_id && runningRef.current) api.cancelQuery(runningRef.current).catch(() => undefined);
+    };
+    window.addEventListener(SESSION_ENDING_EVENT, onEnding);
+    return () => window.removeEventListener(SESSION_ENDING_EVENT, onEnding);
+  }, [s?.session_id]);
   const fmt = () => {
     const ed = editorRef.current;
     if (!ed || !s) return;

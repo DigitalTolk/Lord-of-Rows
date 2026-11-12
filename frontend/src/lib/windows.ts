@@ -38,3 +38,12 @@ export async function setWindowTitle(title: string): Promise<void> {
     /* not running inside Tauri */
   }
 }
+
+/** App icon badge (macOS Dock); 0 clears it. Silently ignored where unsupported. */
+export async function setAppBadge(count: number): Promise<void> {
+  try {
+    await getCurrentWindow().setBadgeCount(count > 0 ? count : undefined);
+  } catch {
+    /* not in Tauri, or the platform has no badge */
+  }
+}

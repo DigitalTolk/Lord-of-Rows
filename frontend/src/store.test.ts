@@ -109,3 +109,23 @@ describe('window-scoped workspace', () => {
     expect(windowTitle('Lord of the Rows')).toBe('Lord of the Rows');
   });
 });
+
+describe('openConnection', () => {
+  it('switches to a connection already open in this window and ignores repeats while connecting', async () => {
+    let resolve!: (id: string) => void;
+    const openSession = vi.fn(() => new Promise<string>((r) => (resolve = r)));
+    const switchSession = vi.fn();
+    useApp.setState({ sessions: {}, openSession, switchSession } as never);
+    const first = useApp.getState().openConnection('c1');
+    expect(await useApp.getState().openConnection('c1')).toBeNull();
+    resolve('s1');
+    expect(await first).toBe('s1');
+    expect(openSession).toHaveBeenCalledTimes(1);
+
+    useApp.setState({ sessions: { s1: { session_id: 's1', config: { id: 'c1' } } } } as never);
+    expect(await useApp.getState().openConnection('c1')).toBe('s1');
+    expect(switchSession).toHaveBeenCalledWith('s1');
+    expect(openSession).toHaveBeenCalledTimes(1);
+  });
+});
+

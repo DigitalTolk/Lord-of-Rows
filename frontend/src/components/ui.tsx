@@ -2,7 +2,8 @@ import { cloneElement, isValidElement, useEffect, useId, useRef, type KeyboardEv
 import { useTranslation } from 'react-i18next';
 import type { EnvironmentKind } from '../lib/types';
 
-export function Dialog({ title, onClose, children, footer, wide, icon }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; icon?: ReactNode }) {
+/** Modal dialog. `sheet` slides it in from the inline end edge as a full-height side panel. */
+export function Dialog({ title, onClose, children, footer, wide, icon, sheet }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean; icon?: ReactNode; sheet?: boolean }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -44,14 +45,16 @@ export function Dialog({ title, onClose, children, footer, wide, icon }: { title
     };
   }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay/40">
+    <div className={`fixed inset-0 z-50 flex bg-overlay/40 ${sheet ? 'justify-end' : 'items-center justify-center'}`}>
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`flex max-h-[90vh] flex-col overflow-hidden rounded-xl border border-border bg-bg shadow-[0_20px_60px_rgb(var(--shadow)/0.25)] outline-none ${wide ? 'w-[min(980px,95vw)]' : 'w-[min(660px,95vw)]'}`}
+        className={`flex flex-col overflow-hidden border-border bg-bg shadow-[0_20px_60px_rgb(var(--shadow)/0.25)] outline-none ${
+          sheet ? 'h-full w-[min(480px,100vw)] border-s' : `max-h-[90vh] rounded-xl border ${wide ? 'w-[min(980px,95vw)]' : 'w-[min(660px,95vw)]'}`
+        }`}
       >
         <div className="flex h-11 shrink-0 items-center justify-between px-4">
           <h2 id={titleId} className="flex items-center gap-2 text-[1.05rem] font-semibold">{icon}{title}</h2>
@@ -73,8 +76,16 @@ const envColors: Record<EnvironmentKind, string> = {
   custom: 'bg-panel text-muted border-border',
 };
 
-export function EnvBadge({ env }: { env: EnvironmentKind }) {
+/** Environment tag. `short`: compact label ("PROD", "DEV") for narrow places like the connection rail. */
+export function EnvBadge({ env, short }: { env: EnvironmentKind; short?: boolean }) {
   const { t } = useTranslation();
+  if (short) {
+    return (
+      <span className={`inline-flex h-[15px] max-w-full items-center whitespace-nowrap rounded-full border px-1 text-[0.56rem] font-semibold uppercase leading-none tracking-wide ${envColors[env]}`}>
+        <span className="truncate">{t(`connList.envShort.${env}`)}</span>
+      </span>
+    );
+  }
   return <span className={`inline-flex h-[18px] items-center rounded-full border px-1.5 text-[0.68rem] font-semibold uppercase tracking-wide ${envColors[env]}`}>{t(`env.${env}`)}</span>;
 }
 

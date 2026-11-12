@@ -4,30 +4,52 @@ import { api } from '../lib/ipc';
 import type { StoredConnection } from '../lib/types';
 import { errMsg, useApp } from '../store';
 import { ask } from './ask';
-import { ConnectionList, type ConnAction } from './ConnectionList';
+import { ConnectionList, useConnSelection, type ConnAction } from './ConnectionList';
 import logo from '../assets/logo.svg';
 import { Icon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
 import { openImportDialog } from './ImportConnectionsDialog';
+import { AccessPanel } from './AccessPanel';
+import { errCode, managedState, readyCount } from '../lib/access';
+import { offerRequestAgain, requestAgainFor, useAccess } from '../lib/accessStore';
 
 /** Launcher shown when no connection is open: connection list + quick actions. */
 export function Welcome() {
   const { t } = useTranslation();
-  const { connections, info, openSession, toast, reloadConnections, openTab } = useApp();
+  const { connections, info, toast, reloadConnections, openTab } = useApp();
   const [sel, setSel] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const tab = useAccess((s) => s.launcherTab);
+  const ready = useAccess((s) => readyCount(s.requests, Math.floor(Date.now() / 1000)));
+
+  /** An expired managed connection can't be opened: offer a new request instead. */
+  const requestAgain = (c: StoredConnection) => {
+    if (c.config.managed_by) void requestAgainFor(c.config.managed_by);
+  };
 
   const connect = async (id: string) => {
+    const c = connections.find((x) => x.config.id === id);
+    if (c && managedState(c.config, Math.floor(Date.now() / 1000))?.expired) {
+      toast('info', t('access.expiredConnect', { name: c.config.name }));
+      return requestAgain(c);
+    }
     setBusy(id);
     try {
-      await openSession(id);
+      // Switches to it when already open; ignores repeats while it is connecting.
+      await useApp.getState().openConnection(id);
     } catch (e) {
       const msg = errMsg(e);
-      if (/password|authentication/i.test(msg)) {
+      const m = c?.config.managed_by;
+      // A managed connection's credentials come from the access provider: never ask for a
+      // password; offer a new request instead (expired / revoked / rejected credentials).
+      if (m && c && (errCode(e) === 'access_expired' || /password|authentication/i.test(msg))) {
+        offerRequestAgain(m, c.config.name, msg, t);
+        void useApp.getState().reloadConnections();
+      } else if (/password|authentication/i.test(msg)) {
         const pw = await ask.password(t('conn.password'), msg);
         if (pw) {
           try {
-            await openSession(id, pw);
+            await useApp.getState().openConnection(id, pw);
           } catch (e2) {
             toast('error', errMsg(e2));
           }
@@ -41,6 +63,7 @@ export function Welcome() {
   const action = async (k: ConnAction, c: StoredConnection) => {
     const cfg = c.config;
     if (k === 'connect') return connect(cfg.id);
+    if (k === 'requestAgain') return requestAgain(c);
     if (k === 'edit') return useApp.setState({ connectionDialog: { id: cfg.id } });
     if (k === 'duplicate') return useApp.setState({ connectionDialog: { duplicateOf: cfg.id } });
     if (k === 'favorite') {
@@ -56,7 +79,7 @@ export function Welcome() {
 
   return (
     <div className="flex h-full items-center justify-center bg-panel p-6">
-      <main className="flex h-[min(560px,90%)] w-[min(860px,100%)] overflow-hidden rounded-xl border border-border bg-bg shadow-[0_10px_40px_rgb(var(--shadow)/0.12)]">
+      <main className="flex h-[min(600px,92%)] w-[min(880px,100%)] overflow-hidden rounded-xl border border-border bg-bg shadow-[0_10px_40px_rgb(var(--shadow)/0.12)]">
         {/* Brand / actions */}
         <div className="flex w-[300px] shrink-0 flex-col items-center border-e border-border bg-panel px-6 py-8 text-center">
           <img src={logo} alt="" width={88} height={88} className="mb-3 h-[88px] w-[88px] drop-shadow-lg" draggable={false} />
@@ -88,18 +111,49 @@ export function Welcome() {
           <p className="mt-auto text-[0.78rem] text-muted">{t('welcome.footer', { backend: info?.secret_backend ?? t('welcome.keychain') })}</p>
         </div>
 
-        {/* Connection list */}
+        {/* Connection list | access requests */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <ConnectionList sel={sel} onSelect={setSel} busy={busy} onConnect={(id) => void connect(id)} onAction={(k, c) => void action(k, c)} />
+          <div className="flex items-center border-b border-border px-3 pt-2.5 pb-2">
+            <div className="seg" role="tablist" aria-label={t('welcome.panes')}>
+              <button role="tab" aria-selected={tab === 'connections'} onClick={() => useAccess.setState({ launcherTab: 'connections' })}>
+                <Icon name="db" size={13} className="me-1 inline" /> {t('conn.title')}
+              </button>
+              <button role="tab" aria-selected={tab === 'access'} onClick={() => useAccess.setState({ launcherTab: 'access' })}>
+                <Icon name="key" size={13} className="me-1 inline" /> {t('access.tab')}
+                {ready > 0 && <span className="ms-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-ok px-1 text-[0.7rem] font-semibold leading-[18px] text-on-solid" aria-label={t('access.readyCount', { count: ready })}>{ready}</span>}
+              </button>
+            </div>
+          </div>
+          {tab === 'access' ? (
+            <AccessPanel />
+          ) : (
+            <ConnectionList sel={sel} onSelect={setSel} busy={busy} onConnect={(id) => void connect(id)} onAction={(k, c) => void action(k, c)} />
+          )}
           <div className="flex items-center gap-1 border-t border-border bg-panel px-2 py-1.5">
-            <button className="icon-btn" aria-label={t('conn.new')} title={t('conn.new')} onClick={() => useApp.setState({ connectionDialog: {} })}><Icon name="plus" /></button>
-            <button className="icon-btn" aria-label={t('common.edit')} title={t('common.edit')} disabled={!sel} onClick={() => sel && useApp.setState({ connectionDialog: { id: sel } })}><Icon name="edit" /></button>
-            <button className="icon-btn" aria-label={t('common.delete')} title={t('common.delete')} disabled={!sel} onClick={() => { const c = connections.find((x) => x.config.id === sel); if (c) void action('delete', c); }}><Icon name="trash" /></button>
-            <span className="ms-auto text-[0.82rem] text-muted">{t('welcome.hint')}</span>
+            {tab === 'connections' && (
+              <>
+                <button className="icon-btn" aria-label={t('conn.new')} title={t('conn.new')} onClick={() => useApp.setState({ connectionDialog: {} })}><Icon name="plus" /></button>
+                <button className="icon-btn" aria-label={t('common.edit')} title={t('common.edit')} disabled={!sel} onClick={() => sel && useApp.setState({ connectionDialog: { id: sel } })}><Icon name="edit" /></button>
+                <DeleteButton sel={sel} onDeleteOne={() => { const c = connections.find((x) => x.config.id === sel); if (c) void action('delete', c); }} />
+              </>
+            )}
+            <span className="ms-auto text-[0.82rem] text-muted">{tab === 'connections' ? t('welcome.hint') : t('access.footer')}</span>
             <ThemeToggle />
           </div>
         </div>
       </main>
     </div>
+  );
+}
+
+/** Bottom-bar Delete: deletes the multi-selection when connections are picked, else the selected row. */
+function DeleteButton({ sel, onDeleteOne }: { sel: string | null; onDeleteOne: () => void }) {
+  const { t } = useTranslation();
+  const { count, deletePicked } = useConnSelection();
+  const label = count > 0 ? t('connList.deleteSelected', { count }) : t('common.delete');
+  return (
+    <button className="icon-btn" aria-label={label} title={label} disabled={!deletePicked && !sel} onClick={() => (deletePicked ? deletePicked() : onDeleteOne())}>
+      <Icon name="trash" />
+    </button>
   );
 }

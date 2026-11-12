@@ -14,7 +14,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REPO="DigitalTolk/Lord-of-Rows"
+REPO="DigitalTolk/Lord-of-the-Rows"
 TAP="DigitalTolk/homebrew-tools"
 VERSION="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
 TAG="v$VERSION"

@@ -14,6 +14,9 @@ CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER REFERENCES cust
 INSERT INTO customers (name, email) VALUES ('Ada','ada@example.com'),('Grace','grace@example.com');
 INSERT INTO orders (customer_id, total) VALUES (1, 10.5),(2, 99.99);
 CREATE VIEW customer_totals AS SELECT c.name, sum(o.total) AS revenue FROM customers c JOIN orders o ON o.customer_id = c.id GROUP BY c.id;"
+# The app opens sign-in pages of access providers with $BROWSER on Linux; this one just
+# follows the redirects back to the app (see fixtures/fake-browser.mjs).
+export BROWSER=$PWD/fixtures/fake-browser.mjs
 export WEBKIT_DISABLE_DMABUF_RENDERER=1 LIBGL_ALWAYS_SOFTWARE=1
 rm -f /tmp/.X97-lock; Xvfb :97 -screen 0 1600x1000x24 >/dev/null 2>&1 & XVFB=$!
 export DISPLAY=:97

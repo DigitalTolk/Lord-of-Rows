@@ -55,6 +55,8 @@ pub struct AppState {
     pub plugins: crate::plugins::PluginHost,
     /// The last connection-import preview (rows keep any secrets backend-side).
     pub import_preview: Mutex<Option<crate::import::Preview>>,
+    /// Access-provider sign-in / connect coordination (see `access.rs`).
+    pub access: crate::access::AccessState,
 }
 
 impl AppState {
@@ -155,6 +157,7 @@ mod tests {
             query_timeout_secs: None,
             init_sql: None,
             key_separator: None,
+            managed_by: None,
             tunnel: None,
         };
         let conn = dbs_drivers::driver_for(Engine::Sqlite).unwrap().connect(&config, ConnectSecrets::default()).await.expect("sqlite connect");

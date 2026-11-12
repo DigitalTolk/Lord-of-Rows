@@ -161,6 +161,36 @@ export const api = {
   checkUpdate: () => call<T.UpdateCheck>('check_update'),
   installUpdate: (version: string) => call<{ version: string; restart_required: boolean }>('install_update', { version }),
   restartAfterUpdate: () => call<void>('restart_after_update'),
+  // Access providers: session tokens and fetched passwords stay in Rust (OS keychain).
+  accessProviderKinds: () => call<T.AccessProviderKind[]>('access_provider_kinds'),
+  accessProviders: () => call<T.AccessProviderInfo[]>('access_providers_list'),
+  accessAddProvider: (kind: string, name: string, baseUrl: string) => call<T.AccessProviderInfo>('access_providers_add', { provider: { kind, name, base_url: baseUrl } }),
+  /** A new URL signs out of that provider. */
+  accessUpdateProvider: (id: string, name: string, baseUrl: string) => call<T.AccessProviderInfo>('access_providers_update', { id, name, baseUrl }),
+  accessRemoveProvider: (id: string) => call<void>('access_providers_remove', { id }),
+  accessStatus: (providerId: string) => call<T.AccessStatus>('access_status', { providerId }),
+  /** Opens the browser for the provider's sign-in; resolves once it redirected back (rejects on cancel/timeout). */
+  accessSignIn: (providerId: string) => call<T.AccessUser>('access_sign_in', { providerId }),
+  accessCancelSignIn: (providerId: string) => call<void>('access_cancel_sign_in', { providerId }),
+  accessSignOut: (providerId: string) => call<void>('access_sign_out', { providerId }),
+  accessListResources: (providerId: string) => call<T.AccessResource[]>('access_list_resources', { providerId }),
+  accessResourceTargets: (providerId: string, resourceId: string) => call<T.AccessTargets>('access_resource_targets', { providerId, resourceId }),
+  accessCreateRequest: (providerId: string, input: T.AccessRequestInput) => call<T.AccessRequest>('access_create_request', { providerId, input }),
+  accessListRequests: (providerId: string) => call<T.AccessRequestList>('access_list_requests', { providerId }),
+  accessGetRequest: (providerId: string, requestId: string) => call<T.AccessRequestView>('access_get_request', { providerId, requestId }),
+  accessCancelRequest: (providerId: string, requestId: string) => call<T.AccessRequest>('access_cancel_request', { providerId, requestId }),
+  accessListApprovals: (providerId: string) => call<T.AccessRequest[]>('access_list_approvals', { providerId }),
+  /** Requests I decided, newest first; rejects with code access_unsupported when the provider can't list them. */
+  accessListDecided: (providerId: string, cursor: string | null, limit = 50) => call<T.AccessPage<T.AccessRequest>>('access_list_decided', { providerId, cursor, limit }),
+  accessApprove: (providerId: string, requestId: string) => call<T.AccessRequest>('access_approve', { providerId, requestId }),
+  accessReject: (providerId: string, requestId: string, reason: string) => call<T.AccessRequest>('access_reject', { providerId, requestId, reason }),
+  accessConnectCheck: (providerId: string, requestId: string) => call<T.AccessConnectCheck>('access_connect_check', { providerId, requestId }),
+  /** Creates/refreshes the saved connection for a ready request (fetches the password at most once). */
+  accessConnect: (providerId: string, requestId: string) => call<T.AccessConnectOutcome>('access_connect', { providerId, requestId }),
+  /** Ends managed connections whose access time is over; resolves to their ids. */
+  accessSweep: () => call<string[]>('access_sweep'),
+  /** The last lordoftherows://access link (taken once). */
+  accessTakeDeepLink: () => call<T.AccessDeepLink | null>('access_take_deep_link'),
   pluginList: () => call<T.PluginInfo[]>('plugin_list'),
   pluginInspect: (grant: string) => call<T.PluginPreview>('plugin_inspect', { grant }),
   pluginInstall: (grant: string, wasmSha256: string, confirmUntrusted: boolean) => call<T.PluginInfo>('plugin_install', { grant, wasmSha256, confirmUntrusted }),

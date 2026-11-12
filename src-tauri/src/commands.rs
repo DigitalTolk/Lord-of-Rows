@@ -99,11 +99,16 @@ pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<Connec
     if cfg.id.is_nil() {
         cfg.id = Uuid::new_v4();
     }
+    // Access-provider management is owned by the backend: a new or duplicated connection is
+    // never managed, and an edit can't change (or un-expire) what was stored.
+    let stored = st.store.get_connection(cfg.id).ok();
+    cfg.managed_by = stored.as_ref().and_then(|c| c.managed_by.clone());
     cfg.validate()?;
-    let existed = st.store.get_connection(cfg.id).is_ok();
+    let existed = stored.is_some();
     st.store.save_connection(&cfg)?;
     if let Some(pw) = req.password {
         check_len(&pw, 4096, "password")?;
+        st.access.known_passwords.lock().unwrap().remove(&cfg.id);
         if pw.is_empty() {
             st.secrets.delete(cfg.id, SecretKind::DbPassword)?;
             st.session_secrets.delete(cfg.id, SecretKind::DbPassword)?;
@@ -135,6 +140,7 @@ pub fn save_connection(st: State<'_, AppState>, req: SaveConnection) -> R<Connec
 pub fn delete_connection(st: State<'_, AppState>, id: Uuid) -> R<()> {
     let cfg = st.store.get_connection(id).ok();
     st.store.delete_connection(id)?;
+    st.access.known_passwords.lock().unwrap().remove(&id);
     st.secrets.delete_all(id)?;
     st.session_secrets.delete_all(id)?;
     audit(&st, Category::ConnectionDeleted, Outcome::Success, cfg.as_ref(), |e| e.connection_id = Some(id.to_string()));
@@ -182,19 +188,39 @@ pub fn set_connection_group(st: State<'_, AppState>, id: Uuid, group: Option<Str
 }
 
 fn resolve_secrets(st: &AppState, cfg: &ConnectionConfig, override_pw: Option<String>) -> R<ConnectSecrets> {
+    resolve_secrets_with(st, cfg, override_pw, &crate::import::os_keychain_reader)
+}
+
+/// Like [`resolve_secrets`], with the reader used for passwords an import left
+/// in another app's keychain (tests pass a fake).
+pub(crate) fn resolve_secrets_with(
+    st: &AppState,
+    cfg: &ConnectionConfig,
+    override_pw: Option<String>,
+    read: crate::import::KeychainReader<'_>,
+) -> R<ConnectSecrets> {
     if let Some(p) = override_pw {
         return Ok(ConnectSecrets { password: Some(p) });
     }
     let p = match st.session_secrets.get(cfg.id, SecretKind::DbPassword)? {
         Some(s) => Some(s.into_inner()),
-        None => st.secrets.get(cfg.id, SecretKind::DbPassword)?.map(|s| s.into_inner()),
+        None => match st.secrets.get(cfg.id, SecretKind::DbPassword)? {
+            Some(s) => Some(s.into_inner()),
+            None => crate::import::take_deferred_secret(st, cfg.id, SecretKind::DbPassword, read),
+        },
     };
     Ok(ConnectSecrets { password: p })
 }
 
-/// SSH secrets: explicit values (from the connection form) win, else the keychain.
+/// SSH secrets: explicit values (from the connection form) win, else the keychain
+/// (including a password an import left in another app's keychain).
 fn resolve_ssh_secrets(st: &AppState, cfg: &ConnectionConfig, password: Option<String>, passphrase: Option<String>) -> R<dbs_ssh::SshSecrets> {
-    let get = |k| -> R<Option<String>> { Ok(st.secrets.get(cfg.id, k)?.map(|s| s.into_inner())) };
+    let get = |k| -> R<Option<String>> {
+        Ok(match st.secrets.get(cfg.id, k)? {
+            Some(s) => Some(s.into_inner()),
+            None => crate::import::take_deferred_secret(st, cfg.id, k, &crate::import::os_keychain_reader),
+        })
+    };
     Ok(dbs_ssh::SshSecrets {
         password: match password {
             Some(p) => Some(p),
@@ -276,6 +302,7 @@ pub async fn test_connection(
     trust_host_key: Option<String>,
 ) -> R<TestResult> {
     config.validate()?;
+    crate::access::guard(&st, &config)?;
     let secrets = resolve_secrets(&st, &config, password)?;
     let ssh_secrets = resolve_ssh_secrets(&st, &config, ssh_password, ssh_passphrase)?;
     let t = Instant::now();
@@ -315,6 +342,7 @@ pub fn import_connections(st: State<'_, AppState>, json: String) -> R<usize> {
     for mut c in list {
         c.id = Uuid::new_v4(); // never collide with / overwrite existing entries
         c.init_sql = None; // imported init SQL could be malicious; user must re-add it
+        c.managed_by = None; // granted access belongs to the machine that requested it
         if c.validate().is_ok() {
             st.store.save_connection(&c)?;
             audit(&st, Category::ConnectionCreated, Outcome::Success, Some(&c), |e| e.detail = Some("imported".into()));
@@ -378,6 +406,7 @@ pub async fn open_session(
     database: Option<String>,
 ) -> R<SessionOpened> {
     let mut cfg = st.store.get_connection(connection_id)?;
+    crate::access::guard(&st, &cfg)?;
     // "Other databases on this server" (Postgres family only): same saved connection,
     // another database. Never for file-based engines, where `database` is a path.
     if let Some(db) = database {
@@ -1728,8 +1757,10 @@ pub(crate) mod tests {
             stream_acks: Default::default(),
             grants: Default::default(),
             known_hosts: std::path::PathBuf::from("/nonexistent/known_hosts"),
+            // nosemgrep: rust.lang.security.temp-dir.temp-dir -- test-only plugin dir with a random name
             plugins: crate::plugins::PluginHost::new(std::env::temp_dir().join(format!("lotr-plugins-{}", Uuid::new_v4()))).unwrap(),
             import_preview: Default::default(),
+            access: Default::default(),
         }
     }
 

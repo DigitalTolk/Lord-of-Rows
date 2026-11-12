@@ -51,6 +51,20 @@ export interface ConnectionConfig {
   init_sql?: string | null;
   /** Key-value engines: namespace separator for the sidebar key tree (default `:`). */
   key_separator?: string | null;
+  /** Set by the backend for connections created from an access request (read-only to the UI). */
+  managed_by?: ManagedBy | null;
+}
+
+/** Origin + lifetime of a connection made from an access request (dbs-core `ManagedBy`). */
+export interface ManagedBy {
+  provider_id: string;
+  provider_kind: string;
+  request_id: string;
+  credential_ref?: string | null;
+  /** Unix seconds. */
+  expires_at?: number | null;
+  /** Access ended: the password was wiped and connecting is refused. */
+  expired: boolean;
 }
 
 export interface StoredConnection {
@@ -261,7 +275,7 @@ export interface ConnImportRow {
 export interface ConnImportPreview { preview_id: string; source: ConnImportSource; label: string; passwords_supported: boolean; rows: ConnImportRow[] }
 export interface ConnImportOptions { keep_groups: boolean; keep_environment: boolean; import_passwords: boolean }
 export interface ConnImportError { key: string; name: string; error: string }
-export interface ConnImportResult { imported: { key: string; id: string }[]; failed: ConnImportError[]; passwords_imported: number; password_errors: ConnImportError[]; groups_created: number }
+export interface ConnImportResult { imported: { key: string; id: string }[]; failed: ConnImportError[]; passwords_imported: number; passwords_deferred: number; password_errors: ConnImportError[]; groups_created: number }
 
 // AI assistant (optional, disabled by default). Prompts are built and redacted in Rust.
 export type AiTask = 'explain_sql' | 'generate_sql' | 'optimize_sql' | 'explain_error' | 'explain_plan' | 'suggest_indexes' | 'summarize_schema';
@@ -325,3 +339,65 @@ export type KvEdit =
   | { op: 'set_remove'; key: string; member: string }
   | { op: 'zset_add'; key: string; member: string; score: number }
   | { op: 'zset_remove'; key: string; member: string };
+
+// ---- access providers (dbs-access)
+
+export interface AccessProviderKind { kind: string; label: string; default_name: string }
+export interface AccessCapabilities { approvals: boolean; create_database: boolean; cancel: boolean; targets: boolean; decided_history: boolean }
+/** One page of a cursor-paged list (`next` = cursor of the next page). */
+export interface AccessPage<T> { items: T[]; next?: string | null }
+export interface AccessProviderInfo { id: string; kind: string; name: string; base_url: string; capabilities: AccessCapabilities; has_session: boolean; /** Preconfigured by the organisation (read-only). */ managed?: boolean }
+/** A `lordoftherows://access` link, matched to a configured provider when possible. */
+export interface AccessDeepLink { provider_url: string; request_id?: string | null; kind: string; provider_id?: string | null }
+export interface AccessUser { id: string; email: string; name: string; role: string; can_approve: boolean; /** e.g. 'no_approver' */ request_blocked?: string | null }
+export interface AccessStatus { signed_in: boolean; user?: AccessUser | null; signing_in: boolean; error?: DbError | null }
+export type AccessLevel = 'read_only' | 'read_write';
+export type AccessRequestStatus = 'pending' | 'provisioning' | 'ready' | 'failed' | 'rejected' | 'expired' | 'revoked' | 'cancelled';
+export interface AccessPerson { id: string; name: string; email: string }
+export interface AccessLogEntry { ts: string; level: string; msg: string }
+export interface AccessRequest {
+  id: string;
+  resource_id: string;
+  resource_name: string;
+  environment_name: string;
+  environment: EnvironmentKind;
+  engine?: Engine | null;
+  access?: AccessLevel | null;
+  /** Without the ticket reference. */
+  reason: string;
+  /** Ticket reference (e.g. OPS-123), if given. */
+  ticket?: string | null;
+  databases: string[];
+  create_database: boolean;
+  status: AccessRequestStatus;
+  /** Failure / rejection reason. */
+  status_detail?: string | null;
+  requester: AccessPerson;
+  /** Who decides (pending) or decided. */
+  approver?: AccessPerson | null;
+  log: AccessLogEntry[];
+  created_at: string;
+  /** Unix seconds. */
+  expires_at?: number | null;
+  lifetime_hours?: number | null;
+  /** When it was approved / rejected (RFC 3339). */
+  decided_at?: string | null;
+}
+/** A request of mine plus the saved connection made from it. */
+export interface AccessRequestView extends AccessRequest { connection_id?: string | null; connection_expired: boolean }
+export interface AccessRequestList { requests: AccessRequestView[]; expired_connections: string[] }
+export interface AccessResource {
+  id: string;
+  name: string;
+  environment_name: string;
+  environment: EnvironmentKind;
+  engine: Engine;
+  host?: string | null;
+  port?: number | null;
+  access_levels: AccessLevel[];
+}
+export interface AccessTargets { targets: string[]; error?: string | null }
+export interface AccessRequestInput { resource_id: string; access: AccessLevel; reason: string; databases: string[]; create_database: boolean; ticket?: string | null }
+export interface AccessConnectionDetails { engine: Engine; host: string; port?: number | null; database?: string | null; username: string }
+export interface AccessConnectCheck { reusable: boolean; connection_id?: string | null; reveals_remaining?: number | null; details?: AccessConnectionDetails | null }
+export interface AccessConnectOutcome { connection_id: string; reused: boolean; reveals_remaining?: number | null; password_in_memory: boolean }

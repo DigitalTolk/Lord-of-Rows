@@ -47,7 +47,12 @@ export interface OpenSession extends SessionOpened {
   keyspaces?: KeyspaceInfo[];
   latency?: number;
   healthy: boolean;
+  /** The connection's time-limited access ended: it was closed, its tabs are kept until dismissed. */
+  ended?: boolean;
 }
+
+/** Fired before a session is closed because its access ended (query views cancel their runs). */
+export const SESSION_ENDING_EVENT = 'lotr:session-ending';
 
 interface State {
   info?: AppInfo;
@@ -63,14 +68,25 @@ interface State {
   lastTab: Record<string, string>;
   switchSession(id: string): void;
   connectionDialog?: { id?: string; duplicateOf?: string } | null;
-  toasts: { id: number; kind: 'info' | 'error' | 'ok'; text: string }[];
+  toasts: { id: number; kind: 'info' | 'error' | 'ok'; text: string; action?: ToastAction }[];
 
   init(): Promise<void>;
   reloadConnections(): Promise<void>;
   setSetting(key: string, value: unknown): Promise<void>;
   /** `database` (Postgres family): open the saved connection on another database of the same server. */
   openSession(connectionId: string, password?: string, database?: string): Promise<string>;
+  /**
+   * Open a saved connection from the launcher, the Access tab or the palette: switch to it when
+   * it is already open in this window, and ignore repeats while it is still connecting
+   * (double-click, Enter + click). Returns the session id, or null for an ignored repeat.
+   * `openSession` stays the way to deliberately open another session (e.g. another database).
+   */
+  openConnection(connectionId: string, password?: string): Promise<string | null>;
   closeSession(sessionId: string): Promise<void>;
+  /** Access ended: cancel running queries, close the connection, keep the tabs (shown as ended). */
+  endSession(sessionId: string): Promise<void>;
+  /** Removes an ended session; its query tabs stay (unbound, text kept), other tabs close. */
+  dismissSession(sessionId: string): void;
   loadObjects(sessionId: string, schema: string | null): Promise<void>;
   setActiveSchema(sessionId: string, schema: string): void;
   /** Key-value sessions: reload the databases and their key counts (`INFO keyspace`). */
@@ -84,10 +100,19 @@ interface State {
   toggleSplit(id: string, dir?: SplitDir): void;
   openWindow(): Promise<void>;
   closeWindow(): Promise<void>;
-  toast(kind: 'info' | 'error' | 'ok', text: string): void;
+  /** `action` adds a button (e.g. "Review"); such toasts stay longer. */
+  toast(kind: 'info' | 'error' | 'ok', text: string, action?: ToastAction): void;
+}
+
+/** A button on a toast. */
+export interface ToastAction {
+  label: string;
+  run: () => void;
 }
 
 let toastId = 0;
+/** Connections being opened by `openConnection` right now. */
+const opening = new Set<string>();
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
 
 export const useApp = create<State>((set, get) => ({
@@ -121,6 +146,21 @@ export const useApp = create<State>((set, get) => ({
   async setSetting(key, value) {
     await api.setSetting(key, value);
     set({ settings: { ...get().settings, [key]: value } });
+  },
+
+  async openConnection(connectionId, password) {
+    const open = Object.values(get().sessions).find((x) => x.config.id === connectionId);
+    if (open) {
+      get().switchSession(open.session_id);
+      return open.session_id;
+    }
+    if (opening.has(connectionId)) return null;
+    opening.add(connectionId);
+    try {
+      return await get().openSession(connectionId, password);
+    } finally {
+      opening.delete(connectionId);
+    }
   },
 
   async openSession(connectionId, password, database) {
@@ -192,6 +232,24 @@ export const useApp = create<State>((set, get) => ({
     const tabs = get().tabs.filter((t) => t.sessionId !== sessionId);
     const next = Object.keys(sessions)[0];
     set({ sessions, tabs, activeSession: next, activeTab: tabs.find((t) => t.sessionId === next)?.id });
+  },
+
+  async endSession(sessionId) {
+    const s = get().sessions[sessionId];
+    if (!s || s.ended) return;
+    window.dispatchEvent(new CustomEvent(SESSION_ENDING_EVENT, { detail: { sessionId } }));
+    await new Promise((r) => setTimeout(r, 50)); // let the views send their cancels first
+    await api.closeSession(sessionId).catch(() => undefined);
+    const cur = get().sessions[sessionId];
+    if (cur) set({ sessions: { ...get().sessions, [sessionId]: { ...cur, ended: true, healthy: false } } });
+  },
+
+  dismissSession(sessionId) {
+    const sessions = { ...get().sessions };
+    delete sessions[sessionId];
+    const tabs = get().tabs.filter((t) => t.sessionId !== sessionId || t.kind === 'query').map((t) => (t.sessionId === sessionId ? { ...t, sessionId: undefined } : t));
+    const next = Object.keys(sessions)[0];
+    set({ sessions, tabs, activeSession: next, activeTab: tabs.find((t) => t.sessionId === next)?.id ?? tabs.find((t) => !t.sessionId)?.id });
   },
 
   async loadObjects(sessionId, schema) {
@@ -288,10 +346,10 @@ export const useApp = create<State>((set, get) => ({
     }
   },
 
-  toast(kind, text) {
+  toast(kind, text, action) {
     const id = ++toastId;
-    set({ toasts: [...get().toasts, { id, kind, text }] });
-    setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), kind === 'error' ? 8000 : 4000);
+    set({ toasts: [...get().toasts, { id, kind, text, action }] });
+    setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), action ? 15000 : kind === 'error' ? 8000 : 4000);
   },
 }));
 
