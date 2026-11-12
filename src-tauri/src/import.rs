@@ -451,6 +451,7 @@ mod tests {
         dup.name = "Dup".into();
         st.store.save_connection(&dup).unwrap();
 
+        // nosemgrep: rust.lang.security.temp-dir.temp-dir -- test scratch dir with a random name
         let dir = std::env::temp_dir().join(format!("lotr-import-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let grant = file_grant(&st, &dir, "data-sources.json", DBEAVER);

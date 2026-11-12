@@ -1757,6 +1757,7 @@ pub(crate) mod tests {
             stream_acks: Default::default(),
             grants: Default::default(),
             known_hosts: std::path::PathBuf::from("/nonexistent/known_hosts"),
+            // nosemgrep: rust.lang.security.temp-dir.temp-dir -- test-only plugin dir with a random name
             plugins: crate::plugins::PluginHost::new(std::env::temp_dir().join(format!("lotr-plugins-{}", Uuid::new_v4()))).unwrap(),
             import_preview: Default::default(),
             access: Default::default(),
